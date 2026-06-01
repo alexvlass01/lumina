@@ -40,17 +40,6 @@ node node_modules/@electron/packager/bin/electron-packager.mjs . "Lumina" `
 > NSIS-установщик через `electron-builder` на этой машине не собирается (нужен «Режим
 > разработчика» Windows для распаковки macOS-симлинков). Поэтому используем портативную сборку.
 
-## Памятка: версии и git
-
-```powershell
-git log --oneline                 # список сохранённых версий
-git add -A; git commit -m "..."   # сохранить новую версию
-git push                          # отправить на GitHub
-git checkout <хеш> -- .           # вернуть файлы к версии <хеш>
-```
-
-Репозиторий: https://github.com/alexvlass01/lumina
-
 ## Структура
 
 | Файл | Назначение |

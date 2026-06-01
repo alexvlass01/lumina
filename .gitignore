@@ -14,3 +14,6 @@ desktop.ini
 
 # Local Claude Code settings (machine-specific permissions)
 .claude/settings.local.json
+
+# Internal context notes for Claude (kept local, not published)
+CLAUDE.md
