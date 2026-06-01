@@ -1,0 +1,46 @@
+{
+  "name": "adwaita-wallpaper",
+  "version": "1.0.0",
+  "description": "Автоматическая смена обоев при переключении светлой/тёмной темы Windows — в стиле GNOME Adwaita.",
+  "main": "main.js",
+  "author": "alexv",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "build": {
+    "appId": "com.alexv.adwaitawallpaper",
+    "productName": "Adwaita Wallpaper",
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "assets/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Adwaita Wallpaper"
+    }
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.0.0",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

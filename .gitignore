@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Logs
+*.log
+
+# OS / editor junk
+Thumbs.db
+desktop.ini
+.DS_Store
