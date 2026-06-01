@@ -13,107 +13,125 @@
       <img class="tb-icon" src="../assets/icon.png" alt="" />
       <span class="tb-title">Lumina</span>
     </div>
-    <div class="tb-actions">
-      <button class="tb-btn" id="btnMenu" title="Меню" aria-label="Главное меню">
-        <svg viewBox="0 0 16 16" width="17" height="17">
-          <rect x="2" y="3.5" width="12" height="1.6" rx="0.8"/>
-          <rect x="2" y="7.2" width="12" height="1.6" rx="0.8"/>
-          <rect x="2" y="10.9" width="12" height="1.6" rx="0.8"/>
-        </svg>
-      </button>
+    <div class="tb-nav" id="tbNav">
+      <button class="navbtn active" data-page="home">Главная</button>
+      <button class="navbtn" data-page="settings">Настройки</button>
     </div>
   </header>
 
-  <div class="menu-popover" id="menuPopover" hidden>
-    <button class="menu-item" data-action="apply">Применить для текущей темы</button>
-    <div class="menu-sep"></div>
-    <button class="menu-item destructive" data-action="quit">Выйти из приложения</button>
-  </div>
-
   <main class="page">
-    <!-- Current theme banner -->
-    <section class="hero" id="hero">
-      <div class="hero-icon" id="heroIcon"></div>
-      <div class="hero-text">
-        <div class="hero-title" id="heroTitle">Текущая тема Windows</div>
-        <div class="hero-sub" id="heroSub">Определяю…</div>
+    <!-- ===================== HOME ===================== -->
+    <section class="view" id="viewHome">
+      <section class="hero" id="hero">
+        <div class="hero-icon" id="heroIcon"></div>
+        <div class="hero-text">
+          <div class="hero-title" id="heroTitle">Текущая тема Windows</div>
+          <div class="hero-sub" id="heroSub">Определяю…</div>
+        </div>
+        <button class="pill suggested" id="btnApplyNow">Применить сейчас</button>
+      </section>
+
+      <h2 class="group-title">Сейчас на рабочем столе</h2>
+      <div class="home-monitors" id="homeMonitors"></div>
+
+      <h2 class="group-title">Статус</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text"><div class="row-title">Автосмена при переключении темы</div></div>
+          <div class="status-val" id="stAuto">—</div>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">Автозапуск с Windows</div></div>
+          <div class="status-val" id="stStartup">—</div>
+        </div>
+        <div class="row">
+          <div class="row-text"><div class="row-title">Мониторов подключено</div></div>
+          <div class="status-val" id="stMonitors">—</div>
+        </div>
       </div>
+
+      <p class="footer-note">
+        Приложение продолжает работать в системном трее после закрытия окна.<br />
+        <span class="version">Lumina <span id="appVersion">…</span></span>
+      </p>
     </section>
 
-    <section class="monitor-bar" id="monitorBar" hidden>
-      <div class="monmap" id="monMap"></div>
-      <div class="mon-label" id="monLabel"></div>
-      <div class="mon-note">Выберите монитор — обои ниже задаются именно для него. У каждого монитора своя пара день/ночь.</div>
+    <!-- ===================== SETTINGS ===================== -->
+    <section class="view" id="viewSettings" hidden>
+      <section class="monitor-bar" id="monitorBar" hidden>
+        <div class="monmap" id="monMap"></div>
+        <div class="mon-label" id="monLabel"></div>
+        <div class="mon-note">Выберите монитор — обои ниже задаются именно для него. У каждого монитора своя пара день/ночь.</div>
+      </section>
+
+      <h2 class="group-title">Обои</h2>
+      <div class="cards">
+        <!-- Light -->
+        <div class="wallcard" data-theme="light">
+          <div class="wallcard-head">
+            <span class="dot dot-light"></span>
+            <span>Дневная тема</span>
+          </div>
+          <div class="stage">
+            <div class="monitor" id="previewLight"><span class="preview-empty">Не выбрано</span></div>
+          </div>
+          <div class="wallcard-actions">
+            <button class="pill" data-pick="light">Выбрать изображение…</button>
+          </div>
+        </div>
+        <!-- Dark -->
+        <div class="wallcard" data-theme="dark">
+          <div class="wallcard-head">
+            <span class="dot dot-dark"></span>
+            <span>Ночная тема</span>
+          </div>
+          <div class="stage">
+            <div class="monitor" id="previewDark"><span class="preview-empty">Не выбрано</span></div>
+          </div>
+          <div class="wallcard-actions">
+            <button class="pill" data-pick="dark">Выбрать изображение…</button>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="group-title">Поведение</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">Автосмена при переключении темы</div>
+            <div class="row-sub">Менять обои автоматически, когда Windows переходит в светлый или тёмный режим</div>
+          </div>
+          <button class="gtkswitch" id="swAuto" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">Автозапуск с Windows</div>
+            <div class="row-sub">Запускать приложение в фоне (в трее) при входе в систему</div>
+          </div>
+          <button class="gtkswitch" id="swStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">Расположение</div>
+            <div class="row-sub">Как изображение размещается на рабочем столе</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selStyle">
+              <option value="fill">Заполнение</option>
+              <option value="fit">Вписать</option>
+              <option value="stretch">Растянуть</option>
+              <option value="center">По центру</option>
+              <option value="tile">Замостить</option>
+              <option value="span">Развернуть на все мониторы</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="danger-zone">
+        <button class="pill danger" id="btnQuit">Выйти из приложения</button>
+      </div>
     </section>
-
-    <h2 class="group-title">Обои</h2>
-    <div class="cards">
-      <!-- Light -->
-      <div class="wallcard" data-theme="light">
-        <div class="wallcard-head">
-          <span class="dot dot-light"></span>
-          <span>Дневная тема</span>
-        </div>
-        <div class="stage">
-          <div class="monitor" id="previewLight"><span class="preview-empty">Не выбрано</span></div>
-        </div>
-        <div class="wallcard-actions">
-          <button class="pill" data-pick="light">Выбрать изображение…</button>
-        </div>
-      </div>
-      <!-- Dark -->
-      <div class="wallcard" data-theme="dark">
-        <div class="wallcard-head">
-          <span class="dot dot-dark"></span>
-          <span>Ночная тема</span>
-        </div>
-        <div class="stage">
-          <div class="monitor" id="previewDark"><span class="preview-empty">Не выбрано</span></div>
-        </div>
-        <div class="wallcard-actions">
-          <button class="pill" data-pick="dark">Выбрать изображение…</button>
-        </div>
-      </div>
-    </div>
-
-    <h2 class="group-title">Поведение</h2>
-    <div class="boxed-list">
-      <div class="row">
-        <div class="row-text">
-          <div class="row-title">Автосмена при переключении темы</div>
-          <div class="row-sub">Менять обои автоматически, когда Windows переходит в светлый или тёмный режим</div>
-        </div>
-        <button class="gtkswitch" id="swAuto" role="switch" aria-checked="false"><span class="knob"></span></button>
-      </div>
-      <div class="row">
-        <div class="row-text">
-          <div class="row-title">Автозапуск с Windows</div>
-          <div class="row-sub">Запускать приложение в фоне (в трее) при входе в систему</div>
-        </div>
-        <button class="gtkswitch" id="swStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
-      </div>
-      <div class="row">
-        <div class="row-text">
-          <div class="row-title">Расположение</div>
-          <div class="row-sub">Как изображение размещается на рабочем столе</div>
-        </div>
-        <div class="select-wrap">
-          <select id="selStyle">
-            <option value="fill">Заполнение</option>
-            <option value="fit">Вписать</option>
-            <option value="stretch">Растянуть</option>
-            <option value="center">По центру</option>
-            <option value="tile">Замостить</option>
-            <option value="span">Развернуть на все мониторы</option>
-          </select>
-        </div>
-      </div>
-    </div>
-
-    <p class="footer-note">
-      Приложение продолжает работать в системном трее после закрытия окна.<br />
-      <span class="version">Lumina <span id="appVersion">…</span></span>
-    </p>
   </main>
 
   <div class="toast" id="toast"></div>

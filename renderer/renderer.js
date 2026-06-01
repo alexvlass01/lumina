@@ -73,6 +73,7 @@ function setMonitors(list) {
   applySelectedAspect();
   buildMonitorMap();
   renderPreviews();
+  renderHome();
 }
 
 function fmtResolution(m) {
@@ -169,12 +170,17 @@ function layoutMonitors() {
   });
 }
 
-// Wallpaper path for the selected monitor + theme (own pick, or global fallback).
-function wallpaperFor(theme) {
-  const mon = config.monitors && config.monitors[selectedMonitorId];
+// Wallpaper path for a monitor + theme (own pick, or global fallback).
+function wallpaperForMonitor(id, theme) {
+  const mon = config.monitors && config.monitors[id];
   const per = mon ? mon[theme] : '';
   const fb = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
   return per || fb || '';
+}
+
+// Wallpaper for the currently selected monitor (used by the settings previews).
+function wallpaperFor(theme) {
+  return wallpaperForMonitor(selectedMonitorId, theme);
 }
 
 async function setPreview(which, filePath) {
@@ -222,6 +228,64 @@ async function renderConfig() {
 }
 
 // ---------------------------------------------------------------------------
+// Page navigation (Home / Settings)
+// ---------------------------------------------------------------------------
+function showPage(name) {
+  document.querySelectorAll('.view').forEach((v) => {
+    v.hidden = v.id !== (name === 'settings' ? 'viewSettings' : 'viewHome');
+  });
+  document.querySelectorAll('.navbtn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.page === name);
+  });
+  if (name === 'home') {
+    renderHome();
+  } else {
+    renderPreviews();   // reflect current config
+    layoutMonitors();   // stages just became visible — refit thumbnails
+  }
+}
+
+// Home dashboard: current wallpaper per monitor (active theme) + status.
+const HOME_THUMB_H = 116;
+function renderHome() {
+  if (!config) return;
+  const wrap = $('#homeMonitors');
+  if (wrap) {
+    wrap.innerHTML = '';
+    if (!monitorList.length) {
+      wrap.innerHTML = '<div class="home-empty">Мониторы не обнаружены</div>';
+    } else {
+      monitorList.forEach((m, i) => {
+        const ar = m.h ? m.w / m.h : 16 / 9;
+        const cell = document.createElement('div');
+        cell.className = 'home-mon';
+        const thumb = document.createElement('div');
+        thumb.className = 'home-thumb';
+        thumb.style.height = HOME_THUMB_H + 'px';
+        thumb.style.width = Math.round(HOME_THUMB_H * ar) + 'px';
+        const wp = wallpaperForMonitor(m.id, currentTheme);
+        if (wp) {
+          thumb.textContent = '';
+          window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}")`; });
+        } else {
+          thumb.classList.add('empty');
+          thumb.textContent = 'нет обоев';
+        }
+        const lbl = document.createElement('div');
+        lbl.className = 'home-mon-label';
+        lbl.textContent = `Монитор ${i + 1}` + (m.primary ? ' ★' : '');
+        cell.appendChild(thumb);
+        cell.appendChild(lbl);
+        wrap.appendChild(cell);
+      });
+    }
+  }
+  const a = $('#stAuto'); if (a) a.textContent = config.autoSwitch ? 'включена' : 'выключена';
+  const s = $('#stStartup'); if (s) s.textContent = config.autostart ? 'включён' : 'выключен';
+  const mc = $('#stMonitors'); if (mc) mc.textContent = String(monitorList.length);
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 async function init() {
@@ -230,37 +294,27 @@ async function init() {
   applyThemeToUI(currentTheme);
   setMonitors(await window.api.getMonitors());
   await renderConfig();
+  showPage('home');
 
   window.api.getVersion().then((v) => {
     $('#appVersion').textContent = 'v' + v;
   });
 
-  // ---- title bar menu (hamburger) ----
-  const menu = $('#menuPopover');
-  const btnMenu = $('#btnMenu');
-  function closeMenu() { menu.hidden = true; }
-  function toggleMenu() { menu.hidden = !menu.hidden; }
-
-  btnMenu.addEventListener('click', (e) => { e.stopPropagation(); toggleMenu(); });
-  document.addEventListener('click', (e) => {
-    if (!menu.hidden && !menu.contains(e.target) && e.target !== btnMenu) closeMenu();
+  // ---- page navigation ----
+  document.querySelectorAll('.navbtn').forEach((b) => {
+    b.addEventListener('click', () => showPage(b.dataset.page));
   });
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 
-  menu.querySelectorAll('.menu-item').forEach((item) => {
-    item.addEventListener('click', async () => {
-      const action = item.dataset.action;
-      closeMenu();
-      if (action === 'apply') {
-        const res = await window.api.applyNow();
-        if (res.ok) toast('Обои применены');
-        else if (res.reason === 'no-wallpaper') toast('Для текущей темы не выбраны обои');
-        else toast('Ошибка: ' + res.reason);
-      } else if (action === 'quit') {
-        window.api.quitApp();
-      }
-    });
+  // ---- home: apply current theme now ----
+  $('#btnApplyNow').addEventListener('click', async () => {
+    const res = await window.api.applyNow();
+    if (res.ok) toast('Обои применены');
+    else if (res.reason === 'no-wallpaper') toast('Обои ещё не выбраны');
+    else toast('Ошибка: ' + res.reason);
   });
+
+  // ---- settings: quit the app ----
+  $('#btnQuit').addEventListener('click', () => window.api.quitApp());
 
   // pick image for the SELECTED monitor
   document.querySelectorAll('[data-pick]').forEach((btn) => {
@@ -270,6 +324,7 @@ async function init() {
       if (!file) return;
       config = await window.api.setMonitorWallpaper(selectedMonitorId, which, file);
       await setPreview(which, file);
+      renderHome();
       toast(which === 'dark' ? 'Ночные обои выбраны' : 'Дневные обои выбраны');
 
       if (which === currentTheme) {
@@ -305,12 +360,14 @@ async function init() {
   // live updates from main process
   window.api.onTheme((theme) => {
     applyThemeToUI(theme);
+    renderHome();
     toast(theme === 'dark' ? 'Windows перешёл в тёмную тему' : 'Windows перешёл в светлую тему');
   });
 
   window.api.onConfig((cfg) => {
     config = cfg;
     renderConfig();
+    renderHome();
   });
 
   window.api.onMonitors((list) => {
