@@ -9,8 +9,8 @@ if (!window.api) {
     setConfig: async (p) => (mock = { ...mock, ...p }),
     getVersion: async () => '1.0.0',
     getDisplays: async () => [
-      { id: 1, width: 1920, height: 1080, scaleFactor: 1, isPrimary: true },
-      { id: 2, width: 960, height: 1536, scaleFactor: 1, isPrimary: false },
+      { id: 1, width: 1920, height: 1080, scaleFactor: 1, rotation: 0, isPrimary: true },
+      { id: 2, width: 960, height: 1536, scaleFactor: 1.25, rotation: 90, isPrimary: false },
     ],
     getTheme: async () => 'light',
     pickImage: async () => null,
@@ -93,13 +93,26 @@ function setDisplays(displays) {
   buildMonitorMap();
 }
 
+// Human-readable resolution: physical pixels (logical × scale) + scale % + rotation.
+function fmtResolution(d) {
+  const scale = d.scaleFactor || 1;
+  const pw = Math.round(d.width * scale);
+  const ph = Math.round(d.height * scale);
+  let s = `${pw}×${ph}`;
+  const extras = [];
+  if (Math.round(scale * 100) !== 100) extras.push(`${Math.round(scale * 100)}%`);
+  if (d.rotation === 90 || d.rotation === 270) extras.push('повёрнут');
+  if (extras.length) s += ' · ' + extras.join(' · ');
+  return s;
+}
+
 function updateMonLabel() {
   const el = $('#monLabel');
   if (!el) return;
   const d = selectedDisplay();
   if (!d) { el.textContent = ''; return; }
   const idx = displaysCache.findIndex((x) => x.id === d.id) + 1;
-  el.textContent = `Превью для: Монитор ${idx} · ${d.width}×${d.height}` + (d.isPrimary ? ' (основной)' : '');
+  el.textContent = `Превью для: Монитор ${idx} · ${fmtResolution(d)}` + (d.isPrimary ? ' (основной)' : '');
 }
 
 function selectDisplay(d) {
@@ -131,7 +144,7 @@ function buildMonitorMap() {
     chip.dataset.id = String(d.id);
     chip.style.width = Math.max(22, Math.round(d.width * scale)) + 'px';
     chip.style.height = Math.max(22, Math.round(d.height * scale)) + 'px';
-    chip.title = `Монитор ${i + 1}: ${d.width}×${d.height}` + (d.isPrimary ? ' (основной)' : '');
+    chip.title = `Монитор ${i + 1}: ${fmtResolution(d)}` + (d.isPrimary ? ' (основной)' : '');
     chip.innerHTML = `<span class="mnum">${i + 1}</span>`;
     chip.addEventListener('click', () => selectDisplay(d));
     map.appendChild(chip);
