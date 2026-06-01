@@ -7,7 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   getVersion: () => ipcRenderer.invoke('get-version'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
-  pickImage: () => ipcRenderer.invoke('pick-image'),
+  pickImage: (which) => ipcRenderer.invoke('pick-image', which),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),

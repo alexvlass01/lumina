@@ -26,13 +26,30 @@ npm install
 npm start
 ```
 
-## Сборка установщика
+## Сборка приложения (портативный exe)
 
 ```powershell
-npm run dist
+node node_modules/@electron/packager/bin/electron-packager.mjs . "Lumina" `
+  --platform=win32 --arch=x64 --icon=assets/icon.ico --out=dist --overwrite `
+  --app-version=1.0.0 --ignore="dist" --ignore="\.claude"
 ```
 
-Готовый установщик появится в папке `dist/` (`Lumina Setup x.x.x.exe`).
+Готовое приложение появится в `dist/Lumina-win32-x64/Lumina.exe` — его можно запускать
+напрямую, ничего устанавливать не нужно.
+
+> NSIS-установщик через `electron-builder` на этой машине не собирается (нужен «Режим
+> разработчика» Windows для распаковки macOS-симлинков). Поэтому используем портативную сборку.
+
+## Памятка: версии и git
+
+```powershell
+git log --oneline                 # список сохранённых версий
+git add -A; git commit -m "..."   # сохранить новую версию
+git push                          # отправить на GitHub
+git checkout <хеш> -- .           # вернуть файлы к версии <хеш>
+```
+
+Репозиторий: https://github.com/alexvlass01/lumina
 
 ## Структура
 

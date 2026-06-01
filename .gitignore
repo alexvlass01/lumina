@@ -11,3 +11,6 @@ dist/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Local Claude Code settings (machine-specific permissions)
+.claude/settings.local.json

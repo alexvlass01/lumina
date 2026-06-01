@@ -25,6 +25,23 @@ app.isQuitting = false;
 // Config
 // ---------------------------------------------------------------------------
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
+const WALLPAPERS_DIR = path.join(app.getPath('userData'), 'wallpapers');
+
+// Copy a chosen image into the app's own data dir so it survives app updates
+// and the original file being moved/deleted. Returns the stored path.
+function importWallpaper(which, srcPath) {
+  fs.mkdirSync(WALLPAPERS_DIR, { recursive: true });
+  const ext = (path.extname(srcPath) || '.img').toLowerCase();
+  // drop any previous file for this slot (could have a different extension)
+  try {
+    for (const f of fs.readdirSync(WALLPAPERS_DIR)) {
+      if (f.startsWith(which + '.')) fs.rmSync(path.join(WALLPAPERS_DIR, f), { force: true });
+    }
+  } catch {}
+  const dest = path.join(WALLPAPERS_DIR, which + ext);
+  fs.copyFileSync(srcPath, dest);
+  return dest;
+}
 
 const DEFAULT_CONFIG = {
   lightWallpaper: '',
@@ -297,7 +314,7 @@ ipcMain.handle('set-config', (e, patch) => {
   return config;
 });
 
-ipcMain.handle('pick-image', async () => {
+ipcMain.handle('pick-image', async (e, which) => {
   const res = await dialog.showOpenDialog(mainWindow, {
     title: 'Выберите изображение',
     properties: ['openFile'],
@@ -306,7 +323,13 @@ ipcMain.handle('pick-image', async () => {
     ],
   });
   if (res.canceled || !res.filePaths.length) return null;
-  return res.filePaths[0];
+  const slot = which === 'dark' ? 'dark' : 'light';
+  try {
+    return importWallpaper(slot, res.filePaths[0]);
+  } catch (err) {
+    console.error('Не удалось импортировать обои:', err);
+    return res.filePaths[0]; // запасной вариант — исходный путь
+  }
 });
 
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which));

@@ -123,7 +123,7 @@ async function init() {
   document.querySelectorAll('[data-pick]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const which = btn.dataset.pick;
-      const file = await window.api.pickImage();
+      const file = await window.api.pickImage(which);
       if (!file) return;
       const key = which === 'dark' ? 'darkWallpaper' : 'lightWallpaper';
       config = await window.api.setConfig({ [key]: file });
