@@ -14,11 +14,11 @@
       <span class="tb-title">Lumina</span>
     </div>
     <div class="tb-nav" id="tbNav">
-      <button class="navbtn active" data-page="home">Главная</button>
-      <button class="navbtn" data-page="design">Оформление</button>
+      <button class="navbtn active" data-page="home" data-i18n="nav.home">Главная</button>
+      <button class="navbtn" data-page="design" data-i18n="nav.design">Оформление</button>
     </div>
     <div class="tb-right">
-      <button class="tb-btn" id="btnPrefs" title="Настройки приложения" aria-label="Настройки приложения">
+      <button class="tb-btn" id="btnPrefs" data-i18n-title="prefs.tooltip" title="Настройки приложения" aria-label="Настройки приложения">
         <svg viewBox="0 0 16 16" width="17" height="17">
           <path d="M8 5.2a2.8 2.8 0 100 5.6 2.8 2.8 0 000-5.6zm0 1.4a1.4 1.4 0 110 2.8 1.4 1.4 0 010-2.8z"/>
           <path d="M7.2 1h1.6l.3 1.6a5.3 5.3 0 011.3.55l1.4-.8 1.13 1.13-.8 1.4c.24.4.43.84.55 1.3L15 7.2v1.6l-1.6.3a5.3 5.3 0 01-.55 1.3l.8 1.4-1.13 1.13-1.4-.8c-.4.24-.84.43-1.3.55L8.8 15H7.2l-.3-1.6a5.3 5.3 0 01-1.3-.55l-1.4.8-1.13-1.13.8-1.4a5.3 5.3 0 01-.55-1.3L1 8.8V7.2l1.6-.3c.12-.46.31-.9.55-1.3l-.8-1.4 1.13-1.13 1.4.8c.4-.24.84-.43 1.3-.55L7.2 1z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
@@ -33,32 +33,32 @@
       <section class="hero" id="hero">
         <div class="hero-icon" id="heroIcon"></div>
         <div class="hero-text">
-          <div class="hero-title" id="heroTitle">Текущая тема Windows</div>
-          <div class="hero-sub" id="heroSub">Определяю…</div>
+          <div class="hero-title" id="heroTitle" data-i18n="home.themeTitle">Текущая тема Windows</div>
+          <div class="hero-sub" id="heroSub" data-i18n="home.detecting">Определяю…</div>
         </div>
-        <button class="pill suggested" id="btnApplyNow">Применить сейчас</button>
+        <button class="pill suggested" id="btnApplyNow" data-i18n="home.applyNow">Применить сейчас</button>
       </section>
 
-      <h2 class="group-title">Сейчас на рабочем столе</h2>
+      <h2 class="group-title" data-i18n="home.currentDesktop">Сейчас на рабочем столе</h2>
       <div class="home-monitors" id="homeMonitors"></div>
 
-      <h2 class="group-title">Статус</h2>
+      <h2 class="group-title" data-i18n="home.statusGroup">Статус</h2>
       <div class="boxed-list">
         <div class="row">
-          <div class="row-text"><div class="row-title">Автосмена при переключении темы</div></div>
+          <div class="row-text"><div class="row-title" data-i18n="status.autoSwitch">Автосмена при переключении темы</div></div>
           <div class="status-val" id="stAuto">—</div>
         </div>
         <div class="row">
-          <div class="row-text"><div class="row-title">Автозапуск с Windows</div></div>
+          <div class="row-text"><div class="row-title" data-i18n="status.autostart">Автозапуск с Windows</div></div>
           <div class="status-val" id="stStartup">—</div>
         </div>
         <div class="row">
-          <div class="row-text"><div class="row-title">Мониторов подключено</div></div>
+          <div class="row-text"><div class="row-title" data-i18n="status.monitors">Мониторов подключено</div></div>
           <div class="status-val" id="stMonitors">—</div>
         </div>
       </div>
 
-      <p class="footer-note">Приложение продолжает работать в системном трее после закрытия окна.</p>
+      <p class="footer-note" data-i18n="home.trayNote">Приложение продолжает работать в системном трее после закрытия окна.</p>
     </section>
 
     <!-- ===================== DESIGN (обои) ===================== -->
@@ -66,61 +66,61 @@
       <section class="monitor-bar" id="monitorBar" hidden>
         <div class="monmap" id="monMap"></div>
         <div class="mon-label" id="monLabel"></div>
-        <div class="mon-note">Выберите монитор — обои ниже задаются именно для него. У каждого монитора своя пара день/ночь.</div>
+        <div class="mon-note" data-i18n="design.monitorNote">Выберите монитор — обои ниже задаются именно для него. У каждого монитора своя пара день/ночь.</div>
       </section>
 
-      <h2 class="group-title">Обои</h2>
+      <h2 class="group-title" data-i18n="design.wallpapersGroup">Обои</h2>
       <div class="cards">
         <!-- Light -->
         <div class="wallcard" data-theme="light">
           <div class="wallcard-head">
             <span class="dot dot-light"></span>
-            <span>Дневная тема</span>
+            <span data-i18n="design.lightTheme">Дневная тема</span>
           </div>
           <div class="stage">
-            <div class="monitor" id="previewLight"><span class="preview-empty">Не выбрано</span></div>
+            <div class="monitor" id="previewLight"><span class="preview-empty" data-i18n="design.notSelected">Не выбрано</span></div>
           </div>
           <div class="wallcard-actions">
-            <button class="pill" data-pick="light">Выбрать изображение…</button>
+            <button class="pill" data-pick="light" data-i18n="design.pick">Выбрать изображение…</button>
           </div>
         </div>
         <!-- Dark -->
         <div class="wallcard" data-theme="dark">
           <div class="wallcard-head">
             <span class="dot dot-dark"></span>
-            <span>Ночная тема</span>
+            <span data-i18n="design.darkTheme">Ночная тема</span>
           </div>
           <div class="stage">
-            <div class="monitor" id="previewDark"><span class="preview-empty">Не выбрано</span></div>
+            <div class="monitor" id="previewDark"><span class="preview-empty" data-i18n="design.notSelected">Не выбрано</span></div>
           </div>
           <div class="wallcard-actions">
-            <button class="pill" data-pick="dark">Выбрать изображение…</button>
+            <button class="pill" data-pick="dark" data-i18n="design.pick">Выбрать изображение…</button>
           </div>
         </div>
       </div>
 
-      <h2 class="group-title">Поведение</h2>
+      <h2 class="group-title" data-i18n="design.behaviorGroup">Поведение</h2>
       <div class="boxed-list">
         <div class="row">
           <div class="row-text">
-            <div class="row-title">Автосмена при переключении темы</div>
-            <div class="row-sub">Менять обои автоматически, когда Windows переходит в светлый или тёмный режим</div>
+            <div class="row-title" data-i18n="design.autoSwitchTitle">Автосмена при переключении темы</div>
+            <div class="row-sub" data-i18n="design.autoSwitchSub">Менять обои автоматически, когда Windows переходит в светлый или тёмный режим</div>
           </div>
           <button class="gtkswitch" id="swAuto" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
         <div class="row">
           <div class="row-text">
-            <div class="row-title">Расположение</div>
-            <div class="row-sub">Как изображение размещается на рабочем столе</div>
+            <div class="row-title" data-i18n="design.styleTitle">Расположение</div>
+            <div class="row-sub" data-i18n="design.styleSub">Как изображение размещается на рабочем столе</div>
           </div>
           <div class="select-wrap">
             <select id="selStyle">
-              <option value="fill">Заполнение</option>
-              <option value="fit">Вписать</option>
-              <option value="stretch">Растянуть</option>
-              <option value="center">По центру</option>
-              <option value="tile">Замостить</option>
-              <option value="span">Развернуть на все мониторы</option>
+              <option value="fill" data-i18n="style.fill">Заполнение</option>
+              <option value="fit" data-i18n="style.fit">Вписать</option>
+              <option value="stretch" data-i18n="style.stretch">Растянуть</option>
+              <option value="center" data-i18n="style.center">По центру</option>
+              <option value="tile" data-i18n="style.tile">Замостить</option>
+              <option value="span" data-i18n="style.span">Развернуть на все мониторы</option>
             </select>
           </div>
         </div>
@@ -129,27 +129,41 @@
 
     <!-- ===================== PREFS (настройки приложения) ===================== -->
     <section class="view" id="viewPrefs" hidden>
-      <h2 class="group-title">Настройки приложения</h2>
+      <h2 class="group-title" data-i18n="prefs.appGroup">Настройки приложения</h2>
       <div class="boxed-list">
         <div class="row">
           <div class="row-text">
-            <div class="row-title">Автозапуск с Windows</div>
-            <div class="row-sub">Запускать приложение в фоне (в трее) при входе в систему</div>
+            <div class="row-title" data-i18n="prefs.autostartTitle">Автозапуск с Windows</div>
+            <div class="row-sub" data-i18n="prefs.autostartSub">Запускать приложение в фоне (в трее) при входе в систему</div>
           </div>
           <button class="gtkswitch" id="swStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.languageTitle">Язык</div>
+            <div class="row-sub" data-i18n="prefs.languageSub">Язык интерфейса</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selLang">
+              <option value="system" data-i18n="lang.system">Системный</option>
+              <option value="uk">Українська</option>
+              <option value="ru">Русский</option>
+              <option value="en">English</option>
+            </select>
+          </div>
+        </div>
       </div>
 
-      <h2 class="group-title">О программе</h2>
+      <h2 class="group-title" data-i18n="prefs.aboutGroup">О программе</h2>
       <div class="boxed-list">
         <div class="row">
-          <div class="row-text"><div class="row-title">Lumina</div><div class="row-sub">Автосмена обоев при переключении темы Windows</div></div>
+          <div class="row-text"><div class="row-title">Lumina</div><div class="row-sub" data-i18n="prefs.aboutSub">Автосмена обоев при переключении темы Windows</div></div>
           <div class="status-val" id="appVersion">—</div>
         </div>
       </div>
 
       <div class="danger-zone">
-        <button class="pill danger" id="btnQuit">Выйти из приложения</button>
+        <button class="pill danger" id="btnQuit" data-i18n="prefs.quit">Выйти из приложения</button>
       </div>
     </section>
   </main>

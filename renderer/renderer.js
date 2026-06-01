@@ -3,11 +3,18 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false };
+  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system' };
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
     getVersion: async () => '1.0.0',
+    getI18n: async () => {
+      const load = async (code) => { try { return await (await fetch('../locales/' + code + '.json')).json(); } catch { return {}; } };
+      const sys = 'ru';
+      const set = mock.language || 'system';
+      const code = set === 'system' ? sys : set;
+      return { setting: set, system: sys, locale: code, dict: await load(code), fallback: await load('en') };
+    },
     getMonitors: async () => [
       { id: 'MON-1', x: 0, y: 0, w: 1920, h: 1080, primary: true },
       { id: 'MON-2', x: 1920, y: -440, w: 1200, h: 1920, primary: false },
@@ -33,6 +40,47 @@ const $ = (sel) => document.querySelector(sel);
 
 let config = null;
 let currentTheme = 'light';
+
+// ---------------------------------------------------------------------------
+// i18n — dictionaries come from the main process (single source of truth).
+// t(key, params) looks up the active locale, falls back to English, then key.
+// ---------------------------------------------------------------------------
+const I18N = { dict: {}, fallback: {} };
+
+function tPath(obj, key) {
+  return key.split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
+}
+function t(key, params) {
+  let v = tPath(I18N.dict, key);
+  if (v == null) v = tPath(I18N.fallback, key);
+  if (v == null) v = key;
+  if (params) for (const k in params) v = v.split('{' + k + '}').join(params[k]);
+  return v;
+}
+function applyI18n() {
+  document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-title]').forEach((el) => {
+    const s = t(el.dataset.i18nTitle);
+    el.title = s;
+    el.setAttribute('aria-label', s);
+  });
+}
+async function loadI18n() {
+  const info = await window.api.getI18n();
+  I18N.dict = info.dict || {};
+  I18N.fallback = info.fallback || {};
+  const sel = $('#selLang');
+  if (sel) sel.value = info.setting || 'system';
+  if (info.locale) document.documentElement.lang = info.locale;
+}
+// Re-apply every string after a language change.
+function refreshTexts() {
+  applyI18n();
+  applyThemeToUI(currentTheme); // hero subtitle
+  buildMonitorMap();            // chip titles + label
+  renderPreviews();             // "not selected" placeholders
+  renderHome();                 // status values + thumbnail labels
+}
 
 // ---------------------------------------------------------------------------
 // Toast
@@ -78,7 +126,7 @@ function setMonitors(list) {
 
 function fmtResolution(m) {
   let s = `${m.w}×${m.h}`;
-  if (m.w < m.h) s += ' · вертикальный';
+  if (m.w < m.h) s += ' · ' + t('monitor.vertical');
   return s;
 }
 
@@ -88,7 +136,7 @@ function updateMonLabel() {
   const m = selectedMonitor();
   if (!m) { el.textContent = ''; return; }
   const idx = monitorList.findIndex((x) => x.id === m.id) + 1;
-  el.textContent = `Монитор ${idx} · ${fmtResolution(m)}` + (m.primary ? ' (основной)' : '');
+  el.textContent = t('monitor.label', { n: idx }) + ` · ${fmtResolution(m)}` + (m.primary ? ` (${t('monitor.primary')})` : '');
 }
 
 function selectMonitor(m) {
@@ -121,7 +169,7 @@ function buildMonitorMap() {
     chip.dataset.id = m.id;
     chip.style.width = Math.max(22, Math.round(m.w * scale)) + 'px';
     chip.style.height = Math.max(22, Math.round(m.h * scale)) + 'px';
-    chip.title = `Монитор ${i + 1}: ${fmtResolution(m)}` + (m.primary ? ' (основной)' : '');
+    chip.title = t('monitor.label', { n: i + 1 }) + `: ${fmtResolution(m)}` + (m.primary ? ` (${t('monitor.primary')})` : '');
     chip.innerHTML = `<span class="mnum">${i + 1}</span>`;
     chip.addEventListener('click', () => selectMonitor(m));
     map.appendChild(chip);
@@ -191,7 +239,7 @@ async function setPreview(which, filePath) {
     el.innerHTML = '';
   } else {
     el.style.backgroundImage = '';
-    el.innerHTML = '<span class="preview-empty">Не выбрано</span>';
+    el.innerHTML = `<span class="preview-empty">${t('design.notSelected')}</span>`;
   }
   applyPreviewStyle();
 }
@@ -208,7 +256,7 @@ function applyThemeToUI(theme) {
 
   const isDark = theme === 'dark';
   $('#heroIcon').textContent = isDark ? '🌙' : '☀️';
-  $('#heroSub').textContent = isDark ? 'Тёмная (ночная)' : 'Светлая (дневная)';
+  $('#heroSub').textContent = isDark ? t('home.themeDark') : t('home.themeLight');
 
   document.querySelectorAll('.wallcard').forEach((c) => {
     c.style.outline = c.dataset.theme === theme ? '2px solid var(--accent)' : 'none';
@@ -256,7 +304,7 @@ function renderHome() {
   if (wrap) {
     wrap.innerHTML = '';
     if (!monitorList.length) {
-      wrap.innerHTML = '<div class="home-empty">Мониторы не обнаружены</div>';
+      wrap.innerHTML = `<div class="home-empty">${t('home.noMonitors')}</div>`;
     } else {
       monitorList.forEach((m, i) => {
         const ar = m.h ? m.w / m.h : 16 / 9;
@@ -272,19 +320,19 @@ function renderHome() {
           window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}")`; });
         } else {
           thumb.classList.add('empty');
-          thumb.textContent = 'нет обоев';
+          thumb.textContent = t('home.noWallpaper');
         }
         const lbl = document.createElement('div');
         lbl.className = 'home-mon-label';
-        lbl.textContent = `Монитор ${i + 1}` + (m.primary ? ' ★' : '');
+        lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
         cell.appendChild(thumb);
         cell.appendChild(lbl);
         wrap.appendChild(cell);
       });
     }
   }
-  const a = $('#stAuto'); if (a) a.textContent = config.autoSwitch ? 'включена' : 'выключена';
-  const s = $('#stStartup'); if (s) s.textContent = config.autostart ? 'включён' : 'выключен';
+  const a = $('#stAuto'); if (a) a.textContent = config.autoSwitch ? t('val.on') : t('val.off');
+  const s = $('#stStartup'); if (s) s.textContent = config.autostart ? t('val.on') : t('val.off');
   const mc = $('#stMonitors'); if (mc) mc.textContent = String(monitorList.length);
 }
 
@@ -294,6 +342,8 @@ function renderHome() {
 async function init() {
   config = await window.api.getConfig();
   currentTheme = await window.api.getTheme();
+  await loadI18n();
+  applyI18n();
   applyThemeToUI(currentTheme);
   setMonitors(await window.api.getMonitors());
   await renderConfig();
@@ -312,13 +362,20 @@ async function init() {
   // ---- home: apply current theme now ----
   $('#btnApplyNow').addEventListener('click', async () => {
     const res = await window.api.applyNow();
-    if (res.ok) toast('Обои применены');
-    else if (res.reason === 'no-wallpaper') toast('Обои ещё не выбраны');
-    else toast('Ошибка: ' + res.reason);
+    if (res.ok) toast(t('toast.applied'));
+    else if (res.reason === 'no-wallpaper') toast(t('toast.noWallpaper'));
+    else toast(t('toast.error', { msg: res.reason }));
   });
 
   // ---- settings: quit the app ----
   $('#btnQuit').addEventListener('click', () => window.api.quitApp());
+
+  // ---- language ----
+  $('#selLang').addEventListener('change', async () => {
+    config = await window.api.setConfig({ language: $('#selLang').value });
+    await loadI18n();
+    refreshTexts();
+  });
 
   // pick image for the SELECTED monitor
   document.querySelectorAll('[data-pick]').forEach((btn) => {
@@ -329,11 +386,11 @@ async function init() {
       config = await window.api.setMonitorWallpaper(selectedMonitorId, which, file);
       await setPreview(which, file);
       renderHome();
-      toast(which === 'dark' ? 'Ночные обои выбраны' : 'Дневные обои выбраны');
+      toast(which === 'dark' ? t('toast.darkChosen') : t('toast.lightChosen'));
 
       if (which === currentTheme) {
         const res = await window.api.applyNow(which);
-        if (res.ok) toast('Обои применены');
+        if (res.ok) toast(t('toast.applied'));
       }
     });
   });
@@ -343,14 +400,16 @@ async function init() {
     const on = $('#swAuto').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swAuto'), on);
     config = await window.api.setConfig({ autoSwitch: on });
-    toast(on ? 'Автосмена включена' : 'Автосмена выключена');
+    renderHome();
+    toast(on ? t('toast.autoOn') : t('toast.autoOff'));
   });
 
   $('#swStartup').addEventListener('click', async () => {
     const on = $('#swStartup').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swStartup'), on);
     await window.api.setAutostart(on);
-    toast(on ? 'Автозапуск включён' : 'Автозапуск выключен');
+    renderHome();
+    toast(on ? t('toast.startupOn') : t('toast.startupOff'));
   });
 
   // style select — applies live
@@ -358,14 +417,14 @@ async function init() {
     config = await window.api.setConfig({ style: e.target.value });
     applyPreviewStyle();
     const res = await window.api.applyNow();
-    if (res.ok) toast('Расположение обновлено');
+    if (res.ok) toast(t('toast.styleUpdated'));
   });
 
   // live updates from main process
   window.api.onTheme((theme) => {
     applyThemeToUI(theme);
     renderHome();
-    toast(theme === 'dark' ? 'Windows перешёл в тёмную тему' : 'Windows перешёл в светлую тему');
+    toast(theme === 'dark' ? t('toast.themeDark') : t('toast.themeLight'));
   });
 
   window.api.onConfig((cfg) => {

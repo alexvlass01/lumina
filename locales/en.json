@@ -1,0 +1,79 @@
+{
+  "nav": { "home": "Home", "design": "Appearance" },
+  "prefs": {
+    "tooltip": "App settings",
+    "appGroup": "App settings",
+    "autostartTitle": "Start with Windows",
+    "autostartSub": "Launch in the background (tray) at sign-in",
+    "languageTitle": "Language",
+    "languageSub": "Interface language",
+    "aboutGroup": "About",
+    "aboutSub": "Auto-switches wallpaper when the Windows theme changes",
+    "quit": "Quit application"
+  },
+  "lang": { "system": "System" },
+  "home": {
+    "themeTitle": "Current Windows theme",
+    "detecting": "Detecting…",
+    "applyNow": "Apply now",
+    "currentDesktop": "On your desktop now",
+    "statusGroup": "Status",
+    "trayNote": "The app keeps running in the system tray after the window is closed.",
+    "noWallpaper": "no wallpaper",
+    "noMonitors": "No monitors detected",
+    "themeLight": "Light (day)",
+    "themeDark": "Dark (night)"
+  },
+  "status": {
+    "autoSwitch": "Auto-switch on theme change",
+    "autostart": "Start with Windows",
+    "monitors": "Monitors connected"
+  },
+  "design": {
+    "monitorNote": "Pick a monitor — the wallpapers below apply to it. Each monitor has its own day/night pair.",
+    "wallpapersGroup": "Wallpapers",
+    "lightTheme": "Day theme",
+    "darkTheme": "Night theme",
+    "notSelected": "Not selected",
+    "pick": "Choose image…",
+    "behaviorGroup": "Behavior",
+    "autoSwitchTitle": "Auto-switch on theme change",
+    "autoSwitchSub": "Change the wallpaper automatically when Windows switches between light and dark mode",
+    "styleTitle": "Position",
+    "styleSub": "How the image fits the desktop"
+  },
+  "style": {
+    "fill": "Fill",
+    "fit": "Fit",
+    "stretch": "Stretch",
+    "center": "Center",
+    "tile": "Tile",
+    "span": "Span across monitors"
+  },
+  "monitor": { "label": "Monitor {n}", "primary": "primary", "vertical": "vertical" },
+  "val": { "on": "On", "off": "Off" },
+  "toast": {
+    "applied": "Wallpaper applied",
+    "noWallpaper": "No wallpaper selected yet",
+    "noWallpaperTheme": "No wallpaper set for the current theme",
+    "error": "Error: {msg}",
+    "lightChosen": "Day wallpaper selected",
+    "darkChosen": "Night wallpaper selected",
+    "autoOn": "Auto-switch enabled",
+    "autoOff": "Auto-switch disabled",
+    "startupOn": "Autostart enabled",
+    "startupOff": "Autostart disabled",
+    "styleUpdated": "Position updated",
+    "themeDark": "Windows switched to dark theme",
+    "themeLight": "Windows switched to light theme"
+  },
+  "tray": {
+    "open": "Open Lumina",
+    "applyLight": "Apply day wallpaper",
+    "applyDark": "Apply night wallpaper",
+    "applyCurrent": "Apply for current theme",
+    "autoSwitch": "Auto-switch on theme change",
+    "autostart": "Start with Windows",
+    "quit": "Quit"
+  }
+}

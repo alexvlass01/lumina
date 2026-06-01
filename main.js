@@ -57,6 +57,7 @@ const DEFAULT_CONFIG = {
   autoSwitch: true,
   style: 'fill', // fill | fit | stretch | center | tile | span
   autostart: false,
+  language: 'system', // 'system' | 'en' | 'ru' | 'uk'
 };
 
 let config = { ...DEFAULT_CONFIG };
@@ -78,6 +79,38 @@ function saveConfig() {
   } catch (err) {
     console.error('Не удалось сохранить конфиг:', err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// i18n — dictionaries are the single source of truth (used by both the UI and
+// the tray menu). config.language: 'system' | 'en' | 'ru' | 'uk'.
+// ---------------------------------------------------------------------------
+const LOCALES = {
+  en: require('./locales/en.json'),
+  ru: require('./locales/ru.json'),
+  uk: require('./locales/uk.json'),
+};
+const SUPPORTED_LANGS = ['en', 'ru', 'uk'];
+
+function tPath(obj, key) {
+  return key.split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
+}
+function systemLangCode() {
+  const l = (app.getLocale() || 'en').toLowerCase();
+  if (l.startsWith('uk')) return 'uk';
+  if (l.startsWith('ru')) return 'ru';
+  return 'en';
+}
+function effectiveLang() {
+  const set = config.language || 'system';
+  return SUPPORTED_LANGS.includes(set) ? set : systemLangCode();
+}
+function tMain(key) {
+  const code = effectiveLang();
+  const v = tPath(LOCALES[code] || LOCALES.en, key);
+  if (v != null) return v;
+  const f = tPath(LOCALES.en, key);
+  return f != null ? f : key;
 }
 
 // ---------------------------------------------------------------------------
@@ -352,25 +385,14 @@ function showWindow() {
 // ---------------------------------------------------------------------------
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
-    { label: 'Открыть Lumina', click: () => showWindow() },
+    { label: tMain('tray.open'), click: () => showWindow() },
+    { type: 'separator' },
+    { label: tMain('tray.applyLight'), click: () => applyForTheme('light') },
+    { label: tMain('tray.applyDark'), click: () => applyForTheme('dark') },
+    { label: tMain('tray.applyCurrent'), click: () => applyForTheme() },
     { type: 'separator' },
     {
-      label: 'Применить дневные обои',
-      enabled: !!config.lightWallpaper,
-      click: () => applyForTheme('light'),
-    },
-    {
-      label: 'Применить ночные обои',
-      enabled: !!config.darkWallpaper,
-      click: () => applyForTheme('dark'),
-    },
-    {
-      label: 'Применить для текущей темы',
-      click: () => applyForTheme(),
-    },
-    { type: 'separator' },
-    {
-      label: 'Автосмена при переключении темы',
+      label: tMain('tray.autoSwitch'),
       type: 'checkbox',
       checked: config.autoSwitch,
       click: (item) => {
@@ -380,7 +402,7 @@ function buildTrayMenu() {
       },
     },
     {
-      label: 'Автозапуск с Windows',
+      label: tMain('tray.autostart'),
       type: 'checkbox',
       checked: config.autostart,
       click: (item) => {
@@ -389,7 +411,7 @@ function buildTrayMenu() {
       },
     },
     { type: 'separator' },
-    { label: 'Выход', click: () => { app.isQuitting = true; app.quit(); } },
+    { label: tMain('tray.quit'), click: () => { app.isQuitting = true; app.quit(); } },
   ]);
 }
 
@@ -441,6 +463,17 @@ function broadcastTheme() {
 ipcMain.handle('get-config', () => config);
 
 ipcMain.handle('get-version', () => app.getVersion());
+
+ipcMain.handle('get-i18n', () => {
+  const code = effectiveLang();
+  return {
+    setting: config.language || 'system',
+    system: systemLangCode(),
+    locale: code,
+    dict: LOCALES[code] || LOCALES.en,
+    fallback: LOCALES.en,
+  };
+});
 
 ipcMain.handle('get-monitors', () => getMonitors());
 
