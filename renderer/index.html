@@ -15,7 +15,15 @@
     </div>
     <div class="tb-nav" id="tbNav">
       <button class="navbtn active" data-page="home">Главная</button>
-      <button class="navbtn" data-page="settings">Настройки</button>
+      <button class="navbtn" data-page="design">Оформление</button>
+    </div>
+    <div class="tb-right">
+      <button class="tb-btn" id="btnPrefs" title="Настройки приложения" aria-label="Настройки приложения">
+        <svg viewBox="0 0 16 16" width="17" height="17">
+          <path d="M8 5.2a2.8 2.8 0 100 5.6 2.8 2.8 0 000-5.6zm0 1.4a1.4 1.4 0 110 2.8 1.4 1.4 0 010-2.8z"/>
+          <path d="M7.2 1h1.6l.3 1.6a5.3 5.3 0 011.3.55l1.4-.8 1.13 1.13-.8 1.4c.24.4.43.84.55 1.3L15 7.2v1.6l-1.6.3a5.3 5.3 0 01-.55 1.3l.8 1.4-1.13 1.13-1.4-.8c-.4.24-.84.43-1.3.55L8.8 15H7.2l-.3-1.6a5.3 5.3 0 01-1.3-.55l-1.4.8-1.13-1.13.8-1.4a5.3 5.3 0 01-.55-1.3L1 8.8V7.2l1.6-.3c.12-.46.31-.9.55-1.3l-.8-1.4 1.13-1.13 1.4.8c.4-.24.84-.43 1.3-.55L7.2 1z" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linejoin="round"/>
+        </svg>
+      </button>
     </div>
   </header>
 
@@ -50,14 +58,11 @@
         </div>
       </div>
 
-      <p class="footer-note">
-        Приложение продолжает работать в системном трее после закрытия окна.<br />
-        <span class="version">Lumina <span id="appVersion">…</span></span>
-      </p>
+      <p class="footer-note">Приложение продолжает работать в системном трее после закрытия окна.</p>
     </section>
 
-    <!-- ===================== SETTINGS ===================== -->
-    <section class="view" id="viewSettings" hidden>
+    <!-- ===================== DESIGN (обои) ===================== -->
+    <section class="view" id="viewDesign" hidden>
       <section class="monitor-bar" id="monitorBar" hidden>
         <div class="monmap" id="monMap"></div>
         <div class="mon-label" id="monLabel"></div>
@@ -105,13 +110,6 @@
         </div>
         <div class="row">
           <div class="row-text">
-            <div class="row-title">Автозапуск с Windows</div>
-            <div class="row-sub">Запускать приложение в фоне (в трее) при входе в систему</div>
-          </div>
-          <button class="gtkswitch" id="swStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
-        </div>
-        <div class="row">
-          <div class="row-text">
             <div class="row-title">Расположение</div>
             <div class="row-sub">Как изображение размещается на рабочем столе</div>
           </div>
@@ -125,6 +123,28 @@
               <option value="span">Развернуть на все мониторы</option>
             </select>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== PREFS (настройки приложения) ===================== -->
+    <section class="view" id="viewPrefs" hidden>
+      <h2 class="group-title">Настройки приложения</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title">Автозапуск с Windows</div>
+            <div class="row-sub">Запускать приложение в фоне (в трее) при входе в систему</div>
+          </div>
+          <button class="gtkswitch" id="swStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+      </div>
+
+      <h2 class="group-title">О программе</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text"><div class="row-title">Lumina</div><div class="row-sub">Автосмена обоев при переключении темы Windows</div></div>
+          <div class="status-val" id="appVersion">—</div>
         </div>
       </div>
 

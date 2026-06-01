@@ -171,6 +171,8 @@ body {
   background: var(--card);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
+.tb-right { display: flex; align-items: center; -webkit-app-region: no-drag; app-region: no-drag; }
+.tb-btn.active { background: var(--btn-bg); color: var(--accent); }
 
 /* ---------- Views ---------- */
 .view[hidden] { display: none; }

@@ -231,15 +231,18 @@ async function renderConfig() {
 // Page navigation (Home / Settings)
 // ---------------------------------------------------------------------------
 function showPage(name) {
-  document.querySelectorAll('.view').forEach((v) => {
-    v.hidden = v.id !== (name === 'settings' ? 'viewSettings' : 'viewHome');
-  });
+  const views = { home: 'viewHome', design: 'viewDesign', prefs: 'viewPrefs' };
+  const target = views[name] || 'viewHome';
+  document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== target; });
   document.querySelectorAll('.navbtn').forEach((b) => {
     b.classList.toggle('active', b.dataset.page === name);
   });
+  const gear = $('#btnPrefs');
+  if (gear) gear.classList.toggle('active', name === 'prefs');
+
   if (name === 'home') {
     renderHome();
-  } else {
+  } else if (name === 'design') {
     renderPreviews();   // reflect current config
     layoutMonitors();   // stages just became visible — refit thumbnails
   }
@@ -304,6 +307,7 @@ async function init() {
   document.querySelectorAll('.navbtn').forEach((b) => {
     b.addEventListener('click', () => showPage(b.dataset.page));
   });
+  $('#btnPrefs').addEventListener('click', () => showPage('prefs'));
 
   // ---- home: apply current theme now ----
   $('#btnApplyNow').addEventListener('click', async () => {
