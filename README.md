@@ -1,4 +1,4 @@
-# Adwaita Wallpaper
+# Lumina
 
 Лёгкое приложение для Windows, которое **автоматически меняет обои рабочего стола при переключении светлой/тёмной темы Windows**. Оформление — в стиле GNOME Adwaita (как в свежей Fedora).
 
@@ -17,7 +17,7 @@
   «Настройки → Персонализация → Цвета → Выбор режима»).
 - Обои ставятся напрямую через Windows API (`SystemParametersInfo`, вызываемый из
   PowerShell P/Invoke) — без сторонних бинарников.
-- Настройки хранятся в `%APPDATA%\adwaita-wallpaper\config.json`.
+- Настройки хранятся в `%APPDATA%\lumina\config.json`.
 
 ## Запуск из исходников
 
@@ -32,7 +32,7 @@ npm start
 npm run dist
 ```
 
-Готовый установщик появится в папке `dist/` (`Adwaita Wallpaper Setup x.x.x.exe`).
+Готовый установщик появится в папке `dist/` (`Lumina Setup x.x.x.exe`).
 
 ## Структура
 

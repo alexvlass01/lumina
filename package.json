@@ -1,7 +1,7 @@
 {
-  "name": "adwaita-wallpaper",
+  "name": "lumina",
   "version": "1.0.0",
-  "description": "Автоматическая смена обоев при переключении светлой/тёмной темы Windows — в стиле GNOME Adwaita.",
+  "description": "Lumina — автоматическая смена обоев при переключении светлой/тёмной темы Windows. Интерфейс в стиле GNOME Adwaita.",
   "main": "main.js",
   "author": "alexv",
   "license": "MIT",
@@ -10,8 +10,8 @@
     "dist": "electron-builder --win"
   },
   "build": {
-    "appId": "com.alexv.adwaitawallpaper",
-    "productName": "Adwaita Wallpaper",
+    "appId": "com.alexv.lumina",
+    "productName": "Lumina",
     "files": [
       "main.js",
       "preload.js",
@@ -35,7 +35,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Adwaita Wallpaper"
+      "shortcutName": "Lumina"
     }
   },
   "devDependencies": {

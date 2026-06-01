@@ -155,7 +155,7 @@ function createWindow() {
     minWidth: 780,
     minHeight: 560,
     show: false,
-    title: 'Adwaita Wallpaper',
+    title: 'Lumina',
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarOverlayColors(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#242424' : '#fafafa',
@@ -198,7 +198,7 @@ function showWindow() {
 // ---------------------------------------------------------------------------
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
-    { label: 'Открыть Adwaita Wallpaper', click: () => showWindow() },
+    { label: 'Открыть Lumina', click: () => showWindow() },
     { type: 'separator' },
     {
       label: 'Применить дневные обои',
@@ -246,7 +246,7 @@ function refreshTray() {
 function createTray() {
   const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
   tray = new Tray(img);
-  tray.setToolTip('Adwaita Wallpaper');
+  tray.setToolTip('Lumina');
   refreshTray();
   tray.on('click', () => showWindow());
   tray.on('double-click', () => showWindow());
