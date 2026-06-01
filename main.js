@@ -386,30 +386,7 @@ function showWindow() {
 function buildTrayMenu() {
   return Menu.buildFromTemplate([
     { label: tMain('tray.open'), click: () => showWindow() },
-    { type: 'separator' },
-    { label: tMain('tray.applyLight'), click: () => applyForTheme('light') },
-    { label: tMain('tray.applyDark'), click: () => applyForTheme('dark') },
     { label: tMain('tray.applyCurrent'), click: () => applyForTheme() },
-    { type: 'separator' },
-    {
-      label: tMain('tray.autoSwitch'),
-      type: 'checkbox',
-      checked: config.autoSwitch,
-      click: (item) => {
-        config.autoSwitch = item.checked;
-        saveConfig();
-        broadcastConfig();
-      },
-    },
-    {
-      label: tMain('tray.autostart'),
-      type: 'checkbox',
-      checked: config.autostart,
-      click: (item) => {
-        setAutostart(item.checked);
-        broadcastConfig();
-      },
-    },
     { type: 'separator' },
     { label: tMain('tray.quit'), click: () => { app.isQuitting = true; app.quit(); } },
   ]);

@@ -12,8 +12,8 @@ Thumbs.db
 desktop.ini
 .DS_Store
 
-# Local Claude Code settings (machine-specific permissions)
-.claude/settings.local.json
+# Claude Code working files (kept local, not published)
+.claude/
 
 # Internal context notes for Claude (kept local, not published)
 CLAUDE.md
