@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -154,6 +154,22 @@ async function applyForTheme(themeName) {
 // ---------------------------------------------------------------------------
 // Window
 // ---------------------------------------------------------------------------
+// Info about all monitors (multi-monitor ready). The renderer currently uses the
+// primary display's aspect ratio for previews; the array is here so per-monitor
+// previews can be added later without changing the IPC surface.
+function listDisplays() {
+  const primary = screen.getPrimaryDisplay();
+  return screen.getAllDisplays().map((d) => ({
+    id: d.id,
+    width: d.bounds.width,
+    height: d.bounds.height,
+    scaleFactor: d.scaleFactor,
+    rotation: d.rotation,
+    internal: d.internal,
+    isPrimary: d.id === primary.id,
+  }));
+}
+
 const TITLEBAR_HEIGHT = 44;
 
 function titleBarOverlayColors() {
@@ -305,6 +321,8 @@ ipcMain.handle('get-config', () => config);
 
 ipcMain.handle('get-version', () => app.getVersion());
 
+ipcMain.handle('get-displays', () => listDisplays());
+
 ipcMain.handle('get-theme', () => currentThemeName());
 
 ipcMain.handle('set-config', (e, patch) => {
@@ -370,6 +388,15 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+
+  // notify UI when monitors change (added/removed/resolution change) — multi-monitor ready
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
+    screen.on(ev, () => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('displays-changed', listDisplays());
+      }
+    });
+  }
 
   nativeTheme.on('updated', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {

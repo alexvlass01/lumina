@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   getVersion: () => ipcRenderer.invoke('get-version'),
+  getDisplays: () => ipcRenderer.invoke('get-displays'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
   pickImage: (which) => ipcRenderer.invoke('pick-image', which),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
@@ -15,4 +16,5 @@ contextBridge.exposeInMainWorld('api', {
 
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
+  onDisplays: (cb) => ipcRenderer.on('displays-changed', (_e, d) => cb(d)),
 });

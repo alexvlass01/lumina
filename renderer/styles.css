@@ -218,11 +218,12 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
 
 .preview {
   position: relative;
-  aspect-ratio: 16 / 9;
+  aspect-ratio: var(--monitor-aspect, 16 / 9);
   border-radius: 10px;
-  background: var(--preview-bg);
+  background-color: var(--preview-bg);
   background-size: cover;
   background-position: center;
+  background-repeat: no-repeat;
   overflow: hidden;
   display: flex; align-items: center; justify-content: center;
   border: 1px solid var(--card-border);
