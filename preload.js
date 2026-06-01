@@ -6,9 +6,10 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   getVersion: () => ipcRenderer.invoke('get-version'),
-  getDisplays: () => ipcRenderer.invoke('get-displays'),
+  getMonitors: () => ipcRenderer.invoke('get-monitors'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
-  pickImage: (which) => ipcRenderer.invoke('pick-image', which),
+  pickImage: (which, monitorId) => ipcRenderer.invoke('pick-image', which, monitorId),
+  setMonitorWallpaper: (monitorId, which, path) => ipcRenderer.invoke('set-monitor-wallpaper', monitorId, which, path),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
@@ -16,5 +17,5 @@ contextBridge.exposeInMainWorld('api', {
 
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
-  onDisplays: (cb) => ipcRenderer.on('displays-changed', (_e, d) => cb(d)),
+  onMonitors: (cb) => ipcRenderer.on('monitors-changed', (_e, d) => cb(d)),
 });

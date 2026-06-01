@@ -3,24 +3,29 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', autoSwitch: true, style: 'fill', autostart: false };
+  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false };
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
     getVersion: async () => '1.0.0',
-    getDisplays: async () => [
-      { id: 1, width: 1920, height: 1080, scaleFactor: 1, rotation: 0, isPrimary: true },
-      { id: 2, width: 960, height: 1536, scaleFactor: 1.25, rotation: 90, isPrimary: false },
+    getMonitors: async () => [
+      { id: 'MON-1', x: 0, y: 0, w: 1920, h: 1080, primary: true },
+      { id: 'MON-2', x: 1920, y: -440, w: 1200, h: 1920, primary: false },
     ],
     getTheme: async () => 'light',
     pickImage: async () => null,
+    setMonitorWallpaper: async (id, which, path) => {
+      if (!mock.monitors[id]) mock.monitors[id] = { light: '', dark: '' };
+      mock.monitors[id][which === 'dark' ? 'dark' : 'light'] = path;
+      return mock;
+    },
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
     setAutostart: async (v) => (mock.autostart = v),
     fileUrl: async (p) => p,
     quitApp: () => {},
     onTheme: () => {},
     onConfig: () => {},
-    onDisplays: () => {},
+    onMonitors: () => {},
   };
 }
 
@@ -42,10 +47,91 @@ function toast(msg) {
 }
 
 // ---------------------------------------------------------------------------
-// Rendering
+// Monitors (from IDesktopWallpaper). Each: { id, x, y, w, h, primary }.
+// The selected monitor is the one being configured + previewed.
 // ---------------------------------------------------------------------------
-// How each wallpaper "style" maps to a CSS preview, so the preview shows roughly
-// how the image will actually sit on the desktop.
+let monitorList = [];
+let selectedMonitorId = null;
+let monitorAspect = 16 / 9;
+
+function selectedMonitor() {
+  return monitorList.find((m) => m.id === selectedMonitorId) || null;
+}
+
+function applySelectedAspect() {
+  const m = selectedMonitor();
+  monitorAspect = m && m.h ? m.w / m.h : 16 / 9;
+  layoutMonitors();
+}
+
+function setMonitors(list) {
+  monitorList = Array.isArray(list) && list.length ? list : [];
+  if (!monitorList.find((m) => m.id === selectedMonitorId)) {
+    const primary = monitorList.find((m) => m.primary) || monitorList[0];
+    selectedMonitorId = primary ? primary.id : null;
+  }
+  applySelectedAspect();
+  buildMonitorMap();
+  renderPreviews();
+}
+
+function fmtResolution(m) {
+  let s = `${m.w}×${m.h}`;
+  if (m.w < m.h) s += ' · вертикальный';
+  return s;
+}
+
+function updateMonLabel() {
+  const el = $('#monLabel');
+  if (!el) return;
+  const m = selectedMonitor();
+  if (!m) { el.textContent = ''; return; }
+  const idx = monitorList.findIndex((x) => x.id === m.id) + 1;
+  el.textContent = `Монитор ${idx} · ${fmtResolution(m)}` + (m.primary ? ' (основной)' : '');
+}
+
+function selectMonitor(m) {
+  selectedMonitorId = m.id;
+  applySelectedAspect();
+  document.querySelectorAll('.monchip').forEach((c) => {
+    c.classList.toggle('sel', c.dataset.id === selectedMonitorId);
+  });
+  updateMonLabel();
+  renderPreviews();
+}
+
+// Build the monitor map (shown only when there is more than one monitor).
+function buildMonitorMap() {
+  const bar = $('#monitorBar');
+  const map = $('#monMap');
+  if (!bar || !map) return;
+  if (monitorList.length < 2) { bar.hidden = true; map.innerHTML = ''; updateMonLabel(); return; }
+  bar.hidden = false;
+
+  const MAX_H = 92, MAX_W = 156;
+  const maxH = Math.max(...monitorList.map((m) => m.h));
+  const maxW = Math.max(...monitorList.map((m) => m.w));
+  const scale = Math.min(MAX_H / maxH, MAX_W / maxW);
+
+  map.innerHTML = '';
+  monitorList.forEach((m, i) => {
+    const chip = document.createElement('button');
+    chip.className = 'monchip' + (m.id === selectedMonitorId ? ' sel' : '');
+    chip.dataset.id = m.id;
+    chip.style.width = Math.max(22, Math.round(m.w * scale)) + 'px';
+    chip.style.height = Math.max(22, Math.round(m.h * scale)) + 'px';
+    chip.title = `Монитор ${i + 1}: ${fmtResolution(m)}` + (m.primary ? ' (основной)' : '');
+    chip.innerHTML = `<span class="mnum">${i + 1}</span>`;
+    chip.addEventListener('click', () => selectMonitor(m));
+    map.appendChild(chip);
+  });
+  updateMonLabel();
+}
+
+// ---------------------------------------------------------------------------
+// Preview rendering
+// ---------------------------------------------------------------------------
+// How each wallpaper "style" maps to a CSS preview.
 const STYLE_CSS = {
   fill:    { size: 'cover',     repeat: 'no-repeat', position: 'center' },
   fit:     { size: 'contain',   repeat: 'no-repeat', position: 'center' },
@@ -65,96 +151,8 @@ function applyPreviewStyle() {
   });
 }
 
-// Monitors + which one drives the preview aspect ratio.
-// (Wallpapers are currently applied to all monitors equally; the map only
-//  controls which monitor's shape the preview mimics. Per-monitor wallpapers
-//  are a future step via the IDesktopWallpaper COM API.)
-let monitorAspect = 16 / 9;
-let displaysCache = [];
-let selectedDisplayId = null;
-
-function selectedDisplay() {
-  return displaysCache.find((d) => d.id === selectedDisplayId) || null;
-}
-
-function applySelectedAspect() {
-  const d = selectedDisplay();
-  monitorAspect = d && d.height ? d.width / d.height : 16 / 9;
-  layoutMonitors();
-}
-
-function setDisplays(displays) {
-  displaysCache = Array.isArray(displays) && displays.length ? displays : [];
-  if (!displaysCache.find((d) => d.id === selectedDisplayId)) {
-    const primary = displaysCache.find((d) => d.isPrimary) || displaysCache[0];
-    selectedDisplayId = primary ? primary.id : null;
-  }
-  applySelectedAspect();
-  buildMonitorMap();
-}
-
-// Human-readable resolution: physical pixels (logical × scale) + scale % + rotation.
-function fmtResolution(d) {
-  const scale = d.scaleFactor || 1;
-  const pw = Math.round(d.width * scale);
-  const ph = Math.round(d.height * scale);
-  let s = `${pw}×${ph}`;
-  const extras = [];
-  if (Math.round(scale * 100) !== 100) extras.push(`${Math.round(scale * 100)}%`);
-  if (d.rotation === 90 || d.rotation === 270) extras.push('повёрнут');
-  if (extras.length) s += ' · ' + extras.join(' · ');
-  return s;
-}
-
-function updateMonLabel() {
-  const el = $('#monLabel');
-  if (!el) return;
-  const d = selectedDisplay();
-  if (!d) { el.textContent = ''; return; }
-  const idx = displaysCache.findIndex((x) => x.id === d.id) + 1;
-  el.textContent = `Превью для: Монитор ${idx} · ${fmtResolution(d)}` + (d.isPrimary ? ' (основной)' : '');
-}
-
-function selectDisplay(d) {
-  selectedDisplayId = d.id;
-  applySelectedAspect();
-  document.querySelectorAll('.monchip').forEach((c) => {
-    c.classList.toggle('sel', Number(c.dataset.id) === selectedDisplayId);
-  });
-  updateMonLabel();
-}
-
-// Build the monitor map (only shown when there is more than one monitor).
-function buildMonitorMap() {
-  const bar = $('#monitorBar');
-  const map = $('#monMap');
-  if (!bar || !map) return;
-  if (displaysCache.length < 2) { bar.hidden = true; map.innerHTML = ''; return; }
-  bar.hidden = false;
-
-  const MAX_H = 92, MAX_W = 156;
-  const maxH = Math.max(...displaysCache.map((d) => d.height));
-  const maxW = Math.max(...displaysCache.map((d) => d.width));
-  const scale = Math.min(MAX_H / maxH, MAX_W / maxW);
-
-  map.innerHTML = '';
-  displaysCache.forEach((d, i) => {
-    const chip = document.createElement('button');
-    chip.className = 'monchip' + (d.id === selectedDisplayId ? ' sel' : '');
-    chip.dataset.id = String(d.id);
-    chip.style.width = Math.max(22, Math.round(d.width * scale)) + 'px';
-    chip.style.height = Math.max(22, Math.round(d.height * scale)) + 'px';
-    chip.title = `Монитор ${i + 1}: ${fmtResolution(d)}` + (d.isPrimary ? ' (основной)' : '');
-    chip.innerHTML = `<span class="mnum">${i + 1}</span>`;
-    chip.addEventListener('click', () => selectDisplay(d));
-    map.appendChild(chip);
-  });
-  updateMonLabel();
-}
-
-// Size each monitor thumbnail to fit ("contain") inside its fixed-size stage,
-// preserving the real monitor aspect ratio for any orientation.
-const STAGE_PADDING = 20; // 10px padding on each side (see .stage)
+// Size each monitor thumbnail to fit ("contain") inside its fixed-size stage.
+const STAGE_PADDING = 20; // 10px padding each side (see .stage)
 function layoutMonitors() {
   document.querySelectorAll('.stage').forEach((stage) => {
     const W = stage.clientWidth - STAGE_PADDING;
@@ -171,6 +169,14 @@ function layoutMonitors() {
   });
 }
 
+// Wallpaper path for the selected monitor + theme (own pick, or global fallback).
+function wallpaperFor(theme) {
+  const mon = config.monitors && config.monitors[selectedMonitorId];
+  const per = mon ? mon[theme] : '';
+  const fb = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
+  return per || fb || '';
+}
+
 async function setPreview(which, filePath) {
   const el = which === 'dark' ? $('#previewDark') : $('#previewLight');
   if (filePath) {
@@ -179,9 +185,15 @@ async function setPreview(which, filePath) {
     el.innerHTML = '';
   } else {
     el.style.backgroundImage = '';
-    el.innerHTML = '<div class="preview-empty">Изображение не выбрано</div>';
+    el.innerHTML = '<span class="preview-empty">Не выбрано</span>';
   }
   applyPreviewStyle();
+}
+
+async function renderPreviews() {
+  if (!config) return;
+  await setPreview('light', wallpaperFor('light'));
+  await setPreview('dark', wallpaperFor('dark'));
 }
 
 function applyThemeToUI(theme) {
@@ -192,7 +204,6 @@ function applyThemeToUI(theme) {
   $('#heroIcon').textContent = isDark ? '🌙' : '☀️';
   $('#heroSub').textContent = isDark ? 'Тёмная (ночная)' : 'Светлая (дневная)';
 
-  // highlight the active card
   document.querySelectorAll('.wallcard').forEach((c) => {
     c.style.outline = c.dataset.theme === theme ? '2px solid var(--accent)' : 'none';
     c.style.outlineOffset = '1px';
@@ -204,8 +215,7 @@ function setSwitch(el, on) {
 }
 
 async function renderConfig() {
-  await setPreview('light', config.lightWallpaper);
-  await setPreview('dark', config.darkWallpaper);
+  await renderPreviews();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
   $('#selStyle').value = config.style || 'fill';
@@ -218,7 +228,7 @@ async function init() {
   config = await window.api.getConfig();
   currentTheme = await window.api.getTheme();
   applyThemeToUI(currentTheme);
-  setDisplays(await window.api.getDisplays());
+  setMonitors(await window.api.getMonitors());
   await renderConfig();
 
   window.api.getVersion().then((v) => {
@@ -228,7 +238,6 @@ async function init() {
   // ---- title bar menu (hamburger) ----
   const menu = $('#menuPopover');
   const btnMenu = $('#btnMenu');
-
   function closeMenu() { menu.hidden = true; }
   function toggleMenu() { menu.hidden = !menu.hidden; }
 
@@ -253,18 +262,16 @@ async function init() {
     });
   });
 
-  // pick image
+  // pick image for the SELECTED monitor
   document.querySelectorAll('[data-pick]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const which = btn.dataset.pick;
-      const file = await window.api.pickImage(which);
+      const file = await window.api.pickImage(which, selectedMonitorId);
       if (!file) return;
-      const key = which === 'dark' ? 'darkWallpaper' : 'lightWallpaper';
-      config = await window.api.setConfig({ [key]: file });
+      config = await window.api.setMonitorWallpaper(selectedMonitorId, which, file);
       await setPreview(which, file);
       toast(which === 'dark' ? 'Ночные обои выбраны' : 'Дневные обои выбраны');
 
-      // if this theme is active, apply immediately
       if (which === currentTheme) {
         const res = await window.api.applyNow(which);
         if (res.ok) toast('Обои применены');
@@ -287,10 +294,10 @@ async function init() {
     toast(on ? 'Автозапуск включён' : 'Автозапуск выключен');
   });
 
-  // style select — applies live to the current theme's wallpaper
+  // style select — applies live
   $('#selStyle').addEventListener('change', async (e) => {
     config = await window.api.setConfig({ style: e.target.value });
-    applyPreviewStyle(); // обновляем превью под новый режим
+    applyPreviewStyle();
     const res = await window.api.applyNow();
     if (res.ok) toast('Расположение обновлено');
   });
@@ -306,8 +313,8 @@ async function init() {
     renderConfig();
   });
 
-  window.api.onDisplays((displays) => {
-    setDisplays(displays);
+  window.api.onMonitors((list) => {
+    setMonitors(list);
   });
 
   // keep thumbnails fitted when the window (and thus cards) resize
