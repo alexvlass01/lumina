@@ -62,12 +62,33 @@ function applyPreviewStyle() {
   });
 }
 
-// Make the preview frames match the (primary) monitor's aspect ratio.
+// Aspect ratio of the (primary) monitor; previews are shaped to match it.
+let monitorAspect = 16 / 9;
+
 function applyMonitorAspect(displays) {
   const list = Array.isArray(displays) && displays.length ? displays : null;
   const primary = list ? (list.find((d) => d.isPrimary) || list[0]) : null;
-  const ratio = primary && primary.height ? primary.width / primary.height : 16 / 9;
-  document.documentElement.style.setProperty('--monitor-aspect', String(ratio));
+  monitorAspect = primary && primary.height ? primary.width / primary.height : 16 / 9;
+  layoutMonitors();
+}
+
+// Size each monitor thumbnail to fit ("contain") inside its fixed-size stage,
+// preserving the real monitor aspect ratio for any orientation.
+const STAGE_PADDING = 20; // 10px padding on each side (see .stage)
+function layoutMonitors() {
+  document.querySelectorAll('.stage').forEach((stage) => {
+    const W = stage.clientWidth - STAGE_PADDING;
+    const H = stage.clientHeight - STAGE_PADDING;
+    if (W <= 0 || H <= 0) return;
+    let tw = W;
+    let th = W / monitorAspect;
+    if (th > H) { th = H; tw = H * monitorAspect; }
+    const mon = stage.querySelector('.monitor');
+    if (mon) {
+      mon.style.width = Math.round(tw) + 'px';
+      mon.style.height = Math.round(th) + 'px';
+    }
+  });
 }
 
 async function setPreview(which, filePath) {
@@ -207,6 +228,13 @@ async function init() {
 
   window.api.onDisplays((displays) => {
     applyMonitorAspect(displays);
+  });
+
+  // keep thumbnails fitted when the window (and thus cards) resize
+  let resizeT = null;
+  window.addEventListener('resize', () => {
+    clearTimeout(resizeT);
+    resizeT = setTimeout(layoutMonitors, 60);
   });
 }
 
