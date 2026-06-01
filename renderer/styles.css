@@ -184,6 +184,43 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
 .hero-title { font-size: 13px; color: var(--text-dim); }
 .hero-sub { font-size: 18px; font-weight: 700; margin-top: 2px; }
 
+/* ---------- Monitor map ---------- */
+.monitor-bar { margin-bottom: 24px; }
+.monitor-bar[hidden] { display: none; }
+.monmap {
+  display: flex;
+  gap: 14px;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 18px;
+  border-radius: 14px;
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow);
+}
+.monchip {
+  position: relative;
+  padding: 0;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  background: linear-gradient(135deg, #5b6b8c, #39435f);
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: outline-color 0.12s ease;
+}
+.monchip:hover { outline-color: var(--card-border); }
+.monchip.sel { outline-color: var(--accent); }
+.monchip .mnum {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 20px; font-weight: 800; color: #fff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+.mon-label { text-align: center; font-size: 13px; font-weight: 600; color: var(--text); margin-top: 12px; }
+.mon-note { text-align: center; font-size: 12px; color: var(--text-dim); margin-top: 3px; }
+
 /* ---------- Group title ---------- */
 .group-title {
   font-size: 15px;

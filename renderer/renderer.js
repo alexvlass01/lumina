@@ -8,7 +8,10 @@ if (!window.api) {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
     getVersion: async () => '1.0.0',
-    getDisplays: async () => [{ id: 1, width: 1920, height: 1080, scaleFactor: 1, isPrimary: true }],
+    getDisplays: async () => [
+      { id: 1, width: 1920, height: 1080, scaleFactor: 1, isPrimary: true },
+      { id: 2, width: 960, height: 1536, scaleFactor: 1, isPrimary: false },
+    ],
     getTheme: async () => 'light',
     pickImage: async () => null,
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
@@ -62,14 +65,78 @@ function applyPreviewStyle() {
   });
 }
 
-// Aspect ratio of the (primary) monitor; previews are shaped to match it.
+// Monitors + which one drives the preview aspect ratio.
+// (Wallpapers are currently applied to all monitors equally; the map only
+//  controls which monitor's shape the preview mimics. Per-monitor wallpapers
+//  are a future step via the IDesktopWallpaper COM API.)
 let monitorAspect = 16 / 9;
+let displaysCache = [];
+let selectedDisplayId = null;
 
-function applyMonitorAspect(displays) {
-  const list = Array.isArray(displays) && displays.length ? displays : null;
-  const primary = list ? (list.find((d) => d.isPrimary) || list[0]) : null;
-  monitorAspect = primary && primary.height ? primary.width / primary.height : 16 / 9;
+function selectedDisplay() {
+  return displaysCache.find((d) => d.id === selectedDisplayId) || null;
+}
+
+function applySelectedAspect() {
+  const d = selectedDisplay();
+  monitorAspect = d && d.height ? d.width / d.height : 16 / 9;
   layoutMonitors();
+}
+
+function setDisplays(displays) {
+  displaysCache = Array.isArray(displays) && displays.length ? displays : [];
+  if (!displaysCache.find((d) => d.id === selectedDisplayId)) {
+    const primary = displaysCache.find((d) => d.isPrimary) || displaysCache[0];
+    selectedDisplayId = primary ? primary.id : null;
+  }
+  applySelectedAspect();
+  buildMonitorMap();
+}
+
+function updateMonLabel() {
+  const el = $('#monLabel');
+  if (!el) return;
+  const d = selectedDisplay();
+  if (!d) { el.textContent = ''; return; }
+  const idx = displaysCache.findIndex((x) => x.id === d.id) + 1;
+  el.textContent = `Превью для: Монитор ${idx} · ${d.width}×${d.height}` + (d.isPrimary ? ' (основной)' : '');
+}
+
+function selectDisplay(d) {
+  selectedDisplayId = d.id;
+  applySelectedAspect();
+  document.querySelectorAll('.monchip').forEach((c) => {
+    c.classList.toggle('sel', Number(c.dataset.id) === selectedDisplayId);
+  });
+  updateMonLabel();
+}
+
+// Build the monitor map (only shown when there is more than one monitor).
+function buildMonitorMap() {
+  const bar = $('#monitorBar');
+  const map = $('#monMap');
+  if (!bar || !map) return;
+  if (displaysCache.length < 2) { bar.hidden = true; map.innerHTML = ''; return; }
+  bar.hidden = false;
+
+  const MAX_H = 92, MAX_W = 156;
+  const maxH = Math.max(...displaysCache.map((d) => d.height));
+  const maxW = Math.max(...displaysCache.map((d) => d.width));
+  const scale = Math.min(MAX_H / maxH, MAX_W / maxW);
+
+  map.innerHTML = '';
+  displaysCache.forEach((d, i) => {
+    const chip = document.createElement('button');
+    chip.className = 'monchip' + (d.id === selectedDisplayId ? ' sel' : '');
+    chip.dataset.id = String(d.id);
+    chip.style.width = Math.max(22, Math.round(d.width * scale)) + 'px';
+    chip.style.height = Math.max(22, Math.round(d.height * scale)) + 'px';
+    chip.title = `Монитор ${i + 1}: ${d.width}×${d.height}` + (d.isPrimary ? ' (основной)' : '');
+    chip.innerHTML = `<span class="mnum">${i + 1}</span>`;
+    chip.addEventListener('click', () => selectDisplay(d));
+    map.appendChild(chip);
+  });
+  updateMonLabel();
 }
 
 // Size each monitor thumbnail to fit ("contain") inside its fixed-size stage,
@@ -138,7 +205,7 @@ async function init() {
   config = await window.api.getConfig();
   currentTheme = await window.api.getTheme();
   applyThemeToUI(currentTheme);
-  applyMonitorAspect(await window.api.getDisplays());
+  setDisplays(await window.api.getDisplays());
   await renderConfig();
 
   window.api.getVersion().then((v) => {
@@ -227,7 +294,7 @@ async function init() {
   });
 
   window.api.onDisplays((displays) => {
-    applyMonitorAspect(displays);
+    setDisplays(displays);
   });
 
   // keep thumbnails fitted when the window (and thus cards) resize
