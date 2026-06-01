@@ -42,6 +42,15 @@
     "styleTitle": "Розташування",
     "styleSub": "Як зображення розміщується на робочому столі"
   },
+  "theme": {
+    "group": "Тема Windows",
+    "modeTitle": "Перемикати тему за розкладом",
+    "modeSub": "Lumina сама вмикатиме світлу/темну тему в заданий час",
+    "modeOff": "Вимк.",
+    "modeTime": "За часом",
+    "lightStart": "Світла тема з",
+    "darkStart": "Темна тема з"
+  },
   "style": {
     "fill": "Заповнення",
     "fit": "Вписати",
@@ -65,7 +74,9 @@
     "startupOff": "Автозапуск вимкнено",
     "styleUpdated": "Розташування оновлено",
     "themeDark": "Windows перейшов на темну тему",
-    "themeLight": "Windows перейшов на світлу тему"
+    "themeLight": "Windows перейшов на світлу тему",
+    "scheduleOn": "Розклад теми ввімкнено",
+    "scheduleOff": "Розклад теми вимкнено"
   },
   "tray": {
     "open": "Відкрити Lumina",

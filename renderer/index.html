@@ -125,6 +125,32 @@
           </div>
         </div>
       </div>
+
+      <h2 class="group-title" data-i18n="theme.group">Тема Windows</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="theme.modeTitle">Переключать тему по расписанию</div>
+            <div class="row-sub" data-i18n="theme.modeSub">Lumina сама включит светлую/тёмную тему в заданное время</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selThemeMode">
+              <option value="off" data-i18n="theme.modeOff">Выкл.</option>
+              <option value="time" data-i18n="theme.modeTime">По времени</option>
+            </select>
+          </div>
+        </div>
+        <div id="themeTimes" hidden>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="theme.lightStart">Светлая тема с</div></div>
+            <input type="time" id="lightStart" class="time-input" value="07:00" />
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="theme.darkStart">Тёмная тема с</div></div>
+            <input type="time" id="darkStart" class="time-input" value="20:00" />
+          </div>
+        </div>
+      </div>
     </section>
 
     <!-- ===================== PREFS (настройки приложения) ===================== -->

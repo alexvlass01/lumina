@@ -438,6 +438,19 @@ select option {
   background: var(--card);
   color: var(--text);
 }
+.time-input {
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--btn-bg);
+  border: none;
+  border-radius: 9px;
+  padding: 7px 12px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.time-input:hover { background: var(--btn-bg-hover); }
 .select-wrap::after {
   content: "";
   position: absolute;

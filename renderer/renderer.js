@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system' };
+  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00' } };
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
@@ -235,7 +235,9 @@ async function setPreview(which, filePath) {
   const el = which === 'dark' ? $('#previewDark') : $('#previewLight');
   if (filePath) {
     const url = await window.api.fileUrl(filePath);
-    el.style.backgroundImage = `url("${url}")`;
+    // cache-bust: stored file may reuse the same name (monitor+theme+ext) → same
+    // file:// URL would show a stale cached image. ?v= forces a fresh load.
+    el.style.backgroundImage = `url("${url}?v=${Date.now()}")`;
     el.innerHTML = '';
   } else {
     el.style.backgroundImage = '';
@@ -268,11 +270,21 @@ function setSwitch(el, on) {
   el.setAttribute('aria-checked', on ? 'true' : 'false');
 }
 
+function renderThemeSchedule() {
+  const sch = (config && config.themeSchedule) || { mode: 'off', lightStart: '07:00', darkStart: '20:00' };
+  const sel = $('#selThemeMode');
+  if (sel) sel.value = sch.mode || 'off';
+  if ($('#lightStart')) $('#lightStart').value = sch.lightStart || '07:00';
+  if ($('#darkStart')) $('#darkStart').value = sch.darkStart || '20:00';
+  if ($('#themeTimes')) $('#themeTimes').hidden = (sch.mode !== 'time');
+}
+
 async function renderConfig() {
   await renderPreviews();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
   $('#selStyle').value = config.style || 'fill';
+  renderThemeSchedule();
 }
 
 // ---------------------------------------------------------------------------
@@ -317,7 +329,7 @@ function renderHome() {
         const wp = wallpaperForMonitor(m.id, currentTheme);
         if (wp) {
           thumb.textContent = '';
-          window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}")`; });
+          window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}?v=${Date.now()}")`; });
         } else {
           thumb.classList.add('empty');
           thumb.textContent = t('home.noWallpaper');
@@ -419,6 +431,21 @@ async function init() {
     const res = await window.api.applyNow();
     if (res.ok) toast(t('toast.styleUpdated'));
   });
+
+  // theme schedule (Lumina switches the Windows theme itself)
+  async function saveThemeSchedule(announce) {
+    const sch = {
+      mode: $('#selThemeMode').value,
+      lightStart: $('#lightStart').value || '07:00',
+      darkStart: $('#darkStart').value || '20:00',
+    };
+    config = await window.api.setConfig({ themeSchedule: sch });
+    $('#themeTimes').hidden = (sch.mode !== 'time');
+    if (announce) toast(sch.mode === 'time' ? t('toast.scheduleOn') : t('toast.scheduleOff'));
+  }
+  $('#selThemeMode').addEventListener('change', () => saveThemeSchedule(true));
+  $('#lightStart').addEventListener('change', () => saveThemeSchedule(false));
+  $('#darkStart').addEventListener('change', () => saveThemeSchedule(false));
 
   // live updates from main process
   window.api.onTheme((theme) => {

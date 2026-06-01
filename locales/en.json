@@ -42,6 +42,15 @@
     "styleTitle": "Position",
     "styleSub": "How the image fits the desktop"
   },
+  "theme": {
+    "group": "Windows theme",
+    "modeTitle": "Switch theme on a schedule",
+    "modeSub": "Lumina will turn light/dark mode on at the chosen times",
+    "modeOff": "Off",
+    "modeTime": "By time",
+    "lightStart": "Light theme from",
+    "darkStart": "Dark theme from"
+  },
   "style": {
     "fill": "Fill",
     "fit": "Fit",
@@ -65,7 +74,9 @@
     "startupOff": "Autostart disabled",
     "styleUpdated": "Position updated",
     "themeDark": "Windows switched to dark theme",
-    "themeLight": "Windows switched to light theme"
+    "themeLight": "Windows switched to light theme",
+    "scheduleOn": "Theme schedule enabled",
+    "scheduleOff": "Theme schedule disabled"
   },
   "tray": {
     "open": "Open Lumina",

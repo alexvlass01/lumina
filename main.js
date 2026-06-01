@@ -58,6 +58,8 @@ const DEFAULT_CONFIG = {
   style: 'fill', // fill | fit | stretch | center | tile | span
   autostart: false,
   language: 'system', // 'system' | 'en' | 'ru' | 'uk'
+  // Lumina itself switching the Windows light/dark theme on a schedule
+  themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00' }, // mode: 'off' | 'time'
 };
 
 let config = { ...DEFAULT_CONFIG };
@@ -70,6 +72,10 @@ function loadConfig() {
     config = { ...DEFAULT_CONFIG };
   }
   if (!config.monitors || typeof config.monitors !== 'object') config.monitors = {};
+  config.themeSchedule = {
+    mode: 'off', lightStart: '07:00', darkStart: '20:00',
+    ...(config.themeSchedule && typeof config.themeSchedule === 'object' ? config.themeSchedule : {}),
+  };
 }
 
 function saveConfig() {
@@ -244,6 +250,98 @@ async function getMonitors() {
     monitorsCache = [];
   }
   return monitorsCache;
+}
+
+// ---------------------------------------------------------------------------
+// Theme schedule — Lumina itself switches the Windows light/dark theme by time.
+// ---------------------------------------------------------------------------
+const THEME_SCRIPT_PATH = path.join(app.getPath('userData'), 'set-theme.ps1');
+
+const THEME_SCRIPT = `param([int]$Light)
+$p='HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize'
+Set-ItemProperty -Path $p -Name AppsUseLightTheme -Value $Light -Type Dword -ErrorAction SilentlyContinue
+Set-ItemProperty -Path $p -Name SystemUsesLightTheme -Value $Light -Type Dword -ErrorAction SilentlyContinue
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class ThemeBcast {
+  [DllImport("user32.dll", CharSet = CharSet.Auto)]
+  public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, IntPtr wParam, string lParam, uint flags, uint timeout, out IntPtr result);
+}
+"@
+$r=[IntPtr]::Zero
+# HWND_BROADCAST=0xffff, WM_SETTINGCHANGE=0x1A, SMTO_ABORTIFHUNG=2
+[ThemeBcast]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [IntPtr]::Zero, "ImmersiveColorSet", 2, 200, [ref]$r) | Out-Null
+`;
+
+function ensureThemeScript() {
+  try {
+    fs.mkdirSync(path.dirname(THEME_SCRIPT_PATH), { recursive: true });
+    fs.writeFileSync(THEME_SCRIPT_PATH, THEME_SCRIPT, 'utf8');
+  } catch (err) {
+    console.error('Не удалось записать theme-скрипт:', err);
+  }
+}
+
+function setWindowsTheme(isDark) {
+  return new Promise((resolve, reject) => {
+    execFile(
+      'powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', THEME_SCRIPT_PATH, '-Light', isDark ? '0' : '1'],
+      { windowsHide: true },
+      (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr || err.message));
+        resolve();
+      }
+    );
+  });
+}
+
+let themeTimer = null;
+
+function parseHM(s) {
+  const [h, m] = String(s || '').split(':').map(Number);
+  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
+}
+
+// Should the theme be dark at the given time, per the schedule?
+function scheduledIsDark(date) {
+  const sch = config.themeSchedule || {};
+  const now = date.getHours() * 60 + date.getMinutes();
+  const ls = parseHM(sch.lightStart || '07:00');
+  const ds = parseHM(sch.darkStart || '20:00');
+  let isLight;
+  if (ls === ds) isLight = true;
+  else if (ls < ds) isLight = now >= ls && now < ds;     // light during the day
+  else isLight = now >= ls || now < ds;                   // light period wraps midnight
+  return !isLight;
+}
+
+function clearThemeTimer() {
+  if (themeTimer) { clearTimeout(themeTimer); themeTimer = null; }
+}
+
+function scheduleNextThemeFlip() {
+  const sch = config.themeSchedule || {};
+  if (sch.mode !== 'time') return;
+  const now = new Date();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const boundaries = [parseHM(sch.lightStart || '07:00'), parseHM(sch.darkStart || '20:00')];
+  const minsUntil = boundaries.map((b) => { let d = b - nowMin; if (d <= 0) d += 1440; return d; });
+  const mins = Math.max(1, Math.min(...minsUntil));
+  themeTimer = setTimeout(() => applyThemeSchedule(), mins * 60000 + 3000);
+}
+
+// Apply the scheduled theme now (if mode = time) and schedule the next flip.
+function applyThemeSchedule() {
+  clearThemeTimer();
+  const sch = config.themeSchedule || {};
+  if (sch.mode !== 'time') return; // 'off' — Lumina does not drive the theme
+  const wantDark = scheduledIsDark(new Date());
+  if (wantDark !== nativeTheme.shouldUseDarkColors) {
+    setWindowsTheme(wantDark).catch((e) => console.error('Не удалось сменить тему Windows:', e));
+  }
+  scheduleNextThemeFlip();
 }
 
 function setWallpaper(imagePath) {
@@ -460,6 +558,7 @@ ipcMain.handle('set-config', (e, patch) => {
   config = { ...config, ...patch };
   saveConfig();
   refreshTray();
+  if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   return config;
 });
 
@@ -527,6 +626,7 @@ app.whenReady().then(async () => {
   loadConfig();
   ensurePsScript();
   ensureComScript();
+  ensureThemeScript();
 
   // sync autostart state with OS
   const login = app.getLoginItemSettings();
@@ -558,6 +658,9 @@ app.whenReady().then(async () => {
   // enumerate monitors, then apply correct wallpaper on launch
   await getMonitors();
   if (config.autoSwitch) applyForTheme();
+
+  // start theme schedule (if enabled): set the right theme now + schedule flips
+  applyThemeSchedule();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
