@@ -1,6 +1,6 @@
 {
   "name": "lumina",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Lumina — автоматическая смена обоев при переключении светлой/тёмной темы Windows. Интерфейс в стиле GNOME Adwaita.",
   "main": "main.js",
   "author": "alexv",
