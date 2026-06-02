@@ -847,8 +847,11 @@ function initDragDrop() {
 
       const filePaths = [];
       for (let i = 0; i < files.length; i++) {
-        if (files[i].path) {
-          filePaths.push(files[i].path);
+        try {
+          const path = window.api.getPathForFile(files[i]);
+          if (path) filePaths.push(path);
+        } catch (err) {
+          console.error('Failed to get path for dropped file:', err);
         }
       }
 
