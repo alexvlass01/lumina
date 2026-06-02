@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
+const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -269,22 +270,40 @@ function runCom(args) {
   });
 }
 
+// Живой PowerShell-хост: компилирует COM один раз, дальше применяет обои мгновенно
+// (~1 мс вместо ~400 мс на spawn+Add-Type). Быстрый путь; при сбое — фоллбек на runCom.
+const COM_HOST_SCRIPT_PATH = path.join(app.getPath('userData'), 'wallpaper-host.ps1');
+function ensureComHostScript() {
+  try {
+    fs.mkdirSync(path.dirname(COM_HOST_SCRIPT_PATH), { recursive: true });
+    fs.writeFileSync(COM_HOST_SCRIPT_PATH, HOST_SCRIPT, 'utf8');
+  } catch (err) {
+    console.error('Не удалось записать COM-host-скрипт:', err);
+  }
+}
+const wpHost = new WallpaperHost(COM_HOST_SCRIPT_PATH);
+
 let monitorsCache = [];
 
 async function getMonitors() {
+  let list = null;
   try {
-    const out = await runCom(['-Mode', 'enum']);
-    let parsed = JSON.parse((out || '').trim() || '[]');
-    if (!Array.isArray(parsed)) parsed = [parsed];
-    monitorsCache = parsed.map((m) => ({
-      id: m.id,
-      x: m.x, y: m.y, w: m.w, h: m.h,
-      primary: m.x === 0 && m.y === 0,
-    }));
-  } catch (err) {
-    console.error('Не удалось перечислить мониторы (COM):', err);
-    monitorsCache = [];
+    list = await wpHost.enumMonitors(); // быстрый путь: живой COM-хост
+  } catch (e1) {
+    try {
+      const out = await runCom(['-Mode', 'enum']); // фоллбек: spawn-per-call
+      const parsed = JSON.parse((out || '').trim() || '[]');
+      list = Array.isArray(parsed) ? parsed : [parsed];
+    } catch (e2) {
+      console.error('Не удалось перечислить мониторы (COM):', e2);
+      list = [];
+    }
   }
+  monitorsCache = (list || []).map((m) => ({
+    id: m.id,
+    x: m.x, y: m.y, w: m.w, h: m.h,
+    primary: m.x === 0 && m.y === 0,
+  }));
   return monitorsCache;
 }
 
@@ -514,14 +533,19 @@ async function applyForTheme(themeName) {
       if (p && fs.existsSync(p)) items.push({ id: m.id, path: p });
     }
     if (!items.length) return { ok: false, reason: 'no-wallpaper', theme };
+    const pos = COM_POS[config.style] != null ? COM_POS[config.style] : 4;
     try {
-      const pos = COM_POS[config.style] != null ? COM_POS[config.style] : 4;
-      fs.writeFileSync(APPLY_DATA_PATH, JSON.stringify({ position: pos, items }), 'utf8');
-      await runCom(['-Mode', 'apply', '-DataFile', APPLY_DATA_PATH]);
+      await wpHost.apply(pos, items); // быстрый путь: живой COM-хост (без перекомпиляции)
       return { ok: true, theme };
-    } catch (err) {
-      console.error('Ошибка применения per-monitor (COM), пробую legacy:', err);
-      // fall through to legacy
+    } catch (eHost) {
+      try {
+        fs.writeFileSync(APPLY_DATA_PATH, JSON.stringify({ position: pos, items }), 'utf8');
+        await runCom(['-Mode', 'apply', '-DataFile', APPLY_DATA_PATH]); // фоллбек: spawn-per-call
+        return { ok: true, theme };
+      } catch (err) {
+        console.error('Ошибка применения per-monitor (COM), пробую legacy single:', err);
+        // fall through to legacy single
+      }
     }
   }
 
@@ -1094,6 +1118,7 @@ app.whenReady().then(async () => {
   loadConfig();
   ensurePsScript();
   ensureComScript();
+  ensureComHostScript();
   ensureThemeScript();
 
   // keep the OS login item in sync with config (openAtLogin + the --hidden arg)
@@ -1138,6 +1163,9 @@ app.whenReady().then(async () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// dispose the persistent PowerShell host on quit (don't leave an orphan process)
+app.on('before-quit', () => wpHost.dispose());
 
 // Keep running in tray after all windows are closed
 app.on('window-all-closed', () => {
