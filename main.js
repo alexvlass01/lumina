@@ -7,6 +7,7 @@ const os = require('os');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
+const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -71,16 +72,6 @@ const DEFAULT_CONFIG = {
   slideshowIndex: {}, // { [deviceId]: { light: idx, dark: idx } } — текущий кадр, персистим
 };
 
-// Нормализует слот к { items: Item[] }. Старый формат — строка-путь (или пусто).
-// Item = { type:'image'|'folder', path }.
-function normalizeSlot(slot) {
-  if (typeof slot === 'string') return { items: slot ? [{ type: 'image', path: slot }] : [] };
-  if (slot && Array.isArray(slot.items)) {
-    return { items: slot.items.filter((it) => it && it.path && (it.type === 'image' || it.type === 'folder')) };
-  }
-  return { items: [] };
-}
-
 let config = { ...DEFAULT_CONFIG };
 
 function loadConfig() {
@@ -106,7 +97,7 @@ function loadConfig() {
   // Слайдшоу: нормализуем слоты в плейлисты { items:[...] } (миграция со «строки-пути»).
   for (const id of Object.keys(config.monitors)) {
     const m = config.monitors[id] || {};
-    config.monitors[id] = { light: normalizeSlot(m.light), dark: normalizeSlot(m.dark) };
+    config.monitors[id] = { light: playlist.normalizeSlot(m.light), dark: playlist.normalizeSlot(m.dark) };
   }
   config.slideshow = {
     enabled: false, intervalMin: 30, order: 'sequential',
@@ -459,54 +450,19 @@ function primaryMonitorId() {
   return p ? p.id : null;
 }
 
-// ---- Слайдшоу: слот = плейлист источников; resolveSlot разворачивает в список путей ----
-const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
-const folderScanCache = new Map(); // dir -> { at, files } (кэш на несколько секунд)
-
-function scanFolder(dir) {
-  const cached = folderScanCache.get(dir);
-  if (cached && Date.now() - cached.at < 5000) return cached.files;
-  let files = [];
-  try {
-    files = fs.readdirSync(dir)
-      .filter((f) => IMG_EXTS.has(path.extname(f).toLowerCase()))
-      .sort((a, b) => a.localeCompare(b))
-      .map((f) => path.join(dir, f));
-  } catch { files = []; }
-  folderScanCache.set(dir, { at: Date.now(), files });
-  return files;
-}
-
+// ---- Слайдшоу: слот = плейлист; чистая логика — в ./src/playlist.js ----
 function slotFor(monitorId, theme) {
   const m = config.monitors && config.monitors[monitorId];
   const slot = m && m[theme];
   return slot && Array.isArray(slot.items) ? slot : { items: [] };
 }
 
-// Разворачивает слот в плоский список существующих путей (фото + содержимое папок), без дублей.
-function resolveSlot(slot) {
-  const out = [];
-  const seen = new Set();
-  const items = slot && Array.isArray(slot.items) ? slot.items : [];
-  for (const it of items) {
-    if (!it || !it.path) continue;
-    const paths = it.type === 'folder' ? scanFolder(it.path) : [it.path];
-    for (const p of paths) {
-      const k = p.toLowerCase();
-      if (!seen.has(k) && fs.existsSync(p)) { seen.add(k); out.push(p); }
-    }
-  }
-  return out;
-}
-
-// Текущая картинка плейлиста (по сохранённому индексу слайдшоу).
+// Текущая картинка плейлиста монитора (по сохранённому индексу слайдшоу).
 function currentImageFor(monitorId, theme) {
-  const list = resolveSlot(slotFor(monitorId, theme));
-  if (!list.length) return '';
+  const list = playlist.resolveSlot(slotFor(monitorId, theme));
   const si = config.slideshowIndex[monitorId];
-  let idx = (si && Number.isFinite(si[theme]) ? si[theme] : 0) % list.length;
-  if (idx < 0) idx += list.length;
-  return list[idx];
+  const idx = si && Number.isFinite(si[theme]) ? si[theme] : 0;
+  return playlist.pickCurrent(list, idx);
 }
 
 // Все файлы, на которые ссылаются слоты (+ легаси-глобалы) — для сборки мусора.
@@ -594,14 +550,11 @@ function clearSlideshowTimer() { if (slideshowTimer) { clearTimeout(slideshowTim
 function advanceIndices(theme) {
   const shuffle = config.slideshow.order === 'shuffle';
   for (const m of monitorsCache) {
-    const len = resolveSlot(slotFor(m.id, theme)).length;
+    const len = playlist.resolveSlot(slotFor(m.id, theme)).length;
     if (len < 2) continue;
     if (!config.slideshowIndex[m.id]) config.slideshowIndex[m.id] = { light: 0, dark: 0 };
     const cur = Number.isFinite(config.slideshowIndex[m.id][theme]) ? config.slideshowIndex[m.id][theme] : 0;
-    let next;
-    if (shuffle) { do { next = Math.floor(Math.random() * len); } while (next === cur); }
-    else next = (cur + 1) % len;
-    config.slideshowIndex[m.id][theme] = next;
+    config.slideshowIndex[m.id][theme] = playlist.nextIndex(cur, len, shuffle);
   }
 }
 
@@ -695,10 +648,10 @@ function showWindow() {
 function hasSlideshowItems() {
   const theme = currentThemeName();
   if (config.singleWallpaper) {
-    return resolveSlot(slotFor(primaryMonitorId(), theme)).length >= 2;
+    return playlist.resolveSlot(slotFor(primaryMonitorId(), theme)).length >= 2;
   }
   for (const m of monitorsCache) {
-    if (resolveSlot(slotFor(m.id, theme)).length >= 2) {
+    if (playlist.resolveSlot(slotFor(m.id, theme)).length >= 2) {
       return true;
     }
   }
@@ -956,7 +909,7 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
         }
       } else if (stats.isFile()) {
         const ext = path.extname(src).toLowerCase();
-        if (IMG_EXTS.has(ext)) {
+        if (playlist.IMG_EXTS.has(ext)) {
           const stored = await importWallpaper(src);
           if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
             slot.items.push({ type: 'image', path: stored });
