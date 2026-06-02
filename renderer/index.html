@@ -63,10 +63,18 @@
           </div>
           <div class="row">
             <div class="row-text">
-              <div class="row-title" data-i18n="welcome.shortcutsTitle">Ярлыки</div>
-              <div class="row-sub" data-i18n="welcome.shortcutsSub">Создать ярлыки на рабочем столе и в меню «Пуск»</div>
+              <div class="row-title" data-i18n="welcome.themeTitle">Автопереключение темы Windows</div>
+              <div class="row-sub" data-i18n="welcome.themeSub">Lumina сама будет менять тему по расписанию. Подробнее — в «Оформлении».</div>
             </div>
-            <button class="pill" id="welcomeShortcuts" data-i18n="welcome.shortcutsBtn">Создать</button>
+            <button class="gtkswitch" id="welcomeTheme" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="welcome.shortcutDesktopTitle">Ярлык на рабочем столе</div></div>
+            <button class="pill" id="welcomeShortcutDesktop" data-i18n="welcome.shortcutsBtn">Создать</button>
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="welcome.shortcutStartTitle">Ярлык в меню «Пуск»</div></div>
+            <button class="pill" id="welcomeShortcutStart" data-i18n="welcome.shortcutsBtn">Создать</button>
           </div>
         </div>
 
@@ -238,6 +246,20 @@
               <option value="en">English</option>
             </select>
           </div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.telemetryTitle">Сбор анонимной статистики</div>
+            <div class="row-sub" data-i18n="prefs.telemetrySub">Помогает находить и исправлять ошибки. По умолчанию выключено; сейчас ничего не отправляется.</div>
+          </div>
+          <button class="gtkswitch" id="swTelemetry" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.welcomeTitle">Экран приветствия</div>
+            <div class="row-sub" data-i18n="prefs.welcomeSub">Показать стартовый экран первого запуска снова</div>
+          </div>
+          <button class="pill" id="btnShowWelcome" data-i18n="prefs.welcomeBtn">Показать</button>
         </div>
       </div>
 

@@ -287,6 +287,7 @@ async function renderConfig() {
   await renderPreviews();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
+  setSwitch($('#swTelemetry'), !!config.telemetry);
   $('#selStyle').value = config.style || 'fill';
   renderThemeSchedule();
 }
@@ -319,6 +320,7 @@ function enterFirstRun() {
   $('#welcomeLang').value = config.language || 'system';
   setSwitch($('#welcomeAuto'), config.autoSwitch);
   setSwitch($('#welcomeStartup'), config.autostart);
+  setSwitch($('#welcomeTheme'), !!(config.themeSchedule && config.themeSchedule.mode !== 'off'));
 }
 
 function exitFirstRun() {
@@ -401,6 +403,16 @@ async function init() {
   // ---- settings: quit the app ----
   $('#btnQuit').addEventListener('click', () => window.api.quitApp());
 
+  // ---- settings: usage statistics (opt-in placeholder) ----
+  $('#swTelemetry').addEventListener('click', async () => {
+    const on = $('#swTelemetry').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swTelemetry'), on);
+    config = await window.api.setConfig({ telemetry: on });
+  });
+
+  // ---- settings: re-open the welcome screen ----
+  $('#btnShowWelcome').addEventListener('click', () => enterFirstRun());
+
   // ---- language ----
   $('#selLang').addEventListener('change', async () => {
     config = await window.api.setConfig({ language: $('#selLang').value });
@@ -426,8 +438,18 @@ async function init() {
     await window.api.setAutostart(on);
     config.autostart = on;
   });
-  $('#welcomeShortcuts').addEventListener('click', async () => {
-    await window.api.createShortcuts();
+  $('#welcomeTheme').addEventListener('click', async () => {
+    const on = $('#welcomeTheme').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#welcomeTheme'), on);
+    const sch = { ...(config.themeSchedule || {}), mode: on ? 'time' : 'off' };
+    config = await window.api.setConfig({ themeSchedule: sch });
+  });
+  $('#welcomeShortcutDesktop').addEventListener('click', async () => {
+    await window.api.createShortcuts('desktop');
+    toast(t('toast.shortcutsDone'));
+  });
+  $('#welcomeShortcutStart').addEventListener('click', async () => {
+    await window.api.createShortcuts('startmenu');
     toast(t('toast.shortcutsDone'));
   });
   $('#welcomeStart').addEventListener('click', async () => {

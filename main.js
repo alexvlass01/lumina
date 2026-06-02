@@ -69,6 +69,7 @@ const DEFAULT_CONFIG = {
   autostart: false,
   language: 'system', // 'system' | 'en' | 'ru' | 'uk'
   firstRunDone: false, // показывали ли стартовый экран приветствия
+  telemetry: false, // опционально (задел): сбор анонимной статистики. Пока ничего не отправляется.
   // Lumina itself switching the Windows light/dark theme on a schedule
   // mode: 'off' | 'time' | 'sun'; lat/lng (strings) used by 'sun'
   themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
@@ -673,7 +674,7 @@ ipcMain.handle('quit-app', () => {
   app.quit();
 });
 
-ipcMain.handle('create-shortcuts', () => {
+ipcMain.handle('create-shortcuts', (e, which) => {
   const target = process.execPath;
   const done = [];
   const make = (lnkPath, label) => {
@@ -691,8 +692,12 @@ ipcMain.handle('create-shortcuts', () => {
       console.error('Не удалось создать ярлык:', label, err);
     }
   };
-  make(path.join(app.getPath('desktop'), 'Lumina.lnk'), 'desktop');
-  make(path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Lumina.lnk'), 'startmenu');
+  if (which === 'desktop' || which === 'both' || !which) {
+    make(path.join(app.getPath('desktop'), 'Lumina.lnk'), 'desktop');
+  }
+  if (which === 'startmenu' || which === 'both' || !which) {
+    make(path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Lumina.lnk'), 'startmenu');
+  }
   return done;
 });
 

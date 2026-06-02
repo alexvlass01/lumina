@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld('api', {
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   quitApp: () => ipcRenderer.invoke('quit-app'),
-  createShortcuts: () => ipcRenderer.invoke('create-shortcuts'),
+  createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
 
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
