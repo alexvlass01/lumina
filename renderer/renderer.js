@@ -803,6 +803,7 @@ async function init() {
 function initDragDrop() {
   document.querySelectorAll('.wallcard').forEach((card) => {
     const theme = card.dataset.theme;
+    let dragCounter = 0;
 
     // Prevent default drag behaviors
     ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
@@ -812,21 +813,32 @@ function initDragDrop() {
       }, false);
     });
 
-    // Highlight card when dragging files over it
-    ['dragenter', 'dragover'].forEach((eventName) => {
-      card.addEventListener(eventName, () => {
-        card.classList.add('drag-over');
-      }, false);
+    card.addEventListener('dragenter', (e) => {
+      e.preventDefault();
+      dragCounter++;
+      card.classList.add('drag-over');
     });
 
-    ['dragleave', 'drop'].forEach((eventName) => {
-      card.addEventListener(eventName, () => {
+    card.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    card.addEventListener('dragleave', (e) => {
+      e.preventDefault();
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
         card.classList.remove('drag-over');
-      }, false);
+      }
     });
 
     // Handle dropped files
     card.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      dragCounter = 0;
+      card.classList.remove('drag-over');
+
       const files = e.dataTransfer.files;
       if (!files || !files.length) return;
 
