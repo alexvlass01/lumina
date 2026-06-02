@@ -381,6 +381,7 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
   padding: 10px;
 }
 .monitor {
+  position: relative;
   border-radius: 5px;
   box-shadow: 0 3px 12px rgba(0, 0, 0, 0.32);
   outline: 1px solid rgba(0, 0, 0, 0.18);
