@@ -326,6 +326,35 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
   display: flex;
   flex-direction: column;
   gap: 12px;
+  position: relative;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.drag-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(53, 132, 228, 0.07);
+  border: 2px dashed var(--accent);
+  border-radius: 14px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13.5px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+  z-index: 10;
+  backdrop-filter: blur(2px);
+}
+.wallcard.drag-over {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), var(--shadow);
+}
+.wallcard.drag-over .drag-overlay {
+  opacity: 1;
 }
 .wallcard-head {
   display: flex; align-items: center; gap: 8px;

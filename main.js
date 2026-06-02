@@ -937,6 +937,40 @@ ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
   return { config, added: 1 };
 });
 
+// add multiple dropped file paths (files or folders) to a monitor's playlist
+ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
+  if (!monitorId || !Array.isArray(paths)) return { config, added: 0 };
+  const slot = ensureSlot(monitorId, which);
+  let added = 0;
+  for (const src of paths) {
+    try {
+      const stats = fs.statSync(src);
+      if (stats.isDirectory()) {
+        if (!slot.items.some((it) => it.type === 'folder' && it.path === src)) {
+          slot.items.push({ type: 'folder', path: src });
+          added++;
+        }
+      } else if (stats.isFile()) {
+        const ext = path.extname(src).toLowerCase();
+        if (IMG_EXTS.has(ext)) {
+          const stored = importWallpaper(src);
+          if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
+            slot.items.push({ type: 'image', path: stored });
+            added++;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to import drag-dropped path:', src, err);
+    }
+  }
+  if (added > 0) {
+    saveConfig();
+    refreshTray();
+  }
+  return { config, added };
+});
+
 ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
   if (!monitorId) return config;
   const slot = ensureSlot(monitorId, which);

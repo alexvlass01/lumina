@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('api', {
   getTheme: () => ipcRenderer.invoke('get-theme'),
   addSlotImages: (monitorId, which) => ipcRenderer.invoke('add-slot-images', monitorId, which),
   addSlotFolder: (monitorId, which) => ipcRenderer.invoke('add-slot-folder', monitorId, which),
+  addSlotPaths: (monitorId, which, filePaths) => ipcRenderer.invoke('add-slot-paths', monitorId, which, filePaths),
   removeSlotItem: (monitorId, which, index) => ipcRenderer.invoke('remove-slot-item', monitorId, which, index),
   clearSlot: (monitorId, which) => ipcRenderer.invoke('clear-slot', monitorId, which),
   currentImage: (monitorId, which) => ipcRenderer.invoke('current-image', monitorId, which),

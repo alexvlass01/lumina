@@ -796,6 +796,62 @@ async function init() {
     clearTimeout(resizeT);
     resizeT = setTimeout(layoutMonitors, 60);
   });
+
+  initDragDrop();
+}
+
+function initDragDrop() {
+  document.querySelectorAll('.wallcard').forEach((card) => {
+    const theme = card.dataset.theme;
+
+    // Prevent default drag behaviors
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((eventName) => {
+      card.addEventListener(eventName, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, false);
+    });
+
+    // Highlight card when dragging files over it
+    ['dragenter', 'dragover'].forEach((eventName) => {
+      card.addEventListener(eventName, () => {
+        card.classList.add('drag-over');
+      }, false);
+    });
+
+    ['dragleave', 'drop'].forEach((eventName) => {
+      card.addEventListener(eventName, () => {
+        card.classList.remove('drag-over');
+      }, false);
+    });
+
+    // Handle dropped files
+    card.addEventListener('drop', async (e) => {
+      const files = e.dataTransfer.files;
+      if (!files || !files.length) return;
+
+      const mon = editTargetId();
+      if (!mon) return;
+
+      const filePaths = [];
+      for (let i = 0; i < files.length; i++) {
+        if (files[i].path) {
+          filePaths.push(files[i].path);
+        }
+      }
+
+      if (filePaths.length === 0) return;
+
+      const res = await window.api.addSlotPaths(mon, theme, filePaths);
+      config = (res && res.config) || config;
+      renderSlot(theme);
+      renderHome();
+      if (res && res.added > 0) {
+        toast(t('toast.photosAdded', { n: res.added }));
+        if (theme === currentTheme) window.api.applyNow(theme);
+      }
+    });
+  });
 }
 
 init();

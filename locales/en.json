@@ -79,7 +79,8 @@
     "singleSub": "Use a single image across every monitor",
     "addPhotos": "Add photos…",
     "addFolder": "Add folder…",
-    "removeItem": "Remove"
+    "removeItem": "Remove",
+    "dropPrompt": "Drop images or folder here"
   },
   "theme": {
     "group": "Windows theme",
