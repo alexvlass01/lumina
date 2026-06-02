@@ -13,12 +13,19 @@ contextBridge.exposeInMainWorld('api', {
   setMonitorWallpaper: (monitorId, which, path) => ipcRenderer.invoke('set-monitor-wallpaper', monitorId, which, path),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
+  setStartMinimized: (v) => ipcRenderer.invoke('set-start-minimized', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
   shortcutsStatus: () => ipcRenderer.invoke('shortcuts-status'),
 
+  checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
+  installUpdate: () => ipcRenderer.invoke('install-update'),
+  openReleases: () => ipcRenderer.invoke('open-releases'),
+  getUpdateState: () => ipcRenderer.invoke('get-update-state'),
+
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
   onMonitors: (cb) => ipcRenderer.on('monitors-changed', (_e, d) => cb(d)),
+  onUpdate: (cb) => ipcRenderer.on('update-status', (_e, st) => cb(st)),
 });

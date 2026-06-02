@@ -5,6 +5,8 @@
     "appGroup": "App settings",
     "autostartTitle": "Start with Windows",
     "autostartSub": "Launch in the background (tray) at sign-in",
+    "startMinTitle": "Start minimized",
+    "startMinSub": "On autostart, open straight to the tray without a window",
     "languageTitle": "Language",
     "languageSub": "Interface language",
     "telemetryTitle": "Anonymous usage statistics",
@@ -14,6 +16,15 @@
     "welcomeBtn": "Show",
     "aboutGroup": "About",
     "aboutSub": "Auto-switches wallpaper when the Windows theme changes",
+    "updateTitle": "Updates",
+    "updateCheck": "Check",
+    "updateRestart": "Restart",
+    "updateIdle": "Check for a new version",
+    "updateChecking": "Checking…",
+    "updateDownloading": "Downloading update…",
+    "updateReady": "Update ready — restart to install",
+    "updateNone": "You're up to date",
+    "updateError": "Couldn't check for updates",
     "quit": "Quit application"
   },
   "lang": { "system": "System" },
@@ -62,7 +73,9 @@
     "autoSwitchTitle": "Auto-switch on theme change",
     "autoSwitchSub": "Change the wallpaper automatically when Windows switches between light and dark mode",
     "styleTitle": "Position",
-    "styleSub": "How the image fits the desktop"
+    "styleSub": "How the image fits the desktop",
+    "singleTitle": "One wallpaper for all monitors",
+    "singleSub": "Use a single image across every monitor"
   },
   "theme": {
     "group": "Windows theme",
@@ -103,13 +116,19 @@
     "themeLight": "Windows switched to light theme",
     "scheduleOn": "Theme schedule enabled",
     "scheduleOff": "Theme schedule disabled",
-    "shortcutsDone": "Shortcuts created"
+    "shortcutsDone": "Shortcuts created",
+    "singleOn": "One wallpaper for all monitors",
+    "singleOff": "Per-monitor wallpapers",
+    "startMinOn": "Autostart opens to the tray",
+    "startMinOff": "Autostart shows the window",
+    "updateManual": "Find updates on the Releases page"
   },
   "tray": {
     "open": "Open Lumina",
     "applyLight": "Apply day wallpaper",
     "applyDark": "Apply night wallpaper",
     "applyCurrent": "Apply for current theme",
+    "installUpdate": "Restart to update",
     "autoSwitch": "Auto-switch on theme change",
     "autostart": "Start with Windows",
     "quit": "Quit"

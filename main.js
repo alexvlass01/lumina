@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -63,10 +63,12 @@ function importWallpaper(fileKey, srcPath) {
 const DEFAULT_CONFIG = {
   lightWallpaper: '', // global fallback (used by a monitor that has no own pick)
   darkWallpaper: '',
+  singleWallpaper: false, // одни обои на все мониторы (вместо своей пары на каждый)
   monitors: {}, // { [deviceId]: { light: path, dark: path } }
   autoSwitch: true,
   style: 'fill', // fill | fit | stretch | center | tile | span
   autostart: false,
+  startMinimized: true, // при автозапуске стартовать сразу в трее (флаг --hidden)
   language: 'system', // 'system' | 'en' | 'ru' | 'uk'
   firstRunDone: false, // показывали ли стартовый экран приветствия
   telemetry: false, // опционально (задел): сбор анонимной статистики. Пока ничего не отправляется.
@@ -436,9 +438,10 @@ function currentThemeName() {
 // Wallpaper path for a given monitor + theme: the monitor's own pick, or the
 // global fallback if it has none.
 function wallpaperFor(monitorId, theme) {
+  const fallback = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
+  if (config.singleWallpaper) return fallback || ''; // одни обои на все мониторы
   const m = config.monitors && config.monitors[monitorId];
   const per = m ? m[theme] : '';
-  const fallback = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
   return per || fallback || '';
 }
 
@@ -552,12 +555,18 @@ function showWindow() {
 // Tray
 // ---------------------------------------------------------------------------
 function buildTrayMenu() {
-  return Menu.buildFromTemplate([
+  const items = [
     { label: tMain('tray.open'), click: () => showWindow() },
     { label: tMain('tray.applyCurrent'), click: () => applyForTheme() },
+  ];
+  if (updateState === 'ready') {
+    items.push({ type: 'separator' }, { label: tMain('tray.installUpdate'), click: () => quitAndInstallUpdate() });
+  }
+  items.push(
     { type: 'separator' },
     { label: tMain('tray.quit'), click: () => { app.isQuitting = true; app.quit(); } },
-  ]);
+  );
+  return Menu.buildFromTemplate(items);
 }
 
 function refreshTray() {
@@ -576,14 +585,81 @@ function createTray() {
 // ---------------------------------------------------------------------------
 // Autostart
 // ---------------------------------------------------------------------------
+function applyLoginItem() {
+  app.setLoginItemSettings({
+    openAtLogin: config.autostart,
+    path: process.execPath,
+    // --hidden = стартовать свёрнутым в трей; управляется отдельным тумблером startMinimized
+    args: config.startMinimized ? ['--hidden'] : [],
+  });
+}
+
 function setAutostart(enabled) {
   config.autostart = enabled;
-  app.setLoginItemSettings({
-    openAtLogin: enabled,
-    path: process.execPath,
-    args: ['--hidden'],
-  });
+  applyLoginItem();
   saveConfig();
+}
+
+function setStartMinimized(enabled) {
+  config.startMinimized = enabled;
+  applyLoginItem(); // переписываем аргументы автозапуска (--hidden) под новое значение
+  saveConfig();
+}
+
+// ---------------------------------------------------------------------------
+// Auto-update (Electron autoUpdater → Squirrel.Windows).
+// Works ONLY in the installed (Squirrel) build, where Update.exe sits next to
+// the app-<ver> folder. In dev / portable we fall back to the Releases page.
+// Feed = update.electronjs.org (Electron's hosted service for public GitHub
+// repos). NB: the GitHub release must include RELEASES + the *.nupkg, not just
+// Setup.exe — otherwise there is nothing for Squirrel to read.
+// ---------------------------------------------------------------------------
+const RELEASES_PAGE = 'https://github.com/alexvlass01/lumina/releases/latest';
+
+let updateState = 'idle'; // idle | checking | downloading | ready | none | error
+let updaterWired = false;
+
+function updatesSupported() {
+  try {
+    // Squirrel installs Update.exe one level above the app-<ver> folder
+    return fs.existsSync(path.join(path.dirname(process.execPath), '..', 'Update.exe'));
+  } catch { return false; }
+}
+
+function setUpdateState(s) {
+  updateState = s;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('update-status', { state: updateState, supported: updatesSupported() });
+  }
+  refreshTray(); // показать/убрать пункт «перезапустить и обновить»
+}
+
+function wireAutoUpdater() {
+  if (updaterWired || !updatesSupported()) return;
+  updaterWired = true;
+  try {
+    autoUpdater.setFeedURL({ url: `https://update.electronjs.org/alexvlass01/lumina/${process.platform}/${app.getVersion()}` });
+  } catch (e) { console.error('setFeedURL:', e); }
+  autoUpdater.on('checking-for-update', () => setUpdateState('checking'));
+  autoUpdater.on('update-available', () => setUpdateState('downloading')); // Squirrel качает сам
+  autoUpdater.on('update-not-available', () => setUpdateState('none'));
+  autoUpdater.on('update-downloaded', () => setUpdateState('ready'));
+  autoUpdater.on('error', (err) => { console.error('autoUpdater:', err); setUpdateState('error'); });
+}
+
+// Returns false if updates aren't supported here (caller falls back to the page).
+function checkForUpdates() {
+  if (!updatesSupported()) return false;
+  wireAutoUpdater();
+  try { autoUpdater.checkForUpdates(); setUpdateState('checking'); }
+  catch (e) { console.error(e); setUpdateState('error'); }
+  return true;
+}
+
+function quitAndInstallUpdate() {
+  if (updateState !== 'ready') return;
+  app.isQuitting = true;
+  try { autoUpdater.quitAndInstall(); } catch (e) { console.error('quitAndInstall:', e); }
 }
 
 // ---------------------------------------------------------------------------
@@ -673,6 +749,16 @@ ipcMain.handle('set-autostart', (e, v) => {
   return config.autostart;
 });
 
+ipcMain.handle('set-start-minimized', (e, v) => {
+  setStartMinimized(v);
+  return config.startMinimized;
+});
+
+ipcMain.handle('check-for-updates', () => ({ started: checkForUpdates(), supported: updatesSupported() }));
+ipcMain.handle('install-update', () => quitAndInstallUpdate());
+ipcMain.handle('open-releases', () => shell.openExternal(RELEASES_PAGE));
+ipcMain.handle('get-update-state', () => ({ state: updateState, supported: updatesSupported() }));
+
 ipcMain.handle('file-url', (e, p) => {
   try {
     return p ? pathToFileURL(p).href : '';
@@ -730,11 +816,8 @@ app.whenReady().then(async () => {
   ensureComScript();
   ensureThemeScript();
 
-  // sync autostart state with OS
-  const login = app.getLoginItemSettings();
-  if (login.openAtLogin !== config.autostart) {
-    setAutostart(config.autostart);
-  }
+  // keep the OS login item in sync with config (openAtLogin + the --hidden arg)
+  applyLoginItem();
 
   createWindow();
   createTray();
@@ -763,6 +846,9 @@ app.whenReady().then(async () => {
 
   // start theme schedule (if enabled): set the right theme now + schedule flips
   applyThemeSchedule();
+
+  // background update check (installed build only); silent until an update is ready
+  if (updatesSupported()) setTimeout(() => checkForUpdates(), 8000);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

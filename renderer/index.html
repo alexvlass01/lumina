@@ -156,6 +156,13 @@
 
       <h2 class="group-title" data-i18n="design.behaviorGroup">Поведение</h2>
       <div class="boxed-list">
+        <div class="row" id="rowSingleWall" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="design.singleTitle">Одни обои на все мониторы</div>
+            <div class="row-sub" data-i18n="design.singleSub">Использовать одно изображение для всех мониторов сразу</div>
+          </div>
+          <button class="gtkswitch" id="swSingle" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
         <div class="row">
           <div class="row-text">
             <div class="row-title" data-i18n="design.autoSwitchTitle">Автосмена при переключении темы</div>
@@ -235,6 +242,13 @@
         </div>
         <div class="row">
           <div class="row-text">
+            <div class="row-title" data-i18n="prefs.startMinTitle">Запускать свёрнутым</div>
+            <div class="row-sub" data-i18n="prefs.startMinSub">При автозапуске открывать сразу в трее, без окна</div>
+          </div>
+          <button class="gtkswitch" id="swStartMin" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
             <div class="row-title" data-i18n="prefs.languageTitle">Язык</div>
             <div class="row-sub" data-i18n="prefs.languageSub">Язык интерфейса</div>
           </div>
@@ -268,6 +282,13 @@
         <div class="row">
           <div class="row-text"><div class="row-title">Lumina</div><div class="row-sub" data-i18n="prefs.aboutSub">Автосмена обоев при переключении темы Windows</div></div>
           <div class="status-val" id="appVersion">—</div>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.updateTitle">Обновления</div>
+            <div class="row-sub" id="updateStatus" data-i18n="prefs.updateIdle">Проверить наличие новой версии</div>
+          </div>
+          <button class="pill" id="btnCheckUpdate" data-i18n="prefs.updateCheck">Проверить</button>
         </div>
       </div>
 

@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' } };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, monitors: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' } };
   let mockSc = { desktop: false, startmenu: false };
   window.api = {
     getConfig: async () => mock,
@@ -29,6 +29,7 @@ if (!window.api) {
     },
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
     setAutostart: async (v) => (mock.autostart = v),
+    setStartMinimized: async (v) => (mock.startMinimized = v),
     fileUrl: async (p) => p,
     quitApp: () => {},
     createShortcuts: async (which) => {
@@ -37,9 +38,14 @@ if (!window.api) {
       return ['ok'];
     },
     shortcutsStatus: async () => ({ ...mockSc }),
+    checkForUpdates: async () => ({ started: false, supported: false }),
+    installUpdate: () => {},
+    openReleases: () => {},
+    getUpdateState: async () => ({ state: 'idle', supported: false }),
     onTheme: () => {},
     onConfig: () => {},
     onMonitors: () => {},
+    onUpdate: () => {},
   };
 }
 
@@ -85,9 +91,11 @@ function refreshTexts() {
   applyI18n();
   applyThemeToUI(currentTheme); // hero subtitle
   buildMonitorMap();            // chip titles + label
+  updateSingleWallRow();        // toggle row visibility + state
   renderPreviews();             // "not selected" placeholders
   renderHome();                 // status values + thumbnail labels
   updateShortcutButtons();      // re-translate shortcut buttons + keep "done" state
+  renderUpdate();               // re-translate update status + button
 }
 
 // ---------------------------------------------------------------------------
@@ -128,6 +136,7 @@ function setMonitors(list) {
   }
   applySelectedAspect();
   buildMonitorMap();
+  updateSingleWallRow();
   renderPreviews();
   renderHome();
 }
@@ -162,7 +171,8 @@ function buildMonitorMap() {
   const bar = $('#monitorBar');
   const map = $('#monMap');
   if (!bar || !map) return;
-  if (monitorList.length < 2) { bar.hidden = true; map.innerHTML = ''; updateMonLabel(); return; }
+  // hidden for a single monitor, and when one wallpaper is shared across all
+  if (monitorList.length < 2 || (config && config.singleWallpaper)) { bar.hidden = true; map.innerHTML = ''; updateMonLabel(); return; }
   bar.hidden = false;
 
   const MAX_H = 92, MAX_W = 156;
@@ -183,6 +193,14 @@ function buildMonitorMap() {
     map.appendChild(chip);
   });
   updateMonLabel();
+}
+
+// The "one wallpaper for all monitors" toggle is only meaningful with 2+ monitors.
+function updateSingleWallRow() {
+  const row = $('#rowSingleWall');
+  if (!row) return;
+  row.hidden = monitorList.length < 2;
+  setSwitch($('#swSingle'), !!(config && config.singleWallpaper));
 }
 
 // ---------------------------------------------------------------------------
@@ -228,9 +246,10 @@ function layoutMonitors() {
 
 // Wallpaper path for a monitor + theme (own pick, or global fallback).
 function wallpaperForMonitor(id, theme) {
+  const fb = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
+  if (config.singleWallpaper) return fb || ''; // одни обои на все мониторы
   const mon = config.monitors && config.monitors[id];
   const per = mon ? mon[theme] : '';
-  const fb = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
   return per || fb || '';
 }
 
@@ -294,8 +313,11 @@ async function renderConfig() {
   await renderPreviews();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
+  setSwitch($('#swStartMin'), config.startMinimized !== false);
+  setSwitch($('#swSingle'), !!config.singleWallpaper);
   setSwitch($('#swTelemetry'), !!config.telemetry);
   $('#selStyle').value = config.style || 'fill';
+  updateSingleWallRow();
   renderThemeSchedule();
 }
 
@@ -391,6 +413,36 @@ function renderHome() {
 }
 
 // ---------------------------------------------------------------------------
+// Updates (Squirrel via main). Status text + a button that checks, then turns
+// into "Restart" once an update is downloaded. On dev/portable (unsupported)
+// the button opens the Releases page instead.
+// ---------------------------------------------------------------------------
+let lastUpdate = { state: 'idle', supported: true };
+const UPDATE_STATUS_KEY = {
+  idle: 'prefs.updateIdle', checking: 'prefs.updateChecking',
+  downloading: 'prefs.updateDownloading', ready: 'prefs.updateReady',
+  none: 'prefs.updateNone', error: 'prefs.updateError',
+};
+function renderUpdate(st) {
+  if (st) lastUpdate = st;
+  const btn = $('#btnCheckUpdate');
+  const status = $('#updateStatus');
+  if (!btn || !status) return;
+  const state = lastUpdate.state || 'idle';
+  status.textContent = t(UPDATE_STATUS_KEY[state] || 'prefs.updateIdle');
+  const busy = state === 'checking' || state === 'downloading';
+  if (state === 'ready') {
+    btn.textContent = t('prefs.updateRestart');
+    btn.classList.add('suggested');
+    btn.disabled = false;
+  } else {
+    btn.textContent = t('prefs.updateCheck');
+    btn.classList.remove('suggested');
+    btn.disabled = busy;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
 async function init() {
@@ -407,6 +459,8 @@ async function init() {
   window.api.getVersion().then((v) => {
     $('#appVersion').textContent = 'v' + v;
   });
+
+  window.api.getUpdateState().then(renderUpdate);
 
   // ---- page navigation ----
   document.querySelectorAll('.navbtn').forEach((b) => {
@@ -434,6 +488,18 @@ async function init() {
 
   // ---- settings: re-open the welcome screen ----
   $('#btnShowWelcome').addEventListener('click', () => enterFirstRun());
+
+  // ---- settings: check for / install updates ----
+  $('#btnCheckUpdate').addEventListener('click', async () => {
+    const cur = await window.api.getUpdateState();
+    if (cur.state === 'ready') { window.api.installUpdate(); return; }
+    const res = await window.api.checkForUpdates();
+    if (!res || res.supported === false) {
+      // dev / portable build (no Squirrel) — send the user to the Releases page
+      toast(t('toast.updateManual'));
+      window.api.openReleases();
+    }
+  });
 
   // ---- language ----
   $('#selLang').addEventListener('change', async () => {
@@ -482,13 +548,14 @@ async function init() {
     exitFirstRun();
   });
 
-  // pick image for the SELECTED monitor
+  // pick image for the SELECTED monitor (or globally when "single wallpaper" is on)
   document.querySelectorAll('[data-pick]').forEach((btn) => {
     btn.addEventListener('click', async () => {
       const which = btn.dataset.pick;
-      const file = await window.api.pickImage(which, selectedMonitorId);
+      const targetMon = config.singleWallpaper ? null : selectedMonitorId;
+      const file = await window.api.pickImage(which, targetMon);
       if (!file) return;
-      config = await window.api.setMonitorWallpaper(selectedMonitorId, which, file);
+      config = await window.api.setMonitorWallpaper(targetMon, which, file);
       await setPreview(which, file);
       renderHome();
       toast(which === 'dark' ? t('toast.darkChosen') : t('toast.lightChosen'));
@@ -509,12 +576,33 @@ async function init() {
     toast(on ? t('toast.autoOn') : t('toast.autoOff'));
   });
 
+  // one wallpaper for all monitors (vs. a separate pair per monitor)
+  $('#swSingle').addEventListener('click', async () => {
+    const on = $('#swSingle').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swSingle'), on);
+    config = await window.api.setConfig({ singleWallpaper: on });
+    buildMonitorMap();   // show/hide the monitor map
+    renderPreviews();    // previews now reflect global vs per-monitor
+    renderHome();
+    await window.api.applyNow();
+    toast(on ? t('toast.singleOn') : t('toast.singleOff'));
+  });
+
   $('#swStartup').addEventListener('click', async () => {
     const on = $('#swStartup').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swStartup'), on);
     await window.api.setAutostart(on);
     renderHome();
     toast(on ? t('toast.startupOn') : t('toast.startupOff'));
+  });
+
+  // start minimized to tray (only affects the autostart launch; decoupled from it)
+  $('#swStartMin').addEventListener('click', async () => {
+    const on = $('#swStartMin').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swStartMin'), on);
+    await window.api.setStartMinimized(on);
+    config.startMinimized = on;
+    toast(on ? t('toast.startMinOn') : t('toast.startMinOff'));
   });
 
   // style select — applies live
@@ -561,6 +649,8 @@ async function init() {
   window.api.onMonitors((list) => {
     setMonitors(list);
   });
+
+  window.api.onUpdate((st) => renderUpdate(st));
 
   // keep thumbnails fitted when the window (and thus cards) resize
   let resizeT = null;
