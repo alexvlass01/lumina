@@ -9,6 +9,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
+const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -53,75 +54,15 @@ async function importWallpaper(srcPath) {
   return dest;
 }
 
-const DEFAULT_CONFIG = {
-  lightWallpaper: '', // legacy global fallback (only on COM failure / empty playlist)
-  darkWallpaper: '',
-  singleWallpaper: false, // одни обои на все мониторы (вместо своей пары на каждый)
-  monitors: {}, // { [deviceId]: { light: Slot, dark: Slot } }; Slot = { items: Item[] }
-  autoSwitch: true,
-  style: 'fill', // fill | fit | stretch | center | tile | span
-  autostart: false,
-  startMinimized: true, // при автозапуске стартовать сразу в трее (флаг --hidden)
-  language: 'system', // 'system' | 'en' | 'ru' | 'uk'
-  firstRunDone: false, // показывали ли стартовый экран приветствия
-  telemetry: false, // опционально (задел): сбор анонимной статистики. Пока ничего не отправляется.
-  // Lumina itself switching the Windows light/dark theme on a schedule
-  // mode: 'off' | 'time' | 'sun'; lat/lng (strings) used by 'sun'
-  themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
-  // Слайдшоу: плейлист крутится по интервалу. order: 'sequential' | 'shuffle'.
-  slideshow: { enabled: false, intervalMin: 30, order: 'sequential' },
-  slideshowIndex: {}, // { [deviceId]: { light: idx, dark: idx } } — текущий кадр, персистим
-};
-
-let config = { ...DEFAULT_CONFIG };
+// Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).
+let config = configMod.freshDefaults();
 
 function loadConfig() {
-  let raw = null;
-  try { raw = fs.readFileSync(CONFIG_PATH, 'utf8'); } catch { raw = null; } // нет файла = первый запуск
-  if (raw != null) {
-    try {
-      config = { ...DEFAULT_CONFIG, ...JSON.parse(raw.replace(/^﻿/, '')) }; // срезаем BOM, если есть
-    } catch (err) {
-      // конфиг повреждён — сохраняем копию, НЕ теряем данные молча
-      try { fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}.bak`); } catch {}
-      console.error('config.json повреждён, откат к дефолтам (бэкап сохранён):', err);
-      config = { ...DEFAULT_CONFIG };
-    }
-  } else {
-    config = { ...DEFAULT_CONFIG };
-  }
-  if (!config.monitors || typeof config.monitors !== 'object') config.monitors = {};
-  config.themeSchedule = {
-    mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '',
-    ...(config.themeSchedule && typeof config.themeSchedule === 'object' ? config.themeSchedule : {}),
-  };
-  // Слайдшоу: нормализуем слоты в плейлисты { items:[...] } (миграция со «строки-пути»).
-  for (const id of Object.keys(config.monitors)) {
-    const m = config.monitors[id] || {};
-    config.monitors[id] = { light: playlist.normalizeSlot(m.light), dark: playlist.normalizeSlot(m.dark) };
-  }
-  config.slideshow = {
-    enabled: false, intervalMin: 30, order: 'sequential',
-    ...(config.slideshow && typeof config.slideshow === 'object' ? config.slideshow : {}),
-  };
-  config.slideshow.enabled = !!config.slideshow.enabled;
-  if (!Number.isFinite(+config.slideshow.intervalMin) || +config.slideshow.intervalMin < 1) config.slideshow.intervalMin = 30;
-  config.slideshow.intervalMin = Math.floor(+config.slideshow.intervalMin);
-  if (config.slideshow.order !== 'shuffle') config.slideshow.order = 'sequential';
-  if (!config.slideshowIndex || typeof config.slideshowIndex !== 'object') config.slideshowIndex = {};
+  config = configMod.load(CONFIG_PATH);
 }
 
 function saveConfig() {
-  try {
-    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-    // атомарная запись: пишем во временный файл и переименовываем, чтобы при
-    // сбое посреди записи не получить «обрезанный»/битый config.json
-    const tmp = `${CONFIG_PATH}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8');
-    fs.renameSync(tmp, CONFIG_PATH);
-  } catch (err) {
-    console.error('Не удалось сохранить конфиг:', err);
-  }
+  configMod.save(config, CONFIG_PATH);
 }
 
 // ---------------------------------------------------------------------------
