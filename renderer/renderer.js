@@ -294,70 +294,43 @@ function slotItems(theme) {
 async function setPreview(which, filePath) {
   const el = which === 'dark' ? $('#previewDark') : $('#previewLight');
 
-  // Get current background image and content to see if we should fade
-  const oldBg = el.style.backgroundImage;
-  const oldHtml = el.innerHTML;
+  // Increment load ID to cancel any pending stale loads
+  const loadId = (el.dataset.loadId ? parseInt(el.dataset.loadId, 10) : 0) + 1;
+  el.dataset.loadId = loadId;
 
-  // Prepare new states
+  // Get current state
+  const oldBg = el.style.backgroundImage;
+
   let newBg = '';
   let newHtml = '';
+  
   if (filePath) {
     const url = await window.api.fileUrl(filePath);
-    // cache-bust: stored file may reuse the same name (monitor+theme+ext) → same
-    // file:// URL would show a stale cached image. ?v= forces a fresh load.
-    newBg = `url("${url}?v=${Date.now()}")`;
+    const newBgUrl = `${url}?v=${Date.now()}`;
+    newBg = `url("${newBgUrl}")`;
+    
+    // Only preload if the background image is actually changing
+    if (oldBg !== newBg) {
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.onload = () => resolve();
+        img.onerror = () => resolve(); // continue even if loading fails
+        img.src = newBgUrl;
+      });
+    }
   } else {
     newHtml = `<span class="preview-empty">${t('design.notSelected')}</span>`;
   }
 
-  // Only perform fade if there was a meaningful previous visual state
-  const hasOldState = (oldBg && oldBg !== 'none' && oldBg !== '') || (oldHtml && !oldHtml.includes('preview-empty'));
-  const isChanging = oldBg !== newBg || oldHtml !== newHtml;
-
-  if (hasOldState && isChanging) {
-    // Clone current element to preserve exactly how it looks
-    const overlay = el.cloneNode(true);
-    overlay.removeAttribute('id');
-    overlay.style.position = 'absolute';
-    overlay.style.top = '0';
-    overlay.style.left = '0';
-    overlay.style.width = '100%';
-    overlay.style.height = '100%';
-    overlay.style.margin = '0';
-    overlay.style.border = 'none';
-    overlay.style.boxShadow = 'none';
-    overlay.style.outline = 'none';
-    overlay.style.opacity = '1';
-    overlay.style.transition = 'opacity 0.35s ease-in-out';
-    overlay.style.zIndex = '2';
-    overlay.style.pointerEvents = 'none';
-
-    // Append overlay to show the "old" image on top
-    el.appendChild(overlay);
-
-    // Apply the new image/content to the actual element underneath
-    el.style.backgroundImage = newBg;
-    el.innerHTML = newHtml;
-    applyPreviewStyle();
-
-    // Trigger browser layout reflow to register style changes
-    overlay.offsetHeight;
-
-    // Transition the opacity of the overlay to 0
-    overlay.style.opacity = '0';
-
-    // Remove the temporary overlay after transition completes
-    setTimeout(() => {
-      if (overlay.parentNode) {
-        overlay.parentNode.removeChild(overlay);
-      }
-    }, 400);
-  } else {
-    // Instant update if no meaningful transition is required
-    el.style.backgroundImage = newBg;
-    el.innerHTML = newHtml;
-    applyPreviewStyle();
+  // If another load has started in the meantime, discard this stale update
+  if (parseInt(el.dataset.loadId, 10) !== loadId) {
+    return;
   }
+
+  // Apply instantly and flicker-free (browser has the image cached now)
+  el.style.backgroundImage = newBg;
+  el.innerHTML = newHtml;
+  applyPreviewStyle();
 }
 
 // big preview = resolved current image (main scans folders); strip = playlist items
