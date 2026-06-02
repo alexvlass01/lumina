@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('api', {
   installUpdate: () => ipcRenderer.invoke('install-update'),
   openReleases: () => ipcRenderer.invoke('open-releases'),
   openWebsite: () => ipcRenderer.invoke('open-website'),
+  detectLocation: () => ipcRenderer.invoke('detect-location'),
   getUpdateState: () => ipcRenderer.invoke('get-update-state'),
 
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),

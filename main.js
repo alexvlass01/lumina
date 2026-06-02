@@ -734,6 +734,16 @@ function buildTrayMenu() {
   return Menu.buildFromTemplate(items);
 }
 
+function refreshTrayIcon() {
+  if (!tray) return;
+  const theme = currentThemeName();
+  const iconName = theme === 'dark' ? 'tray-dark.png' : 'tray-light.png';
+  const imgPath = path.join(__dirname, 'assets', iconName);
+  const finalPath = fs.existsSync(imgPath) ? imgPath : path.join(__dirname, 'assets', 'tray.png');
+  const img = nativeImage.createFromPath(finalPath);
+  tray.setImage(img);
+}
+
 function refreshTray() {
   if (tray) tray.setContextMenu(buildTrayMenu());
 }
@@ -743,6 +753,7 @@ function createTray() {
   tray = new Tray(img);
   tray.setToolTip('Lumina');
   refreshTray();
+  refreshTrayIcon();
   tray.on('click', () => showWindow());
   tray.on('double-click', () => showWindow());
 }
@@ -965,6 +976,26 @@ ipcMain.handle('set-slideshow', (e, patch) => {
 
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which));
 
+ipcMain.handle('detect-location', async () => {
+  try {
+    const res = await fetch('https://ipapi.co/json/');
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    if (data && data.latitude != null && data.longitude != null) {
+      return {
+        ok: true,
+        lat: String(data.latitude),
+        lng: String(data.longitude),
+        city: data.city || ''
+      };
+    }
+    throw new Error('Invalid response data');
+  } catch (err) {
+    console.error('Location detection failed:', err);
+    return { ok: false, reason: err.message };
+  }
+});
+
 ipcMain.handle('set-autostart', (e, v) => {
   setAutostart(v);
   return config.autostart;
@@ -1059,6 +1090,7 @@ app.whenReady().then(async () => {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }
     broadcastTheme();
+    refreshTrayIcon();
     if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
     else if (config.autoSwitch) applyForTheme();
   });

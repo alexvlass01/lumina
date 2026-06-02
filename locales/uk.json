@@ -92,7 +92,14 @@
     "darkStart": "Темна тема з",
     "lat": "Широта",
     "lng": "Довгота",
-    "coordsSub": "Координати для розрахунку світанку та заходу"
+    "coordinates": "Координати",
+    "coordsSub": "Координати для розрахунку світанку та заходу",
+    "autoCoordsTitle": "Визначити за IP",
+    "autoCoordsSub": "Автоматично заповнити координати за вашим розташуванням",
+    "autoCoordsBtn": "Визначити",
+    "autoCoordsChecking": "Визначення розташування...",
+    "autoCoordsSuccess": "Координати визначено: {city} ({lat}, {lng})",
+    "autoCoordsError": "Не вдалося визначити координати: {msg}"
   },
   "slideshow": {
     "group": "Слайдшоу",

@@ -92,7 +92,14 @@
     "darkStart": "Dark theme from",
     "lat": "Latitude",
     "lng": "Longitude",
-    "coordsSub": "Coordinates for sunrise/sunset calculation"
+    "coordinates": "Coordinates",
+    "coordsSub": "Coordinates for sunrise/sunset calculation",
+    "autoCoordsTitle": "Detect by IP",
+    "autoCoordsSub": "Automatically set coordinates based on your location",
+    "autoCoordsBtn": "Detect",
+    "autoCoordsChecking": "Detecting location...",
+    "autoCoordsSuccess": "Location detected: {city} ({lat}, {lng})",
+    "autoCoordsError": "Failed to detect location: {msg}"
   },
   "slideshow": {
     "group": "Slideshow",

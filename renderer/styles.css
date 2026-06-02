@@ -405,6 +405,10 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
   background: var(--btn-bg);
   cursor: pointer;
   transition: background 0.12s ease, transform 0.05s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
 }
 .pill:hover { background: var(--btn-bg-hover); }
 .pill:active { transform: scale(0.98); }
@@ -509,7 +513,7 @@ select option {
   flex: 0 0 auto;
 }
 .time-input:hover { background: var(--btn-bg-hover); }
-.num-input { width: 96px; text-align: right; }
+.num-input { width: 96px; text-align: right; cursor: text; }
 .select-wrap::after {
   content: "";
   position: absolute;
@@ -556,3 +560,22 @@ select option {
 @media (max-width: 720px) {
   .cards { grid-template-columns: 1fr; }
 }
+
+/* Coordinates alignment group */
+.coords-group {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.coord-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.coord-label {
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+

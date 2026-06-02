@@ -250,14 +250,31 @@
         <div id="themeSun" hidden>
           <div class="row">
             <div class="row-text">
-              <div class="row-title" data-i18n="theme.lat">Широта</div>
-              <div class="row-sub" data-i18n="theme.coordsSub">Координаты для расчёта рассвета и заката</div>
+              <div class="row-title" data-i18n="theme.autoCoordsTitle">Определить по IP</div>
+              <div class="row-sub" id="lblCoordsStatus" data-i18n="theme.autoCoordsSub">Автоматически заполнить координаты по вашему местоположению</div>
             </div>
-            <input type="number" step="0.0001" id="latInput" class="time-input num-input" placeholder="50.45" />
+            <button class="pill" id="btnDetectCoords">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                <path d="M8 0C4.963 0 2.5 2.463 2.5 5.5c0 3.93 5.033 10.05 5.247 10.309a.333.333 0 00.506 0c.214-.259 5.247-6.379 5.247-10.309C13.5 2.463 11.037 0 8 0zm0 8.25a2.75 2.75 0 110-5.5 2.75 2.75 0 010 5.5z"/>
+              </svg>
+              <span data-i18n="theme.autoCoordsBtn">Определить</span>
+            </button>
           </div>
           <div class="row">
-            <div class="row-text"><div class="row-title" data-i18n="theme.lng">Долгота</div></div>
-            <input type="number" step="0.0001" id="lngInput" class="time-input num-input" placeholder="30.52" />
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.coordinates">Координаты</div>
+              <div class="row-sub" data-i18n="theme.coordsSub">Координаты для расчёта рассвета и заката</div>
+            </div>
+            <div class="coords-group">
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lat">Широта</span>
+                <input type="number" step="0.0001" id="latInput" class="time-input num-input" placeholder="50.45" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lng">Долгота</span>
+                <input type="number" step="0.0001" id="lngInput" class="time-input num-input" placeholder="30.52" />
+              </div>
+            </div>
           </div>
         </div>
       </div>

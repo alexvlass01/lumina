@@ -747,6 +747,30 @@ async function init() {
   $('#latInput').addEventListener('change', () => saveThemeSchedule(false));
   $('#lngInput').addEventListener('change', () => saveThemeSchedule(false));
 
+  $('#btnDetectCoords').addEventListener('click', async () => {
+    const btn = $('#btnDetectCoords');
+    const status = $('#lblCoordsStatus');
+    btn.disabled = true;
+    status.textContent = t('theme.autoCoordsChecking') || '...';
+    const res = await window.api.detectLocation();
+    btn.disabled = false;
+    if (res.ok) {
+      $('#latInput').value = res.lat;
+      $('#lngInput').value = res.lng;
+      status.textContent = t('theme.autoCoordsSuccess', { city: res.city, lat: parseFloat(res.lat).toFixed(2), lng: parseFloat(res.lng).toFixed(2) });
+      const sch = {
+        ...(config.themeSchedule || {}),
+        lat: res.lat,
+        lng: res.lng
+      };
+      config = await window.api.setConfig({ themeSchedule: sch });
+      toast(t('toast.styleUpdated'));
+    } else {
+      status.textContent = t('theme.autoCoordsError', { msg: res.reason });
+      toast(t('toast.error', { msg: res.reason }));
+    }
+  });
+
   // live updates from main process
   window.api.onTheme((theme) => {
     applyThemeToUI(theme);
