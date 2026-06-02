@@ -559,6 +559,9 @@ async function init() {
   // ---- settings: quit the app ----
   $('#btnQuit').addEventListener('click', () => window.api.quitApp());
 
+  // ---- settings: open the project website ----
+  $('#btnWebsite').addEventListener('click', () => window.api.openWebsite());
+
   // ---- settings: usage statistics (opt-in placeholder) ----
   $('#swTelemetry').addEventListener('click', async () => {
     const on = $('#swTelemetry').getAttribute('aria-checked') !== 'true';

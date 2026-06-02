@@ -249,7 +249,7 @@ if ($Mode -eq 'enum') {
   }
   ConvertTo-Json -InputObject @($list) -Compress
 } elseif ($Mode -eq 'apply') {
-  $data = Get-Content -LiteralPath $DataFile -Raw | ConvertFrom-Json
+  $data = Get-Content -LiteralPath $DataFile -Raw -Encoding utf8 | ConvertFrom-Json
   [DW]::SetPosition([int]$data.position)
   foreach ($it in $data.items) { [DW]::SetWallpaper([string]$it.id, [string]$it.path) }
 }
@@ -686,6 +686,33 @@ function showWindow() {
 }
 
 // ---------------------------------------------------------------------------
+// Slideshow Helpers
+// ---------------------------------------------------------------------------
+function hasSlideshowItems() {
+  const theme = currentThemeName();
+  if (config.singleWallpaper) {
+    return resolveSlot(slotFor(primaryMonitorId(), theme)).length >= 2;
+  }
+  for (const m of monitorsCache) {
+    if (resolveSlot(slotFor(m.id, theme)).length >= 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function triggerNextWallpaper() {
+  const theme = currentThemeName();
+  if (config.slideshow && config.slideshow.enabled) {
+    tickSlideshow(true);
+  } else {
+    advanceIndices(theme);
+    saveConfig();
+    applyForTheme(theme);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
 function buildTrayMenu() {
@@ -693,6 +720,10 @@ function buildTrayMenu() {
     { label: tMain('tray.open'), click: () => showWindow() },
     { label: tMain('tray.applyCurrent'), click: () => applyForTheme() },
   ];
+  const slideshowEnabled = config.slideshow && config.slideshow.enabled;
+  if (slideshowEnabled || hasSlideshowItems()) {
+    items.push({ label: tMain('tray.nextWallpaper'), click: () => triggerNextWallpaper() });
+  }
   if (updateState === 'ready') {
     items.push({ type: 'separator' }, { label: tMain('tray.installUpdate'), click: () => quitAndInstallUpdate() });
   }
@@ -947,6 +978,7 @@ ipcMain.handle('set-start-minimized', (e, v) => {
 ipcMain.handle('check-for-updates', () => ({ started: checkForUpdates(), supported: updatesSupported() }));
 ipcMain.handle('install-update', () => quitAndInstallUpdate());
 ipcMain.handle('open-releases', () => shell.openExternal(RELEASES_PAGE));
+ipcMain.handle('open-website', () => shell.openExternal('https://github.com/alexvlass01/lumina'));
 ipcMain.handle('get-update-state', () => ({ state: updateState, supported: updatesSupported() }));
 
 ipcMain.handle('file-url', (e, p) => {
