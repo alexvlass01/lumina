@@ -115,6 +115,18 @@ async function loadI18n() {
 }
 // Re-apply every string after a language change.
 function refreshTexts() {
+  const sl = $('#stripLight'); if (sl) sl.removeAttribute('data-items');
+  const sd = $('#stripDark'); if (sd) sd.removeAttribute('data-items');
+
+  // Clear preview/thumbnail path cache so they re-render with new translations
+  ['#previewLight', '#previewDark'].forEach((id) => {
+    const el = $(id);
+    if (el) el.removeAttribute('data-bg-path');
+  });
+  document.querySelectorAll('.home-thumb').forEach((el) => {
+    el.removeAttribute('data-bg-path');
+  });
+
   applyI18n();
   applyThemeToUI(currentTheme); // hero subtitle
   buildMonitorMap();            // chip titles + label
@@ -294,6 +306,12 @@ function slotItems(theme) {
 async function setPreview(which, filePath) {
   const el = which === 'dark' ? $('#previewDark') : $('#previewLight');
 
+  // If the path is already set, do not reload or rebuild to prevent flickering
+  if (el.dataset.bgPath === filePath) {
+    return;
+  }
+  el.dataset.bgPath = filePath;
+
   // Increment load ID to cancel any pending stale loads
   const loadId = (el.dataset.loadId ? parseInt(el.dataset.loadId, 10) : 0) + 1;
   el.dataset.loadId = loadId;
@@ -309,15 +327,13 @@ async function setPreview(which, filePath) {
     const newBgUrl = `${url}?v=${Date.now()}`;
     newBg = `url("${newBgUrl}")`;
     
-    // Only preload if the background image is actually changing
-    if (oldBg !== newBg) {
-      await new Promise((resolve) => {
-        const img = new Image();
-        img.onload = () => resolve();
-        img.onerror = () => resolve(); // continue even if loading fails
-        img.src = newBgUrl;
-      });
-    }
+    // Preload image
+    await new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => resolve();
+      img.onerror = () => resolve(); // continue even if loading fails
+      img.src = newBgUrl;
+    });
   } else {
     newHtml = `<span class="preview-empty">${t('design.notSelected')}</span>`;
   }
@@ -328,7 +344,16 @@ async function setPreview(which, filePath) {
   }
 
   // Apply instantly and flicker-free (browser has the image cached now)
-  el.style.backgroundImage = newBg;
+  if (oldBg && oldBg !== 'none' && oldBg !== newBg) {
+    el.style.backgroundImage = `${newBg}, ${oldBg}`;
+    setTimeout(() => {
+      if (parseInt(el.dataset.loadId, 10) === loadId) {
+        el.style.backgroundImage = newBg;
+      }
+    }, 150);
+  } else {
+    el.style.backgroundImage = newBg;
+  }
   el.innerHTML = newHtml;
   applyPreviewStyle();
 }
@@ -344,6 +369,14 @@ function renderStrip(theme) {
   const strip = theme === 'dark' ? $('#stripDark') : $('#stripLight');
   if (!strip) return;
   const items = slotItems(theme);
+  
+  // Skip rebuilding if the items are identical to prevent flickering/re-rendering
+  const itemsJson = JSON.stringify(items);
+  if (strip.dataset.items === itemsJson) {
+    return;
+  }
+  strip.dataset.items = itemsJson;
+  
   strip.innerHTML = '';
   items.forEach((it, idx) => {
     const el = document.createElement('div');
@@ -353,7 +386,16 @@ function renderStrip(theme) {
       el.title = it.path;
     } else {
       el.title = baseName(it.path);
-      window.api.fileUrl(it.path).then((u) => { if (u) el.style.backgroundImage = `url("${u}")`; });
+      // Preload thumbnail image before displaying to prevent flicker
+      window.api.fileUrl(it.path).then((u) => {
+        if (u) {
+          const img = new Image();
+          img.onload = () => {
+            el.style.backgroundImage = `url("${u}")`;
+          };
+          img.src = u;
+        }
+      });
     }
     const rm = document.createElement('button');
     rm.className = 'thumb-remove';
@@ -416,6 +458,7 @@ function updateSlideshowControls() {
 
 async function renderConfig() {
   renderPreviews();
+  applyPreviewStyle();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
   setSwitch($('#swStartMin'), config.startMinimized !== false);
@@ -484,34 +527,103 @@ function renderHome() {
   if (!config) return;
   const wrap = $('#homeMonitors');
   if (wrap) {
-    wrap.innerHTML = '';
     if (!monitorList.length) {
       wrap.innerHTML = `<div class="home-empty">${t('home.noMonitors')}</div>`;
     } else {
-      monitorList.forEach((m, i) => {
-        const ar = m.h ? m.w / m.h : 16 / 9;
-        const cell = document.createElement('div');
-        cell.className = 'home-mon';
-        const thumb = document.createElement('div');
-        thumb.className = 'home-thumb';
-        thumb.style.height = HOME_THUMB_H + 'px';
-        thumb.style.width = Math.round(HOME_THUMB_H * ar) + 'px';
-        thumb.textContent = '';
-        window.api.currentImage(m.id, currentTheme).then((wp) => {
-          if (wp) {
-            window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}?v=${Date.now()}")`; });
-          } else {
-            thumb.classList.add('empty');
-            thumb.textContent = t('home.noWallpaper');
+      const existingCells = wrap.querySelectorAll('.home-mon');
+      if (existingCells.length === monitorList.length) {
+        // Update elements in-place to prevent disappearing / flickering
+        monitorList.forEach((m, i) => {
+          const cell = existingCells[i];
+          const thumb = cell.querySelector('.home-thumb');
+          const lbl = cell.querySelector('.home-mon-label');
+          
+          if (lbl) {
+            lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
+          }
+          
+          if (thumb) {
+            window.api.currentImage(m.id, currentTheme).then(async (wp) => {
+              if (wp) {
+                // If it is already showing this wallpaper path, do nothing
+                if (thumb.dataset.bgPath === wp) {
+                  return;
+                }
+                thumb.dataset.bgPath = wp;
+
+                const url = await window.api.fileUrl(wp);
+                const newBgUrl = `${url}?v=${Date.now()}`;
+                const newBg = `url("${newBgUrl}")`;
+                
+                const oldBg = thumb.style.backgroundImage;
+
+                // Preload the image so it swaps instantly without a blank flash
+                const img = new Image();
+                img.onload = () => {
+                  if (oldBg && oldBg !== 'none' && oldBg !== newBg) {
+                    thumb.style.backgroundImage = `${newBg}, ${oldBg}`;
+                    setTimeout(() => {
+                      thumb.style.backgroundImage = newBg;
+                    }, 150);
+                  } else {
+                    thumb.style.backgroundImage = newBg;
+                  }
+                  thumb.classList.remove('empty');
+                  thumb.textContent = '';
+                };
+                img.src = newBgUrl;
+              } else {
+                thumb.dataset.bgPath = '';
+                thumb.style.backgroundImage = '';
+                thumb.classList.add('empty');
+                thumb.textContent = t('home.noWallpaper');
+              }
+            });
           }
         });
-        const lbl = document.createElement('div');
-        lbl.className = 'home-mon-label';
-        lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
-        cell.appendChild(thumb);
-        cell.appendChild(lbl);
-        wrap.appendChild(cell);
-      });
+      } else {
+        // Fallback: Full rebuild only if monitor count changed
+        wrap.innerHTML = '';
+        monitorList.forEach((m, i) => {
+          const ar = m.h ? m.w / m.h : 16 / 9;
+          const cell = document.createElement('div');
+          cell.className = 'home-mon';
+          
+          const thumb = document.createElement('div');
+          thumb.className = 'home-thumb';
+          thumb.style.height = HOME_THUMB_H + 'px';
+          thumb.style.width = Math.round(HOME_THUMB_H * ar) + 'px';
+          thumb.classList.add('empty');
+          
+          window.api.currentImage(m.id, currentTheme).then(async (wp) => {
+            if (wp) {
+              thumb.dataset.bgPath = wp;
+              const url = await window.api.fileUrl(wp);
+              const newBgUrl = `${url}?v=${Date.now()}`;
+              
+              // Preload before display
+              const img = new Image();
+              img.onload = () => {
+                thumb.style.backgroundImage = `url("${newBgUrl}")`;
+                thumb.classList.remove('empty');
+                thumb.textContent = '';
+              };
+              img.src = newBgUrl;
+            } else {
+              thumb.dataset.bgPath = '';
+              thumb.textContent = t('home.noWallpaper');
+            }
+          });
+          
+          const lbl = document.createElement('div');
+          lbl.className = 'home-mon-label';
+          lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
+          
+          cell.appendChild(thumb);
+          cell.appendChild(lbl);
+          wrap.appendChild(cell);
+        });
+      }
     }
   }
   const a = $('#stAuto'); if (a) a.textContent = config.autoSwitch ? t('val.on') : t('val.off');
