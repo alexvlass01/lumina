@@ -7,6 +7,8 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "test": "node test/playlist.test.js && node test/config.test.js && node test/tray.test.js && node test/wallpaper-host.test.js && node scripts/lint-i18n.js",
+    "lint:i18n": "node scripts/lint-i18n.js",
     "package": "node node_modules/@electron/packager/bin/electron-packager.mjs . Lumina --platform=win32 --arch=x64 --icon=assets/icon.ico --out=dist --overwrite --ignore=dist --ignore=\\.claude",
     "installer": "npm run package && node scripts/build-installer.js"
   },
