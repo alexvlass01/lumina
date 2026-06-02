@@ -75,7 +75,10 @@
     "styleTitle": "Position",
     "styleSub": "How the image fits the desktop",
     "singleTitle": "One wallpaper for all monitors",
-    "singleSub": "Use a single image across every monitor"
+    "singleSub": "Use a single image across every monitor",
+    "addPhotos": "Add photos…",
+    "addFolder": "Add folder…",
+    "removeItem": "Remove"
   },
   "theme": {
     "group": "Windows theme",
@@ -90,6 +93,16 @@
     "lng": "Longitude",
     "coordsSub": "Coordinates for sunrise/sunset calculation"
   },
+  "slideshow": {
+    "group": "Slideshow",
+    "title": "Slideshow",
+    "sub": "Cycle the wallpaper through your added photos and folders",
+    "intervalTitle": "Interval",
+    "intervalSub": "How many minutes between pictures",
+    "orderTitle": "Order",
+    "orderSub": "How the next picture is chosen"
+  },
+  "order": { "sequential": "In order", "shuffle": "Shuffle" },
   "style": {
     "fill": "Fill",
     "fit": "Fit",
@@ -121,7 +134,11 @@
     "singleOff": "Per-monitor wallpapers",
     "startMinOn": "Autostart opens to the tray",
     "startMinOff": "Autostart shows the window",
-    "updateManual": "Find updates on the Releases page"
+    "updateManual": "Find updates on the Releases page",
+    "photosAdded": "Photos added: {n}",
+    "folderAdded": "Folder added",
+    "slideshowOn": "Slideshow on",
+    "slideshowOff": "Slideshow off"
   },
   "tray": {
     "open": "Open Lumina",

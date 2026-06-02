@@ -364,6 +364,32 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
 }
 .preview-empty { color: var(--text-dim); font-size: 12px; text-align: center; padding: 4px; }
 
+/* ---------- Slideshow playlist: thumbnail strip ---------- */
+.thumbstrip { display: flex; flex-wrap: wrap; gap: 8px; }
+.thumbstrip:empty { display: none; }
+.thumb {
+  position: relative;
+  width: 52px; height: 52px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  background: var(--preview-bg) center / cover no-repeat;
+  display: flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+}
+.thumb.folder { background: var(--card); }
+.thumb-ic { font-size: 22px; line-height: 1; }
+.thumb-remove {
+  position: absolute; top: -6px; right: -6px;
+  width: 18px; height: 18px; padding: 0;
+  border: none; border-radius: 50%; cursor: pointer;
+  background: rgba(0, 0, 0, 0.62); color: #fff;
+  font-size: 13px; line-height: 16px; text-align: center;
+  opacity: 0; transition: opacity .12s ease;
+}
+.thumb:hover .thumb-remove,
+.thumb:focus-within .thumb-remove { opacity: 1; }
+.thumb-remove:hover { background: #e01b24; }
+
 .wallcard-actions { display: flex; gap: 10px; }
 .wallcard-actions .pill { flex: 1; }
 

@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, monitors: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' } };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, monitors: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
   let mockSc = { desktop: false, startmenu: false };
   window.api = {
     getConfig: async () => mock,
@@ -21,12 +21,39 @@ if (!window.api) {
       { id: 'MON-2', x: 1920, y: -440, w: 1200, h: 1920, primary: false },
     ],
     getTheme: async () => 'light',
-    pickImage: async () => null,
-    setMonitorWallpaper: async (id, which, path) => {
-      if (!mock.monitors[id]) mock.monitors[id] = { light: '', dark: '' };
-      mock.monitors[id][which === 'dark' ? 'dark' : 'light'] = path;
+    addSlotImages: async (id, which) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      if (!mock.monitors[id]) mock.monitors[id] = { light: { items: [] }, dark: { items: [] } };
+      const slot = mock.monitors[id][theme];
+      slot.items.push({ type: 'image', path: `C:/fake/photo${slot.items.length + 1}.jpg` });
+      return { config: mock, added: 1 };
+    },
+    addSlotFolder: async (id, which) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      if (!mock.monitors[id]) mock.monitors[id] = { light: { items: [] }, dark: { items: [] } };
+      mock.monitors[id][theme].items.push({ type: 'folder', path: 'C:/fake/Pictures' });
+      return { config: mock, added: 1 };
+    },
+    removeSlotItem: async (id, which, index) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      const slot = mock.monitors[id] && mock.monitors[id][theme];
+      if (slot && slot.items) slot.items.splice(index, 1);
       return mock;
     },
+    clearSlot: async (id, which) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      if (mock.monitors[id] && mock.monitors[id][theme]) mock.monitors[id][theme].items = [];
+      return mock;
+    },
+    currentImage: async (id, which) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      const realId = mock.singleWallpaper ? 'MON-1' : id;
+      const slot = mock.monitors[realId] && mock.monitors[realId][theme];
+      if (!slot || !slot.items.length) return '';
+      const it = slot.items[0];
+      return it.type === 'folder' ? '' : it.path; // mock can't scan folders
+    },
+    setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
     setAutostart: async (v) => (mock.autostart = v),
     setStartMinimized: async (v) => (mock.startMinimized = v),
@@ -244,18 +271,24 @@ function layoutMonitors() {
   });
 }
 
-// Wallpaper path for a monitor + theme (own pick, or global fallback).
-function wallpaperForMonitor(id, theme) {
-  const fb = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
-  if (config.singleWallpaper) return fb || ''; // одни обои на все мониторы
-  const mon = config.monitors && config.monitors[id];
-  const per = mon ? mon[theme] : '';
-  return per || fb || '';
+// id основного монитора (для режима «одни обои на все мониторы»)
+function primaryMonitorId() {
+  const p = monitorList.find((m) => m.primary) || monitorList[0];
+  return p ? p.id : null;
 }
 
-// Wallpaper for the currently selected monitor (used by the settings previews).
-function wallpaperFor(theme) {
-  return wallpaperForMonitor(selectedMonitorId, theme);
+// монитор, для которого редактируем плейлист (single-режим → основной)
+function editTargetId() {
+  return config.singleWallpaper ? primaryMonitorId() : selectedMonitorId;
+}
+
+function baseName(p) { return String(p).split(/[\\/]/).filter(Boolean).pop() || String(p); }
+
+// элементы плейлиста выбранного (или основного) монитора для темы
+function slotItems(theme) {
+  const m = config.monitors && config.monitors[editTargetId()];
+  const slot = m && m[theme];
+  return slot && Array.isArray(slot.items) ? slot.items : [];
 }
 
 async function setPreview(which, filePath) {
@@ -273,10 +306,48 @@ async function setPreview(which, filePath) {
   applyPreviewStyle();
 }
 
-async function renderPreviews() {
+// big preview = resolved current image (main scans folders); strip = playlist items
+function renderSlot(which) {
+  const theme = which === 'dark' ? 'dark' : 'light';
+  renderStrip(theme);
+  window.api.currentImage(selectedMonitorId, theme).then((cur) => setPreview(theme, cur));
+}
+
+function renderStrip(theme) {
+  const strip = theme === 'dark' ? $('#stripDark') : $('#stripLight');
+  if (!strip) return;
+  const items = slotItems(theme);
+  strip.innerHTML = '';
+  items.forEach((it, idx) => {
+    const el = document.createElement('div');
+    el.className = 'thumb' + (it.type === 'folder' ? ' folder' : '');
+    if (it.type === 'folder') {
+      el.innerHTML = '<span class="thumb-ic">📁</span>';
+      el.title = it.path;
+    } else {
+      el.title = baseName(it.path);
+      window.api.fileUrl(it.path).then((u) => { if (u) el.style.backgroundImage = `url("${u}")`; });
+    }
+    const rm = document.createElement('button');
+    rm.className = 'thumb-remove';
+    rm.textContent = '×';
+    rm.title = t('design.removeItem');
+    rm.addEventListener('click', async (ev) => {
+      ev.stopPropagation();
+      config = await window.api.removeSlotItem(editTargetId(), theme, idx);
+      renderSlot(theme);
+      renderHome();
+      if (theme === currentTheme) window.api.applyNow();
+    });
+    el.appendChild(rm);
+    strip.appendChild(el);
+  });
+}
+
+function renderPreviews() {
   if (!config) return;
-  await setPreview('light', wallpaperFor('light'));
-  await setPreview('dark', wallpaperFor('dark'));
+  renderSlot('light');
+  renderSlot('dark');
 }
 
 function applyThemeToUI(theme) {
@@ -309,8 +380,15 @@ function renderThemeSchedule() {
   if ($('#themeSun')) $('#themeSun').hidden = (sch.mode !== 'sun');
 }
 
+function updateSlideshowControls() {
+  const ss = (config && config.slideshow) || { enabled: false, intervalMin: 30, order: 'sequential' };
+  setSwitch($('#swSlideshow'), !!ss.enabled);
+  if ($('#slideInterval')) $('#slideInterval').value = ss.intervalMin || 30;
+  if ($('#selSlideOrder')) $('#selSlideOrder').value = ss.order || 'sequential';
+}
+
 async function renderConfig() {
-  await renderPreviews();
+  renderPreviews();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
   setSwitch($('#swStartMin'), config.startMinimized !== false);
@@ -318,6 +396,7 @@ async function renderConfig() {
   setSwitch($('#swTelemetry'), !!config.telemetry);
   $('#selStyle').value = config.style || 'fill';
   updateSingleWallRow();
+  updateSlideshowControls();
   renderThemeSchedule();
 }
 
@@ -390,14 +469,15 @@ function renderHome() {
         thumb.className = 'home-thumb';
         thumb.style.height = HOME_THUMB_H + 'px';
         thumb.style.width = Math.round(HOME_THUMB_H * ar) + 'px';
-        const wp = wallpaperForMonitor(m.id, currentTheme);
-        if (wp) {
-          thumb.textContent = '';
-          window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}?v=${Date.now()}")`; });
-        } else {
-          thumb.classList.add('empty');
-          thumb.textContent = t('home.noWallpaper');
-        }
+        thumb.textContent = '';
+        window.api.currentImage(m.id, currentTheme).then((wp) => {
+          if (wp) {
+            window.api.fileUrl(wp).then((u) => { thumb.style.backgroundImage = `url("${u}?v=${Date.now()}")`; });
+          } else {
+            thumb.classList.add('empty');
+            thumb.textContent = t('home.noWallpaper');
+          }
+        });
         const lbl = document.createElement('div');
         lbl.className = 'home-mon-label';
         lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
@@ -548,21 +628,34 @@ async function init() {
     exitFirstRun();
   });
 
-  // pick image for the SELECTED monitor (or globally when "single wallpaper" is on)
-  document.querySelectorAll('[data-pick]').forEach((btn) => {
+  // add photos / a folder to the SELECTED monitor's playlist (primary in single mode)
+  document.querySelectorAll('[data-add-photos]').forEach((btn) => {
     btn.addEventListener('click', async () => {
-      const which = btn.dataset.pick;
-      const targetMon = config.singleWallpaper ? null : selectedMonitorId;
-      const file = await window.api.pickImage(which, targetMon);
-      if (!file) return;
-      config = await window.api.setMonitorWallpaper(targetMon, which, file);
-      await setPreview(which, file);
+      const which = btn.dataset.addPhotos;
+      const mon = editTargetId();
+      if (!mon) return;
+      const res = await window.api.addSlotImages(mon, which);
+      config = (res && res.config) || config;
+      renderSlot(which);
       renderHome();
-      toast(which === 'dark' ? t('toast.darkChosen') : t('toast.lightChosen'));
-
-      if (which === currentTheme) {
-        const res = await window.api.applyNow(which);
-        if (res.ok) toast(t('toast.applied'));
+      if (res && res.added) {
+        toast(t('toast.photosAdded', { n: res.added }));
+        if (which === currentTheme) window.api.applyNow(which);
+      }
+    });
+  });
+  document.querySelectorAll('[data-add-folder]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const which = btn.dataset.addFolder;
+      const mon = editTargetId();
+      if (!mon) return;
+      const res = await window.api.addSlotFolder(mon, which);
+      config = (res && res.config) || config;
+      renderSlot(which);
+      renderHome();
+      if (res && res.added) {
+        toast(t('toast.folderAdded'));
+        if (which === currentTheme) window.api.applyNow(which);
       }
     });
   });
@@ -611,6 +704,24 @@ async function init() {
     applyPreviewStyle();
     const res = await window.api.applyNow();
     if (res.ok) toast(t('toast.styleUpdated'));
+  });
+
+  // slideshow controls (live)
+  $('#swSlideshow').addEventListener('click', async () => {
+    const on = $('#swSlideshow').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swSlideshow'), on);
+    config = await window.api.setSlideshow({ enabled: on });
+    updateSlideshowControls();
+    toast(on ? t('toast.slideshowOn') : t('toast.slideshowOff'));
+  });
+  $('#slideInterval').addEventListener('change', async () => {
+    let v = parseInt($('#slideInterval').value, 10);
+    if (!Number.isFinite(v) || v < 1) v = 30;
+    config = await window.api.setSlideshow({ intervalMin: v });
+    $('#slideInterval').value = config.slideshow.intervalMin;
+  });
+  $('#selSlideOrder').addEventListener('change', async () => {
+    config = await window.api.setSlideshow({ order: $('#selSlideOrder').value });
   });
 
   // theme schedule (Lumina switches the Windows theme itself)

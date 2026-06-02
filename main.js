@@ -38,33 +38,24 @@ app.isQuitting = false;
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const WALLPAPERS_DIR = path.join(app.getPath('userData'), 'wallpapers');
 
-// Short stable filename key for a monitor (device path is long & has special chars).
-function monitorKey(id) {
-  return crypto.createHash('md5').update(String(id)).digest('hex').slice(0, 12);
-}
-
-// Copy a chosen image into the app's own data dir so it survives app updates
-// and the original file being moved/deleted. `fileKey` makes the name unique
-// (e.g. per monitor + theme). Returns the stored path.
-function importWallpaper(fileKey, srcPath) {
+// Copy a chosen image into the app's own data dir so it survives app updates and
+// the original being moved/deleted. Content-addressed name (wp-<md5>) → identical
+// images dedupe automatically and re-adding the same file is a no-op. Returns path.
+function importWallpaper(srcPath) {
   fs.mkdirSync(WALLPAPERS_DIR, { recursive: true });
+  const buf = fs.readFileSync(srcPath);
+  const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
   const ext = (path.extname(srcPath) || '.img').toLowerCase();
-  // drop any previous file for this slot (could have a different extension)
-  try {
-    for (const f of fs.readdirSync(WALLPAPERS_DIR)) {
-      if (f.startsWith(fileKey + '.')) fs.rmSync(path.join(WALLPAPERS_DIR, f), { force: true });
-    }
-  } catch {}
-  const dest = path.join(WALLPAPERS_DIR, fileKey + ext);
-  fs.copyFileSync(srcPath, dest);
+  const dest = path.join(WALLPAPERS_DIR, `wp-${hash}${ext}`);
+  if (!fs.existsSync(dest)) fs.writeFileSync(dest, buf);
   return dest;
 }
 
 const DEFAULT_CONFIG = {
-  lightWallpaper: '', // global fallback (used by a monitor that has no own pick)
+  lightWallpaper: '', // legacy global fallback (only on COM failure / empty playlist)
   darkWallpaper: '',
   singleWallpaper: false, // одни обои на все мониторы (вместо своей пары на каждый)
-  monitors: {}, // { [deviceId]: { light: path, dark: path } }
+  monitors: {}, // { [deviceId]: { light: Slot, dark: Slot } }; Slot = { items: Item[] }
   autoSwitch: true,
   style: 'fill', // fill | fit | stretch | center | tile | span
   autostart: false,
@@ -75,7 +66,20 @@ const DEFAULT_CONFIG = {
   // Lumina itself switching the Windows light/dark theme on a schedule
   // mode: 'off' | 'time' | 'sun'; lat/lng (strings) used by 'sun'
   themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
+  // Слайдшоу: плейлист крутится по интервалу. order: 'sequential' | 'shuffle'.
+  slideshow: { enabled: false, intervalMin: 30, order: 'sequential' },
+  slideshowIndex: {}, // { [deviceId]: { light: idx, dark: idx } } — текущий кадр, персистим
 };
+
+// Нормализует слот к { items: Item[] }. Старый формат — строка-путь (или пусто).
+// Item = { type:'image'|'folder', path }.
+function normalizeSlot(slot) {
+  if (typeof slot === 'string') return { items: slot ? [{ type: 'image', path: slot }] : [] };
+  if (slot && Array.isArray(slot.items)) {
+    return { items: slot.items.filter((it) => it && it.path && (it.type === 'image' || it.type === 'folder')) };
+  }
+  return { items: [] };
+}
 
 let config = { ...DEFAULT_CONFIG };
 
@@ -99,6 +103,20 @@ function loadConfig() {
     mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '',
     ...(config.themeSchedule && typeof config.themeSchedule === 'object' ? config.themeSchedule : {}),
   };
+  // Слайдшоу: нормализуем слоты в плейлисты { items:[...] } (миграция со «строки-пути»).
+  for (const id of Object.keys(config.monitors)) {
+    const m = config.monitors[id] || {};
+    config.monitors[id] = { light: normalizeSlot(m.light), dark: normalizeSlot(m.dark) };
+  }
+  config.slideshow = {
+    enabled: false, intervalMin: 30, order: 'sequential',
+    ...(config.slideshow && typeof config.slideshow === 'object' ? config.slideshow : {}),
+  };
+  config.slideshow.enabled = !!config.slideshow.enabled;
+  if (!Number.isFinite(+config.slideshow.intervalMin) || +config.slideshow.intervalMin < 1) config.slideshow.intervalMin = 30;
+  config.slideshow.intervalMin = Math.floor(+config.slideshow.intervalMin);
+  if (config.slideshow.order !== 'shuffle') config.slideshow.order = 'sequential';
+  if (!config.slideshowIndex || typeof config.slideshowIndex !== 'object') config.slideshowIndex = {};
 }
 
 function saveConfig() {
@@ -435,14 +453,97 @@ function currentThemeName() {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 }
 
-// Wallpaper path for a given monitor + theme: the monitor's own pick, or the
-// global fallback if it has none.
-function wallpaperFor(monitorId, theme) {
-  const fallback = theme === 'dark' ? config.darkWallpaper : config.lightWallpaper;
-  if (config.singleWallpaper) return fallback || ''; // одни обои на все мониторы
+// id основного монитора (для режима «одни обои на все мониторы»)
+function primaryMonitorId() {
+  const p = monitorsCache.find((m) => m.primary) || monitorsCache[0];
+  return p ? p.id : null;
+}
+
+// ---- Слайдшоу: слот = плейлист источников; resolveSlot разворачивает в список путей ----
+const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
+const folderScanCache = new Map(); // dir -> { at, files } (кэш на несколько секунд)
+
+function scanFolder(dir) {
+  const cached = folderScanCache.get(dir);
+  if (cached && Date.now() - cached.at < 5000) return cached.files;
+  let files = [];
+  try {
+    files = fs.readdirSync(dir)
+      .filter((f) => IMG_EXTS.has(path.extname(f).toLowerCase()))
+      .sort((a, b) => a.localeCompare(b))
+      .map((f) => path.join(dir, f));
+  } catch { files = []; }
+  folderScanCache.set(dir, { at: Date.now(), files });
+  return files;
+}
+
+function slotFor(monitorId, theme) {
   const m = config.monitors && config.monitors[monitorId];
-  const per = m ? m[theme] : '';
-  return per || fallback || '';
+  const slot = m && m[theme];
+  return slot && Array.isArray(slot.items) ? slot : { items: [] };
+}
+
+// Разворачивает слот в плоский список существующих путей (фото + содержимое папок), без дублей.
+function resolveSlot(slot) {
+  const out = [];
+  const seen = new Set();
+  const items = slot && Array.isArray(slot.items) ? slot.items : [];
+  for (const it of items) {
+    if (!it || !it.path) continue;
+    const paths = it.type === 'folder' ? scanFolder(it.path) : [it.path];
+    for (const p of paths) {
+      const k = p.toLowerCase();
+      if (!seen.has(k) && fs.existsSync(p)) { seen.add(k); out.push(p); }
+    }
+  }
+  return out;
+}
+
+// Текущая картинка плейлиста (по сохранённому индексу слайдшоу).
+function currentImageFor(monitorId, theme) {
+  const list = resolveSlot(slotFor(monitorId, theme));
+  if (!list.length) return '';
+  const si = config.slideshowIndex[monitorId];
+  let idx = (si && Number.isFinite(si[theme]) ? si[theme] : 0) % list.length;
+  if (idx < 0) idx += list.length;
+  return list[idx];
+}
+
+// Все файлы, на которые ссылаются слоты (+ легаси-глобалы) — для сборки мусора.
+function referencedFiles() {
+  const set = new Set();
+  const add = (p) => { if (p) set.add(path.normalize(p).toLowerCase()); };
+  for (const id of Object.keys(config.monitors || {})) {
+    for (const theme of ['light', 'dark']) {
+      for (const it of slotFor(id, theme).items) if (it.type === 'image') add(it.path);
+    }
+  }
+  add(config.lightWallpaper); add(config.darkWallpaper);
+  return set;
+}
+
+// Удаляет из wallpapers/ файлы, не упомянутые ни в одном слоте (папки-источники не трогаем).
+function gcWallpapers() {
+  try {
+    const keep = referencedFiles();
+    for (const f of fs.readdirSync(WALLPAPERS_DIR)) {
+      const full = path.join(WALLPAPERS_DIR, f);
+      if (!keep.has(path.normalize(full).toLowerCase())) {
+        try { fs.rmSync(full, { force: true }); } catch {}
+      }
+    }
+  } catch {}
+}
+
+function wallpaperFor(monitorId, theme) {
+  if (config.singleWallpaper) {
+    // одни обои на все мониторы = текущая картинка плейлиста ОСНОВНОГО монитора
+    return currentImageFor(primaryMonitorId(), theme);
+  }
+  const p = currentImageFor(monitorId, theme);
+  if (p) return p;
+  // легаси-fallback только если у монитора пустой плейлист (старые конфиги / COM-сбой)
+  return (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
 }
 
 async function applyForTheme(themeName) {
@@ -480,6 +581,39 @@ async function applyForTheme(themeName) {
     }
   }
   return { ok: false, reason: 'no-wallpaper', theme };
+}
+
+// ---------------------------------------------------------------------------
+// Slideshow scheduler — rotate each monitor's playlist on an interval.
+// Mirrors applyThemeSchedule(): timer → advance indices → applyForTheme → reschedule.
+// ---------------------------------------------------------------------------
+let slideshowTimer = null;
+function clearSlideshowTimer() { if (slideshowTimer) { clearTimeout(slideshowTimer); slideshowTimer = null; } }
+
+// Сдвинуть текущий кадр каждого монитора (в рамках темы); пропускаем плейлисты < 2 картинок.
+function advanceIndices(theme) {
+  const shuffle = config.slideshow.order === 'shuffle';
+  for (const m of monitorsCache) {
+    const len = resolveSlot(slotFor(m.id, theme)).length;
+    if (len < 2) continue;
+    if (!config.slideshowIndex[m.id]) config.slideshowIndex[m.id] = { light: 0, dark: 0 };
+    const cur = Number.isFinite(config.slideshowIndex[m.id][theme]) ? config.slideshowIndex[m.id][theme] : 0;
+    let next;
+    if (shuffle) { do { next = Math.floor(Math.random() * len); } while (next === cur); }
+    else next = (cur + 1) % len;
+    config.slideshowIndex[m.id][theme] = next;
+  }
+}
+
+// advance=true сдвигает кадр; false — просто применить текущее и (пере)запланировать.
+function tickSlideshow(advance) {
+  clearSlideshowTimer();
+  if (!config.slideshow || !config.slideshow.enabled) return;
+  const theme = currentThemeName();
+  if (advance) { advanceIndices(theme); saveConfig(); }
+  applyForTheme(theme);
+  const mins = Math.max(1, Math.floor(Number(config.slideshow.intervalMin) || 30));
+  slideshowTimer = setTimeout(() => tickSlideshow(true), mins * 60000);
 }
 
 // ---------------------------------------------------------------------------
@@ -708,37 +842,93 @@ ipcMain.handle('set-config', (e, patch) => {
   return config;
 });
 
-ipcMain.handle('pick-image', async (e, which, monitorId) => {
-  const res = await dialog.showOpenDialog(mainWindow, {
-    title: 'Выберите изображение',
-    properties: ['openFile'],
-    filters: [
-      { name: 'Изображения', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'] },
-    ],
-  });
-  if (res.canceled || !res.filePaths.length) return null;
-  const theme = which === 'dark' ? 'dark' : 'light';
-  const key = monitorId ? `${monitorKey(monitorId)}-${theme}` : theme;
-  try {
-    return importWallpaper(key, res.filePaths[0]);
-  } catch (err) {
-    console.error('Не удалось импортировать обои:', err);
-    return res.filePaths[0]; // запасной вариант — исходный путь
-  }
-});
+const IMG_FILTERS = [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp', 'webp', 'gif'] }];
 
-ipcMain.handle('set-monitor-wallpaper', (e, monitorId, which, p) => {
+function ensureSlot(monitorId, which) {
   const theme = which === 'dark' ? 'dark' : 'light';
-  if (!monitorId) {
-    // no monitor context → store as global fallback
-    config[theme === 'dark' ? 'darkWallpaper' : 'lightWallpaper'] = p || '';
-  } else {
-    if (!config.monitors) config.monitors = {};
-    if (!config.monitors[monitorId]) config.monitors[monitorId] = { light: '', dark: '' };
-    config.monitors[monitorId][theme] = p || '';
+  if (!config.monitors[monitorId]) config.monitors[monitorId] = { light: { items: [] }, dark: { items: [] } };
+  const m = config.monitors[monitorId];
+  if (!m.light || !Array.isArray(m.light.items)) m.light = { items: [] };
+  if (!m.dark || !Array.isArray(m.dark.items)) m.dark = { items: [] };
+  return m[theme];
+}
+
+// add one or more local photos to a monitor's playlist (multi-select dialog)
+ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
+  if (!monitorId) return { config, added: 0 };
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: tMain('design.addPhotos'),
+    properties: ['openFile', 'multiSelections'],
+    filters: IMG_FILTERS,
+  });
+  if (res.canceled || !res.filePaths.length) return { config, added: 0 };
+  const slot = ensureSlot(monitorId, which);
+  let added = 0;
+  for (const src of res.filePaths) {
+    try {
+      const stored = importWallpaper(src);
+      if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
+        slot.items.push({ type: 'image', path: stored });
+        added++;
+      }
+    } catch (err) { console.error('Не удалось импортировать обои:', err); }
   }
   saveConfig();
   refreshTray();
+  return { config, added };
+});
+
+// add a local folder as a source (scanned live, not copied)
+ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
+  if (!monitorId) return { config, added: 0 };
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: tMain('design.addFolder'),
+    properties: ['openDirectory'],
+  });
+  if (res.canceled || !res.filePaths.length) return { config, added: 0 };
+  const dir = res.filePaths[0];
+  const slot = ensureSlot(monitorId, which);
+  if (!slot.items.some((it) => it.type === 'folder' && it.path === dir)) {
+    slot.items.push({ type: 'folder', path: dir });
+  }
+  saveConfig();
+  return { config, added: 1 };
+});
+
+ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
+  if (!monitorId) return config;
+  const slot = ensureSlot(monitorId, which);
+  if (index >= 0 && index < slot.items.length) slot.items.splice(index, 1);
+  saveConfig();
+  gcWallpapers();
+  refreshTray();
+  return config;
+});
+
+ipcMain.handle('clear-slot', (e, monitorId, which) => {
+  if (!monitorId) return config;
+  ensureSlot(monitorId, which).items = [];
+  saveConfig();
+  gcWallpapers();
+  return config;
+});
+
+// resolved current image for a slot (renderer can't scan folders itself)
+ipcMain.handle('current-image', (e, monitorId, which) => {
+  const theme = which === 'dark' ? 'dark' : 'light';
+  const id = config.singleWallpaper ? primaryMonitorId() : monitorId;
+  return currentImageFor(id, theme);
+});
+
+ipcMain.handle('set-slideshow', (e, patch) => {
+  config.slideshow = { ...config.slideshow, ...(patch || {}) };
+  config.slideshow.enabled = !!config.slideshow.enabled;
+  if (!Number.isFinite(+config.slideshow.intervalMin) || +config.slideshow.intervalMin < 1) config.slideshow.intervalMin = 30;
+  config.slideshow.intervalMin = Math.floor(+config.slideshow.intervalMin);
+  if (config.slideshow.order !== 'shuffle') config.slideshow.order = 'sequential';
+  saveConfig();
+  if (config.slideshow.enabled) tickSlideshow(false);
+  else { clearSlideshowTimer(); applyForTheme(); }
   return config;
 });
 
@@ -837,12 +1027,15 @@ app.whenReady().then(async () => {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }
     broadcastTheme();
-    if (config.autoSwitch) applyForTheme();
+    if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
+    else if (config.autoSwitch) applyForTheme();
   });
 
   // enumerate monitors, then apply correct wallpaper on launch
   await getMonitors();
-  if (config.autoSwitch) applyForTheme();
+  gcWallpapers(); // подчистить осиротевшие файлы обоев
+  if (config.slideshow.enabled) tickSlideshow(false); // применить текущее + запустить ротацию
+  else if (config.autoSwitch) applyForTheme();
 
   // start theme schedule (if enabled): set the right theme now + schedule flips
   applyThemeSchedule();

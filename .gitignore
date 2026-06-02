@@ -17,3 +17,9 @@ desktop.ini
 
 # Internal context notes for Claude (kept local, not published)
 CLAUDE.md
+
+# Local dev launcher (kept local, not published)
+Lumina-DEV.bat
+
+# Local roadmap snapshot (kept local, not published)
+ROADMAP.md

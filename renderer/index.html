@@ -135,8 +135,10 @@
           <div class="stage">
             <div class="monitor" id="previewLight"><span class="preview-empty" data-i18n="design.notSelected">Не выбрано</span></div>
           </div>
+          <div class="thumbstrip" id="stripLight"></div>
           <div class="wallcard-actions">
-            <button class="pill" data-pick="light" data-i18n="design.pick">Выбрать изображение…</button>
+            <button class="pill" data-add-photos="light" data-i18n="design.addPhotos">Добавить фото…</button>
+            <button class="pill" data-add-folder="light" data-i18n="design.addFolder">Добавить папку…</button>
           </div>
         </div>
         <!-- Dark -->
@@ -148,8 +150,10 @@
           <div class="stage">
             <div class="monitor" id="previewDark"><span class="preview-empty" data-i18n="design.notSelected">Не выбрано</span></div>
           </div>
+          <div class="thumbstrip" id="stripDark"></div>
           <div class="wallcard-actions">
-            <button class="pill" data-pick="dark" data-i18n="design.pick">Выбрать изображение…</button>
+            <button class="pill" data-add-photos="dark" data-i18n="design.addPhotos">Добавить фото…</button>
+            <button class="pill" data-add-folder="dark" data-i18n="design.addFolder">Добавить папку…</button>
           </div>
         </div>
       </div>
@@ -183,6 +187,36 @@
               <option value="center" data-i18n="style.center">По центру</option>
               <option value="tile" data-i18n="style.tile">Замостить</option>
               <option value="span" data-i18n="style.span">Развернуть на все мониторы</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="slideshow.group">Слайдшоу</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.title">Слайдшоу</div>
+            <div class="row-sub" data-i18n="slideshow.sub">Менять обои по кругу из добавленных фото и папок</div>
+          </div>
+          <button class="gtkswitch" id="swSlideshow" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.intervalTitle">Интервал</div>
+            <div class="row-sub" data-i18n="slideshow.intervalSub">Через сколько минут менять картинку</div>
+          </div>
+          <input type="number" min="1" step="1" id="slideInterval" class="time-input num-input" value="30" />
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.orderTitle">Порядок</div>
+            <div class="row-sub" data-i18n="slideshow.orderSub">Как выбирать следующую картинку</div>
+          </div>
+          <div class="select-wrap">
+            <select id="selSlideOrder">
+              <option value="sequential" data-i18n="order.sequential">По порядку</option>
+              <option value="shuffle" data-i18n="order.shuffle">Вперемешку</option>
             </select>
           </div>
         </div>
