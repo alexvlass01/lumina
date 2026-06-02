@@ -41,13 +41,13 @@ const WALLPAPERS_DIR = path.join(app.getPath('userData'), 'wallpapers');
 // Copy a chosen image into the app's own data dir so it survives app updates and
 // the original being moved/deleted. Content-addressed name (wp-<md5>) → identical
 // images dedupe automatically and re-adding the same file is a no-op. Returns path.
-function importWallpaper(srcPath) {
-  fs.mkdirSync(WALLPAPERS_DIR, { recursive: true });
-  const buf = fs.readFileSync(srcPath);
+async function importWallpaper(srcPath) {
+  await fs.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
+  const buf = await fs.promises.readFile(srcPath); // async: не блокируем main-поток на больших файлах
   const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
   const ext = (path.extname(srcPath) || '.img').toLowerCase();
   const dest = path.join(WALLPAPERS_DIR, `wp-${hash}${ext}`);
-  if (!fs.existsSync(dest)) fs.writeFileSync(dest, buf);
+  if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
   return dest;
 }
 
@@ -912,7 +912,7 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
   let added = 0;
   for (const src of res.filePaths) {
     try {
-      const stored = importWallpaper(src);
+      const stored = await importWallpaper(src);
       if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
         slot.items.push({ type: 'image', path: stored });
         added++;
@@ -957,7 +957,7 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
       } else if (stats.isFile()) {
         const ext = path.extname(src).toLowerCase();
         if (IMG_EXTS.has(ext)) {
-          const stored = importWallpaper(src);
+          const stored = await importWallpaper(src);
           if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
             slot.items.push({ type: 'image', path: stored });
             added++;
@@ -1042,11 +1042,14 @@ ipcMain.handle('detect-location', async () => {
     }
   ];
 
+  const TIMEOUT_MS = 6000; // не зависать на «висящем» провайдере — отвалимся к следующему
   let lastError = null;
   for (const provider of providers) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
     try {
       console.log(`Attempting location detection via ${provider.url}...`);
-      const res = await fetch(provider.url);
+      const res = await fetch(provider.url, { signal: ctrl.signal });
       if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
       const data = await res.json();
       const result = provider.parse(data);
@@ -1058,6 +1061,8 @@ ipcMain.handle('detect-location', async () => {
     } catch (err) {
       console.warn(`Location provider ${provider.url} failed:`, err.message);
       lastError = err;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
