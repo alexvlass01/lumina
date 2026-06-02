@@ -48,8 +48,12 @@
     "modeSub": "Lumina will turn light/dark mode on at the chosen times",
     "modeOff": "Off",
     "modeTime": "By time",
+    "modeSun": "By sun",
     "lightStart": "Light theme from",
-    "darkStart": "Dark theme from"
+    "darkStart": "Dark theme from",
+    "lat": "Latitude",
+    "lng": "Longitude",
+    "coordsSub": "Coordinates for sunrise/sunset calculation"
   },
   "style": {
     "fill": "Fill",

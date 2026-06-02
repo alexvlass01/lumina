@@ -9,6 +9,16 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 
 // ---------------------------------------------------------------------------
+// Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
+// then quits immediately). No-op for the portable build / when not installed.
+// ---------------------------------------------------------------------------
+try {
+  if (require('electron-squirrel-startup')) {
+    app.quit();
+  }
+} catch { /* module absent (e.g. running from source) — ignore */ }
+
+// ---------------------------------------------------------------------------
 // Single instance
 // ---------------------------------------------------------------------------
 const gotLock = app.requestSingleInstanceLock();
@@ -59,7 +69,8 @@ const DEFAULT_CONFIG = {
   autostart: false,
   language: 'system', // 'system' | 'en' | 'ru' | 'uk'
   // Lumina itself switching the Windows light/dark theme on a schedule
-  themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00' }, // mode: 'off' | 'time'
+  // mode: 'off' | 'time' | 'sun'; lat/lng (strings) used by 'sun'
+  themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
 };
 
 let config = { ...DEFAULT_CONFIG };
@@ -73,7 +84,7 @@ function loadConfig() {
   }
   if (!config.monitors || typeof config.monitors !== 'object') config.monitors = {};
   config.themeSchedule = {
-    mode: 'off', lightStart: '07:00', darkStart: '20:00',
+    mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '',
     ...(config.themeSchedule && typeof config.themeSchedule === 'object' ? config.themeSchedule : {}),
   };
 }
@@ -304,16 +315,56 @@ function parseHM(s) {
   return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
 }
 
-// Should the theme be dark at the given time, per the schedule?
-function scheduledIsDark(date) {
+// Sunrise/sunset in UTC hours for a date + coordinates (classic sunrise equation).
+function sunUT(date, lat, lng) {
+  const D2R = Math.PI / 180, R2D = 180 / Math.PI, zenith = 90.833;
+  const yearStart = Date.UTC(date.getUTCFullYear(), 0, 0);
+  const N = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - yearStart) / 86400000);
+  function calc(rise) {
+    const lngHour = lng / 15;
+    const t = N + ((rise ? 6 : 18) - lngHour) / 24;
+    const M = 0.9856 * t - 3.289;
+    let L = M + 1.916 * Math.sin(M * D2R) + 0.020 * Math.sin(2 * M * D2R) + 282.634;
+    L = (L % 360 + 360) % 360;
+    let RA = R2D * Math.atan(0.91764 * Math.tan(L * D2R));
+    RA = (RA % 360 + 360) % 360;
+    RA += Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90;
+    RA /= 15;
+    const sinDec = 0.39782 * Math.sin(L * D2R);
+    const cosDec = Math.cos(Math.asin(sinDec));
+    const cosH = (Math.cos(zenith * D2R) - sinDec * Math.sin(lat * D2R)) / (cosDec * Math.cos(lat * D2R));
+    if (cosH > 1 || cosH < -1) return null; // polar day / night
+    let H = rise ? 360 - R2D * Math.acos(cosH) : R2D * Math.acos(cosH);
+    H /= 15;
+    const UT = (H + RA - 0.06571 * t - 6.622 - lngHour) % 24;
+    return (UT + 24) % 24;
+  }
+  return { sunrise: calc(true), sunset: calc(false) };
+}
+
+// Light/dark boundaries as minutes after LOCAL midnight, or null if unknown.
+function scheduleBoundaries(date) {
   const sch = config.themeSchedule || {};
+  if (sch.mode === 'sun') {
+    const lat = parseFloat(sch.lat);
+    const lng = parseFloat(sch.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    const { sunrise, sunset } = sunUT(date, lat, lng);
+    if (sunrise == null || sunset == null) return null;
+    const tz = date.getTimezoneOffset(); // local = UTC - tz
+    const toMin = (ut) => ((Math.round(ut * 60 - tz)) % 1440 + 1440) % 1440;
+    return { lightMin: toMin(sunrise), darkMin: toMin(sunset) };
+  }
+  return { lightMin: parseHM(sch.lightStart || '07:00'), darkMin: parseHM(sch.darkStart || '20:00') };
+}
+
+function boundariesSayDark(b, date) {
   const now = date.getHours() * 60 + date.getMinutes();
-  const ls = parseHM(sch.lightStart || '07:00');
-  const ds = parseHM(sch.darkStart || '20:00');
+  const ls = b.lightMin, ds = b.darkMin;
   let isLight;
   if (ls === ds) isLight = true;
-  else if (ls < ds) isLight = now >= ls && now < ds;     // light during the day
-  else isLight = now >= ls || now < ds;                   // light period wraps midnight
+  else if (ls < ds) isLight = now >= ls && now < ds;
+  else isLight = now >= ls || now < ds; // light period wraps midnight
   return !isLight;
 }
 
@@ -321,27 +372,22 @@ function clearThemeTimer() {
   if (themeTimer) { clearTimeout(themeTimer); themeTimer = null; }
 }
 
-function scheduleNextThemeFlip() {
-  const sch = config.themeSchedule || {};
-  if (sch.mode !== 'time') return;
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const boundaries = [parseHM(sch.lightStart || '07:00'), parseHM(sch.darkStart || '20:00')];
-  const minsUntil = boundaries.map((b) => { let d = b - nowMin; if (d <= 0) d += 1440; return d; });
-  const mins = Math.max(1, Math.min(...minsUntil));
-  themeTimer = setTimeout(() => applyThemeSchedule(), mins * 60000 + 3000);
-}
-
-// Apply the scheduled theme now (if mode = time) and schedule the next flip.
+// Apply the scheduled theme now (modes: time / sun) and schedule the next flip.
 function applyThemeSchedule() {
   clearThemeTimer();
   const sch = config.themeSchedule || {};
-  if (sch.mode !== 'time') return; // 'off' — Lumina does not drive the theme
-  const wantDark = scheduledIsDark(new Date());
+  if (sch.mode !== 'time' && sch.mode !== 'sun') return; // 'off' — Lumina does not drive the theme
+  const now = new Date();
+  const b = scheduleBoundaries(now);
+  if (!b) { themeTimer = setTimeout(applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
+  const wantDark = boundariesSayDark(b, now);
   if (wantDark !== nativeTheme.shouldUseDarkColors) {
     setWindowsTheme(wantDark).catch((e) => console.error('Не удалось сменить тему Windows:', e));
   }
-  scheduleNextThemeFlip();
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const minsUntil = [b.lightMin, b.darkMin].map((x) => { let d = x - nowMin; if (d <= 0) d += 1440; return d; });
+  const mins = Math.max(1, Math.min(...minsUntil));
+  themeTimer = setTimeout(applyThemeSchedule, mins * 60000 + 3000);
 }
 
 function setWallpaper(imagePath) {
@@ -467,15 +513,25 @@ function createWindow() {
   });
 }
 
+function bringToFront(win) {
+  if (!win) return;
+  if (win.isMinimized()) win.restore();
+  if (!win.isVisible()) win.show();
+  win.focus();
+  // Windows often suppresses focus from a background process; this flicker
+  // reliably pulls the window to the foreground.
+  win.setAlwaysOnTop(true);
+  win.setAlwaysOnTop(false);
+  win.moveTop();
+}
+
 function showWindow() {
   if (!mainWindow) {
     createWindow();
-    mainWindow.once('ready-to-show', () => mainWindow.show());
+    mainWindow.once('ready-to-show', () => bringToFront(mainWindow));
     return;
   }
-  if (mainWindow.isMinimized()) mainWindow.restore();
-  mainWindow.show();
-  mainWindow.focus();
+  bringToFront(mainWindow);
 }
 
 // ---------------------------------------------------------------------------

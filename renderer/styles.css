@@ -451,6 +451,7 @@ select option {
   flex: 0 0 auto;
 }
 .time-input:hover { background: var(--btn-bg-hover); }
+.num-input { width: 96px; text-align: right; }
 .select-wrap::after {
   content: "";
   position: absolute;

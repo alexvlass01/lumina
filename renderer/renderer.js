@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00' } };
+  let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' } };
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
@@ -271,12 +271,15 @@ function setSwitch(el, on) {
 }
 
 function renderThemeSchedule() {
-  const sch = (config && config.themeSchedule) || { mode: 'off', lightStart: '07:00', darkStart: '20:00' };
+  const sch = (config && config.themeSchedule) || { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' };
   const sel = $('#selThemeMode');
   if (sel) sel.value = sch.mode || 'off';
   if ($('#lightStart')) $('#lightStart').value = sch.lightStart || '07:00';
   if ($('#darkStart')) $('#darkStart').value = sch.darkStart || '20:00';
+  if ($('#latInput')) $('#latInput').value = sch.lat || '';
+  if ($('#lngInput')) $('#lngInput').value = sch.lng || '';
   if ($('#themeTimes')) $('#themeTimes').hidden = (sch.mode !== 'time');
+  if ($('#themeSun')) $('#themeSun').hidden = (sch.mode !== 'sun');
 }
 
 async function renderConfig() {
@@ -438,14 +441,19 @@ async function init() {
       mode: $('#selThemeMode').value,
       lightStart: $('#lightStart').value || '07:00',
       darkStart: $('#darkStart').value || '20:00',
+      lat: $('#latInput').value.trim(),
+      lng: $('#lngInput').value.trim(),
     };
     config = await window.api.setConfig({ themeSchedule: sch });
     $('#themeTimes').hidden = (sch.mode !== 'time');
-    if (announce) toast(sch.mode === 'time' ? t('toast.scheduleOn') : t('toast.scheduleOff'));
+    $('#themeSun').hidden = (sch.mode !== 'sun');
+    if (announce) toast(sch.mode === 'off' ? t('toast.scheduleOff') : t('toast.scheduleOn'));
   }
   $('#selThemeMode').addEventListener('change', () => saveThemeSchedule(true));
   $('#lightStart').addEventListener('change', () => saveThemeSchedule(false));
   $('#darkStart').addEventListener('change', () => saveThemeSchedule(false));
+  $('#latInput').addEventListener('change', () => saveThemeSchedule(false));
+  $('#lngInput').addEventListener('change', () => saveThemeSchedule(false));
 
   // live updates from main process
   window.api.onTheme((theme) => {

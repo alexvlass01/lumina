@@ -1,13 +1,14 @@
 {
   "name": "lumina",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Lumina — автоматическая смена обоев при переключении светлой/тёмной темы Windows. Интерфейс в стиле GNOME Adwaita.",
   "main": "main.js",
   "author": "alexv",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dist": "electron-builder --win"
+    "package": "node node_modules/@electron/packager/bin/electron-packager.mjs . Lumina --platform=win32 --arch=x64 --icon=assets/icon.ico --out=dist --overwrite --ignore=dist --ignore=\\.claude",
+    "installer": "npm run package && node scripts/build-installer.js"
   },
   "build": {
     "appId": "com.alexv.lumina",
@@ -41,6 +42,10 @@
   "devDependencies": {
     "@electron/packager": "^20.0.0",
     "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron-builder": "^25.0.0",
+    "electron-winstaller": "^5.4.0"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "^1.0.1"
   }
 }
