@@ -63,6 +63,7 @@ function loadConfig() {
 
 function saveConfig() {
   configMod.save(config, CONFIG_PATH);
+  broadcastConfig();
 }
 
 // ---------------------------------------------------------------------------
