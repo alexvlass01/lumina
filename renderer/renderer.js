@@ -30,6 +30,7 @@ if (!window.api) {
     setAutostart: async (v) => (mock.autostart = v),
     fileUrl: async (p) => p,
     quitApp: () => {},
+    createShortcuts: async () => ['desktop', 'startmenu'],
     onTheme: () => {},
     onConfig: () => {},
     onMonitors: () => {},
@@ -311,6 +312,20 @@ function showPage(name) {
   }
 }
 
+// First-run welcome screen (one-time).
+function enterFirstRun() {
+  document.body.classList.add('first-run');
+  document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== 'viewWelcome'; });
+  $('#welcomeLang').value = config.language || 'system';
+  setSwitch($('#welcomeAuto'), config.autoSwitch);
+  setSwitch($('#welcomeStartup'), config.autostart);
+}
+
+function exitFirstRun() {
+  document.body.classList.remove('first-run');
+  showPage('home');
+}
+
 // Home dashboard: current wallpaper per monitor (active theme) + status.
 const HOME_THUMB_H = 116;
 function renderHome() {
@@ -362,7 +377,8 @@ async function init() {
   applyThemeToUI(currentTheme);
   setMonitors(await window.api.getMonitors());
   await renderConfig();
-  showPage('home');
+  if (!config.firstRunDone) enterFirstRun();
+  else showPage('home');
 
   window.api.getVersion().then((v) => {
     $('#appVersion').textContent = 'v' + v;
@@ -390,6 +406,34 @@ async function init() {
     config = await window.api.setConfig({ language: $('#selLang').value });
     await loadI18n();
     refreshTexts();
+  });
+
+  // ---- first-run welcome ----
+  $('#welcomeLang').addEventListener('change', async () => {
+    config = await window.api.setConfig({ language: $('#welcomeLang').value });
+    await loadI18n();
+    refreshTexts();
+    $('#welcomeLang').value = config.language || 'system';
+  });
+  $('#welcomeAuto').addEventListener('click', async () => {
+    const on = $('#welcomeAuto').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#welcomeAuto'), on);
+    config = await window.api.setConfig({ autoSwitch: on });
+  });
+  $('#welcomeStartup').addEventListener('click', async () => {
+    const on = $('#welcomeStartup').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#welcomeStartup'), on);
+    await window.api.setAutostart(on);
+    config.autostart = on;
+  });
+  $('#welcomeShortcuts').addEventListener('click', async () => {
+    await window.api.createShortcuts();
+    toast(t('toast.shortcutsDone'));
+  });
+  $('#welcomeStart').addEventListener('click', async () => {
+    config = await window.api.setConfig({ firstRunDone: true });
+    renderConfig(); // sync the main settings controls with welcome choices
+    exitFirstRun();
   });
 
   // pick image for the SELECTED monitor

@@ -28,6 +28,53 @@
   </header>
 
   <main class="page">
+    <!-- ===================== WELCOME (первый запуск) ===================== -->
+    <section class="view welcome" id="viewWelcome" hidden>
+      <div class="welcome-card">
+        <img class="welcome-icon" src="../assets/icon.png" alt="" />
+        <h1 class="welcome-title" data-i18n="welcome.title">Добро пожаловать в Lumina</h1>
+        <p class="welcome-sub" data-i18n="welcome.sub">Lumina автоматически меняет обои рабочего стола при переключении светлой и тёмной темы Windows. Приложение живёт в трее и работает в фоне.</p>
+
+        <div class="boxed-list">
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="welcome.langTitle">Язык</div></div>
+            <div class="select-wrap">
+              <select id="welcomeLang">
+                <option value="system" data-i18n="lang.system">Системный</option>
+                <option value="uk">Українська</option>
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="welcome.autoTitle">Автосмена обоев</div>
+              <div class="row-sub" data-i18n="welcome.autoSub">Менять обои при переключении темы Windows</div>
+            </div>
+            <button class="gtkswitch" id="welcomeAuto" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="welcome.startupTitle">Автозапуск с Windows</div>
+              <div class="row-sub" data-i18n="welcome.startupSub">Запускать в фоне (в трее) при входе в систему</div>
+            </div>
+            <button class="gtkswitch" id="welcomeStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="welcome.shortcutsTitle">Ярлыки</div>
+              <div class="row-sub" data-i18n="welcome.shortcutsSub">Создать ярлыки на рабочем столе и в меню «Пуск»</div>
+            </div>
+            <button class="pill" id="welcomeShortcuts" data-i18n="welcome.shortcutsBtn">Создать</button>
+          </div>
+        </div>
+
+        <p class="welcome-note" data-i18n="welcome.trayNote">Окно можно закрыть — приложение продолжит работать в трее. Повторно запускать установщик не нужно.</p>
+        <button class="pill suggested welcome-start" id="welcomeStart" data-i18n="welcome.start">Начать</button>
+      </div>
+    </section>
+
     <!-- ===================== HOME ===================== -->
     <section class="view" id="viewHome">
       <section class="hero" id="hero">

@@ -12,6 +12,20 @@
     "quit": "Quit application"
   },
   "lang": { "system": "System" },
+  "welcome": {
+    "title": "Welcome to Lumina",
+    "sub": "Lumina automatically changes your desktop wallpaper when Windows switches between light and dark mode. It runs in the system tray in the background.",
+    "langTitle": "Language",
+    "autoTitle": "Auto-switch wallpaper",
+    "autoSub": "Change wallpaper when the Windows theme changes",
+    "startupTitle": "Start with Windows",
+    "startupSub": "Launch in the background (tray) at sign-in",
+    "shortcutsTitle": "Shortcuts",
+    "shortcutsSub": "Create shortcuts on the desktop and in the Start menu",
+    "shortcutsBtn": "Create",
+    "trayNote": "You can close the window — the app keeps running in the tray. No need to run the installer again.",
+    "start": "Get started"
+  },
   "home": {
     "themeTitle": "Current Windows theme",
     "detecting": "Detecting…",
@@ -80,7 +94,8 @@
     "themeDark": "Windows switched to dark theme",
     "themeLight": "Windows switched to light theme",
     "scheduleOn": "Theme schedule enabled",
-    "scheduleOff": "Theme schedule disabled"
+    "scheduleOff": "Theme schedule disabled",
+    "shortcutsDone": "Shortcuts created"
   },
   "tray": {
     "open": "Open Lumina",
