@@ -977,23 +977,54 @@ ipcMain.handle('set-slideshow', (e, patch) => {
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which));
 
 ipcMain.handle('detect-location', async () => {
-  try {
-    const res = await fetch('https://ipapi.co/json/');
-    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
-    const data = await res.json();
-    if (data && data.latitude != null && data.longitude != null) {
-      return {
-        ok: true,
-        lat: String(data.latitude),
-        lng: String(data.longitude),
-        city: data.city || ''
-      };
+  const providers = [
+    {
+      url: 'https://ipapi.co/json/',
+      parse: (data) => {
+        if (data.latitude != null && data.longitude != null) {
+          return { lat: String(data.latitude), lng: String(data.longitude), city: data.city || '' };
+        }
+      }
+    },
+    {
+      url: 'http://ip-api.com/json/',
+      parse: (data) => {
+        if (data.lat != null && data.lon != null) {
+          return { lat: String(data.lat), lng: String(data.lon), city: data.city || '' };
+        }
+      }
+    },
+    {
+      url: 'https://freeipapi.com/api/json',
+      parse: (data) => {
+        if (data.latitude != null && data.longitude != null) {
+          return { lat: String(data.latitude), lng: String(data.longitude), city: data.cityName || '' };
+        }
+      }
     }
-    throw new Error('Invalid response data');
-  } catch (err) {
-    console.error('Location detection failed:', err);
-    return { ok: false, reason: err.message };
+  ];
+
+  let lastError = null;
+  for (const provider of providers) {
+    try {
+      console.log(`Attempting location detection via ${provider.url}...`);
+      const res = await fetch(provider.url);
+      if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+      const data = await res.json();
+      const result = provider.parse(data);
+      if (result) {
+        console.log(`Location successfully detected using ${provider.url}: ${result.city} (${result.lat}, ${result.lng})`);
+        return { ok: true, ...result };
+      }
+      throw new Error('Invalid format returned by provider');
+    } catch (err) {
+      console.warn(`Location provider ${provider.url} failed:`, err.message);
+      lastError = err;
+    }
   }
+
+  console.error('All location providers failed.');
+  return { ok: false, reason: lastError ? lastError.message : 'Unknown error' };
 });
 
 ipcMain.handle('set-autostart', (e, v) => {
