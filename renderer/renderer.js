@@ -54,6 +54,12 @@ if (!window.api) {
       return it.type === 'folder' ? '' : it.path; // mock can't scan folders
     },
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
+    setSlideshowIndex: async (monitorId, which, index) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      if (!mock.slideshowIndex[monitorId]) mock.slideshowIndex[monitorId] = { light: 0, dark: 0 };
+      mock.slideshowIndex[monitorId][theme] = index;
+      return mock;
+    },
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
     setAutostart: async (v) => (mock.autostart = v),
     setStartMinimized: async (v) => (mock.startMinimized = v),
@@ -396,6 +402,23 @@ function renderStrip(theme) {
           img.src = u;
         }
       });
+
+      // Click on thumbnail → switch wallpaper to this item
+      if (items.length > 1) {
+        el.classList.add('clickable');
+        el.addEventListener('click', async (ev) => {
+          if (ev.target.closest('.thumb-remove')) return; // don't trigger on delete button
+          const mon = editTargetId();
+          if (!mon) return;
+          config = await window.api.setSlideshowIndex(mon, theme, idx);
+          // Clear preview cache so setPreview reloads with the new image
+          const preview = theme === 'dark' ? $('#previewDark') : $('#previewLight');
+          if (preview) preview.removeAttribute('data-bg-path');
+          renderSlot(theme);
+          renderHome();
+          toast(t('toast.applied'));
+        });
+      }
     }
     const rm = document.createElement('button');
     rm.className = 'thumb-remove';

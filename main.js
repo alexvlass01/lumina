@@ -908,6 +908,17 @@ ipcMain.handle('set-slideshow', (e, patch) => {
 
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which));
 
+// Jump to a specific playlist item for a monitor+theme and apply immediately.
+ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
+  if (!monitorId) return config;
+  const t = theme === 'dark' ? 'dark' : 'light';
+  if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
+  config.slideshowIndex[monitorId][t] = index;
+  saveConfig();
+  if (t === currentThemeName()) await applyForTheme(t);
+  return config;
+});
+
 ipcMain.handle('detect-location', async () => {
   const providers = [
     {

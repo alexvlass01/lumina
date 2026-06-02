@@ -419,6 +419,15 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
 .thumb:hover .thumb-remove,
 .thumb:focus-within .thumb-remove { opacity: 1; }
 .thumb-remove:hover { background: #e01b24; }
+/* Clickable thumbnails: hover outline to signal interactivity */
+.thumb.clickable { cursor: pointer; transition: outline 0.12s ease, transform 0.08s ease; }
+.thumb.clickable:hover {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.thumb.clickable:active {
+  transform: scale(0.95);
+}
 
 .wallcard-actions { display: flex; gap: 10px; }
 .wallcard-actions .pill { flex: 1; }

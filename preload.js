@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   clearSlot: (monitorId, which) => ipcRenderer.invoke('clear-slot', monitorId, which),
   currentImage: (monitorId, which) => ipcRenderer.invoke('current-image', monitorId, which),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
+  setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   setStartMinimized: (v) => ipcRenderer.invoke('set-start-minimized', v),
