@@ -10,6 +10,7 @@ const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
+const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -32,7 +33,6 @@ if (!gotLock) {
 const STARTED_HIDDEN = process.argv.includes('--hidden');
 
 let mainWindow = null;
-let tray = null;
 app.isQuitting = false;
 
 // ---------------------------------------------------------------------------
@@ -637,48 +637,23 @@ function triggerNextWallpaper() {
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
-function buildTrayMenu() {
-  const items = [
-    { label: tMain('tray.open'), click: () => showWindow() },
-    { label: tMain('tray.applyCurrent'), click: () => applyForTheme() },
-  ];
-  const slideshowEnabled = config.slideshow && config.slideshow.enabled;
-  if (slideshowEnabled || hasSlideshowItems()) {
-    items.push({ label: tMain('tray.nextWallpaper'), click: () => triggerNextWallpaper() });
-  }
-  if (updateState === 'ready') {
-    items.push({ type: 'separator' }, { label: tMain('tray.installUpdate'), click: () => quitAndInstallUpdate() });
-  }
-  items.push(
-    { type: 'separator' },
-    { label: tMain('tray.quit'), click: () => { app.isQuitting = true; app.quit(); } },
-  );
-  return Menu.buildFromTemplate(items);
-}
-
-function refreshTrayIcon() {
-  if (!tray) return;
-  const theme = currentThemeName();
-  const iconName = theme === 'dark' ? 'tray-dark.png' : 'tray-light.png';
-  const imgPath = path.join(__dirname, 'assets', iconName);
-  const finalPath = fs.existsSync(imgPath) ? imgPath : path.join(__dirname, 'assets', 'tray.png');
-  const img = nativeImage.createFromPath(finalPath);
-  tray.setImage(img);
-}
-
-function refreshTray() {
-  if (tray) tray.setContextMenu(buildTrayMenu());
-}
-
-function createTray() {
-  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', 'tray.png'));
-  tray = new Tray(img);
-  tray.setToolTip('Lumina');
-  refreshTray();
-  refreshTrayIcon();
-  tray.on('click', () => showWindow());
-  tray.on('double-click', () => showWindow());
-}
+// Системный трей вынесен в ./src/tray.js (Electron-объекты и действия инжектятся).
+const trayCtl = createTrayController({
+  Tray, Menu, nativeImage,
+  assetsDir: path.join(__dirname, 'assets'),
+  t: tMain,
+  getState: () => ({
+    theme: currentThemeName(),
+    updateState,
+    slideshowEnabled: !!(config.slideshow && config.slideshow.enabled),
+    hasSlideshowItems: hasSlideshowItems(),
+  }),
+  onOpen: () => showWindow(),
+  onApplyCurrent: () => applyForTheme(),
+  onNextWallpaper: () => triggerNextWallpaper(),
+  onInstallUpdate: () => quitAndInstallUpdate(),
+  onQuit: () => { app.isQuitting = true; app.quit(); },
+});
 
 // ---------------------------------------------------------------------------
 // Autostart
@@ -729,7 +704,7 @@ function setUpdateState(s) {
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('update-status', { state: updateState, supported: updatesSupported() });
   }
-  refreshTray(); // показать/убрать пункт «перезапустить и обновить»
+  trayCtl.refresh(); // показать/убрать пункт «перезапустить и обновить»
 }
 
 function wireAutoUpdater() {
@@ -764,7 +739,7 @@ function quitAndInstallUpdate() {
 // Renderer communication
 // ---------------------------------------------------------------------------
 function broadcastConfig() {
-  refreshTray();
+  trayCtl.refresh();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('config-changed', config);
   }
@@ -801,7 +776,7 @@ ipcMain.handle('get-theme', () => currentThemeName());
 ipcMain.handle('set-config', (e, patch) => {
   config = { ...config, ...patch };
   saveConfig();
-  refreshTray();
+  trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   return config;
 });
@@ -838,7 +813,7 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
     } catch (err) { console.error('Не удалось импортировать обои:', err); }
   }
   saveConfig();
-  refreshTray();
+  trayCtl.refresh();
   return { config, added };
 });
 
@@ -888,7 +863,7 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
   }
   if (added > 0) {
     saveConfig();
-    refreshTray();
+    trayCtl.refresh();
   }
   return { config, added };
 });
@@ -899,7 +874,7 @@ ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
   if (index >= 0 && index < slot.items.length) slot.items.splice(index, 1);
   saveConfig();
   gcWallpapers();
-  refreshTray();
+  trayCtl.refresh();
   return config;
 });
 
@@ -1066,7 +1041,7 @@ app.whenReady().then(async () => {
   applyLoginItem();
 
   createWindow();
-  createTray();
+  trayCtl.create();
 
   // refresh monitor list when displays change (added/removed/resolution/rotation)
   for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
@@ -1083,7 +1058,7 @@ app.whenReady().then(async () => {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }
     broadcastTheme();
-    refreshTrayIcon();
+    trayCtl.refreshIcon();
     if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
     else if (config.autoSwitch) applyForTheme();
   });
