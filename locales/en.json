@@ -30,6 +30,7 @@
     "shortcutDesktopTitle": "Desktop shortcut",
     "shortcutStartTitle": "Start menu shortcut",
     "shortcutsBtn": "Create",
+    "shortcutDone": "Created ✓",
     "trayNote": "You can close the window — the app keeps running in the tray. No need to run the installer again.",
     "start": "Get started"
   },

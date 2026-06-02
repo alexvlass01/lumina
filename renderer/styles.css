@@ -382,6 +382,8 @@ html.dark .hero-icon { background: linear-gradient(135deg, #3a4a6b, #26334d); }
 }
 .pill:hover { background: var(--btn-bg-hover); }
 .pill:active { transform: scale(0.98); }
+.pill:disabled { opacity: 0.55; cursor: default; }
+.pill.done { color: var(--accent); box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.4); background: transparent; }
 .pill.suggested { background: var(--accent); color: var(--accent-fg); }
 .pill.suggested:hover { background: #2b75d0; }
 .pill.ghost { background: transparent; box-shadow: inset 0 0 0 1px var(--card-border); }

@@ -78,10 +78,18 @@ const DEFAULT_CONFIG = {
 let config = { ...DEFAULT_CONFIG };
 
 function loadConfig() {
-  try {
-    const raw = fs.readFileSync(CONFIG_PATH, 'utf8');
-    config = { ...DEFAULT_CONFIG, ...JSON.parse(raw) };
-  } catch {
+  let raw = null;
+  try { raw = fs.readFileSync(CONFIG_PATH, 'utf8'); } catch { raw = null; } // нет файла = первый запуск
+  if (raw != null) {
+    try {
+      config = { ...DEFAULT_CONFIG, ...JSON.parse(raw.replace(/^﻿/, '')) }; // срезаем BOM, если есть
+    } catch (err) {
+      // конфиг повреждён — сохраняем копию, НЕ теряем данные молча
+      try { fs.copyFileSync(CONFIG_PATH, `${CONFIG_PATH}.corrupt-${Date.now()}.bak`); } catch {}
+      console.error('config.json повреждён, откат к дефолтам (бэкап сохранён):', err);
+      config = { ...DEFAULT_CONFIG };
+    }
+  } else {
     config = { ...DEFAULT_CONFIG };
   }
   if (!config.monitors || typeof config.monitors !== 'object') config.monitors = {};
@@ -94,7 +102,11 @@ function loadConfig() {
 function saveConfig() {
   try {
     fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2), 'utf8');
+    // атомарная запись: пишем во временный файл и переименовываем, чтобы при
+    // сбое посреди записи не получить «обрезанный»/битый config.json
+    const tmp = `${CONFIG_PATH}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8');
+    fs.renameSync(tmp, CONFIG_PATH);
   } catch (err) {
     console.error('Не удалось сохранить конфиг:', err);
   }
@@ -673,6 +685,11 @@ ipcMain.handle('quit-app', () => {
   app.isQuitting = true;
   app.quit();
 });
+
+ipcMain.handle('shortcuts-status', () => ({
+  desktop: fs.existsSync(path.join(app.getPath('desktop'), 'Lumina.lnk')),
+  startmenu: fs.existsSync(path.join(app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Lumina.lnk')),
+}));
 
 ipcMain.handle('create-shortcuts', (e, which) => {
   const target = process.execPath;

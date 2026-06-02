@@ -4,6 +4,7 @@
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
   let mock = { lightWallpaper: '', darkWallpaper: '', monitors: {}, autoSwitch: true, style: 'fill', autostart: false, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' } };
+  let mockSc = { desktop: false, startmenu: false };
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
@@ -30,7 +31,12 @@ if (!window.api) {
     setAutostart: async (v) => (mock.autostart = v),
     fileUrl: async (p) => p,
     quitApp: () => {},
-    createShortcuts: async () => ['desktop', 'startmenu'],
+    createShortcuts: async (which) => {
+      if (which === 'desktop' || which === 'both' || !which) mockSc.desktop = true;
+      if (which === 'startmenu' || which === 'both' || !which) mockSc.startmenu = true;
+      return ['ok'];
+    },
+    shortcutsStatus: async () => ({ ...mockSc }),
     onTheme: () => {},
     onConfig: () => {},
     onMonitors: () => {},
@@ -81,6 +87,7 @@ function refreshTexts() {
   buildMonitorMap();            // chip titles + label
   renderPreviews();             // "not selected" placeholders
   renderHome();                 // status values + thumbnail labels
+  updateShortcutButtons();      // re-translate shortcut buttons + keep "done" state
 }
 
 // ---------------------------------------------------------------------------
@@ -321,11 +328,26 @@ function enterFirstRun() {
   setSwitch($('#welcomeAuto'), config.autoSwitch);
   setSwitch($('#welcomeStartup'), config.autostart);
   setSwitch($('#welcomeTheme'), !!(config.themeSchedule && config.themeSchedule.mode !== 'off'));
+  updateShortcutButtons();
 }
 
 function exitFirstRun() {
   document.body.classList.remove('first-run');
   showPage('home');
+}
+
+// Reflect whether shortcuts already exist: disable the button + show "Created".
+async function updateShortcutButtons() {
+  let st = { desktop: false, startmenu: false };
+  try { st = await window.api.shortcutsStatus(); } catch {}
+  const apply = (btn, exists) => {
+    if (!btn) return;
+    btn.disabled = !!exists;
+    btn.classList.toggle('done', !!exists);
+    btn.textContent = exists ? t('welcome.shortcutDone') : t('welcome.shortcutsBtn');
+  };
+  apply($('#welcomeShortcutDesktop'), st.desktop);
+  apply($('#welcomeShortcutStart'), st.startmenu);
 }
 
 // Home dashboard: current wallpaper per monitor (active theme) + status.
@@ -446,10 +468,12 @@ async function init() {
   });
   $('#welcomeShortcutDesktop').addEventListener('click', async () => {
     await window.api.createShortcuts('desktop');
+    await updateShortcutButtons();
     toast(t('toast.shortcutsDone'));
   });
   $('#welcomeShortcutStart').addEventListener('click', async () => {
     await window.api.createShortcuts('startmenu');
+    await updateShortcutButtons();
     toast(t('toast.shortcutsDone'));
   });
   $('#welcomeStart').addEventListener('click', async () => {
