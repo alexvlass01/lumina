@@ -171,6 +171,14 @@ body {
   background: var(--card);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.18);
 }
+/* When no tab is active (e.g. Settings page is open), dim the switcher */
+.tb-nav:not(:has(.navbtn.active)) {
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+}
+.tb-nav:not(:has(.navbtn.active)):hover {
+  opacity: 1;
+}
 .tb-right { display: flex; align-items: center; -webkit-app-region: no-drag; app-region: no-drag; }
 .tb-btn.active { background: var(--btn-bg); color: var(--accent); }
 
