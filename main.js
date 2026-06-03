@@ -470,14 +470,24 @@ function referencedFiles() {
   return set;
 }
 
-// Удаляет из wallpapers/ файлы, не упомянутые в библиотеке (папки-источники не трогаем).
+// Подчищает осиротевшие файлы из wallpapers/ — но БЕЗОПАСНО: НЕ удаляет навсегда, а
+// ПЕРЕМЕЩАЕТ в подпапку .trash (восстановимо). Раньше тут был fs.rmSync + запуск на каждом
+// СТАРТЕ → если keep-набор хоть на миг оказывался неполным (миграция/смена состояния), файлы
+// пользователя удалялись безвозвратно. Теперь: только move-в-корзину, и НЕ на старте.
+const TRASH_DIR = path.join(WALLPAPERS_DIR, '.trash');
 function gcWallpapers() {
   try {
+    // Предохранитель: если пул пуст (переходное/битое состояние) — НЕ трогаем ничего,
+    // иначе keep свёлся бы к одним глобалам и всё остальное уехало бы в корзину.
+    if (!config.library || Object.keys(config.library).length === 0) return;
     const keep = referencedFiles();
+    fs.mkdirSync(TRASH_DIR, { recursive: true });
     for (const f of fs.readdirSync(WALLPAPERS_DIR)) {
+      if (f === '.trash') continue;
       const full = path.join(WALLPAPERS_DIR, f);
+      try { if (!fs.statSync(full).isFile()) continue; } catch { continue; }
       if (!keep.has(path.normalize(full).toLowerCase())) {
-        try { fs.rmSync(full, { force: true }); } catch {}
+        try { fs.renameSync(full, path.join(TRASH_DIR, f)); } catch { /* оставляем как есть, не удаляем */ }
       }
     }
   } catch {}
@@ -1275,7 +1285,8 @@ app.whenReady().then(async () => {
 
   // enumerate monitors, then apply correct wallpaper on launch
   await getMonitors();
-  gcWallpapers(); // подчистить осиротевшие файлы обоев
+  // NB: GC намеренно НЕ запускаем на старте — слишком опасно (см. gcWallpapers).
+  // Осиротевшие файлы подчищаются только при явном удалении из библиотеки/слота, и то в .trash.
   if (config.slideshow.enabled) tickSlideshow(false); // применить текущее + запустить ротацию
   else if (config.autoSwitch) applyForTheme();
 
