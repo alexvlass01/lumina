@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -712,6 +712,37 @@ function triggerNextWallpaper() {
   }
 }
 
+let activeShortcut = '';
+function registerShortcut() {
+  if (activeShortcut) {
+    try {
+      globalShortcut.unregister(activeShortcut);
+      activeShortcut = '';
+    } catch (err) {
+      console.error('[Hotkey] Unregister failed:', err);
+    }
+  }
+  if (config.hotkeys && config.hotkeys.nextWallpaper) {
+    const { enabled, shortcut } = config.hotkeys.nextWallpaper;
+    if (enabled && shortcut) {
+      try {
+        const ok = globalShortcut.register(shortcut, () => {
+          console.log(`[Hotkey] Triggered: ${shortcut}`);
+          triggerNextWallpaper();
+        });
+        if (!ok) {
+          console.error(`[Hotkey] Registration failed for: ${shortcut}`);
+        } else {
+          activeShortcut = shortcut;
+          console.log(`[Hotkey] Registered successfully: ${shortcut}`);
+        }
+      } catch (err) {
+        console.error(`[Hotkey] Invalid format or registration error for ${shortcut}:`, err);
+      }
+    }
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Tray
 // ---------------------------------------------------------------------------
@@ -856,6 +887,7 @@ ipcMain.handle('set-config', (e, patch) => {
   saveConfig();
   trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
+  if (patch && 'hotkeys' in patch) registerShortcut();
   return config;
 });
 
@@ -1283,6 +1315,7 @@ app.on('second-instance', () => showWindow());
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   loadConfig();
+  registerShortcut();
   ensurePsScript();
   ensureComScript();
   ensureComHostScript();
@@ -1334,6 +1367,10 @@ app.whenReady().then(async () => {
 
 // dispose the persistent PowerShell host on quit (don't leave an orphan process)
 app.on('before-quit', () => wpHost.dispose());
+
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll();
+});
 
 // Keep running in tray after all windows are closed
 app.on('window-all-closed', () => {

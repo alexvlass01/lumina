@@ -188,7 +188,16 @@
     "photosAdded": "Photos added: {n}",
     "folderAdded": "Folder added",
     "slideshowOn": "Slideshow on",
-    "slideshowOff": "Slideshow off"
+    "slideshowOff": "Slideshow off",
+    "shortcutInvalid": "Global shortcut must contain at least one modifier (Ctrl, Alt, Win) or function key (F1-F24)",
+    "shortcutUpdated": "Global shortcut updated"
+  },
+  "shortcuts": {
+    "group": "Global Shortcuts",
+    "nextTitle": "Next wallpaper",
+    "nextSub": "Switch to the next wallpaper on all monitors via global hotkey",
+    "pressKeys": "Press keys...",
+    "recording": "Recording..."
   },
   "tray": {
     "open": "Open Lumina",

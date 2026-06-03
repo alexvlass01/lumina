@@ -790,3 +790,70 @@ select option {
 }
 .lib-statusbar:empty { opacity: 0; }
 
+/* ---------- Hotkeys styling ---------- */
+.shortcut-record-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  position: relative;
+}
+
+.shortcut-record-btn {
+  min-width: 120px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 13px;
+  letter-spacing: 0.03em;
+  transition: all 0.12s ease;
+}
+
+.shortcut-record-btn.assigned {
+  color: var(--accent);
+  background: rgba(53, 132, 228, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(53, 132, 228, 0.24);
+}
+
+.shortcut-record-btn.recording {
+  background: var(--accent);
+  color: var(--accent-fg);
+  box-shadow: 0 0 8px rgba(53, 132, 228, 0.45);
+  animation: pulse-recording 1.2s infinite alternate ease-in-out;
+}
+
+@keyframes pulse-recording {
+  from {
+    opacity: 0.85;
+    box-shadow: 0 0 4px rgba(53, 132, 228, 0.3);
+  }
+  to {
+    opacity: 1;
+    box-shadow: 0 0 12px rgba(53, 132, 228, 0.6);
+  }
+}
+
+.clear-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 20px;
+  line-height: 1;
+  width: 24px;
+  height: 24px;
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.12s ease, color 0.12s ease;
+  padding: 0;
+}
+
+.clear-btn:hover {
+  background: var(--row-hover);
+  color: var(--destructive);
+}
+
+.clear-btn[hidden] {
+  display: none !important;
+}
+
+

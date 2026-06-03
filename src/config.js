@@ -28,6 +28,7 @@ const DEFAULT_CONFIG = {
   // Слайдшоу: плейлист крутится по интервалу. order: 'sequential' | 'shuffle'
   slideshow: { enabled: false, intervalMin: 30, order: 'sequential' },
   slideshowIndex: {},     // { [deviceId]: { light: idx, dark: idx } } — текущий кадр
+  hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -56,6 +57,20 @@ function normalize(cfg) {
   cfg.slideshow.intervalMin = Math.floor(+cfg.slideshow.intervalMin);
   if (cfg.slideshow.order !== 'shuffle') cfg.slideshow.order = 'sequential';
   if (!cfg.slideshowIndex || typeof cfg.slideshowIndex !== 'object') cfg.slideshowIndex = {};
+
+  cfg.hotkeys = {
+    nextWallpaper: { enabled: false, shortcut: '' },
+    ...(cfg.hotkeys && typeof cfg.hotkeys === 'object' ? cfg.hotkeys : {}),
+  };
+  if (cfg.hotkeys.nextWallpaper && typeof cfg.hotkeys.nextWallpaper === 'object') {
+    cfg.hotkeys.nextWallpaper = {
+      enabled: !!cfg.hotkeys.nextWallpaper.enabled,
+      shortcut: typeof cfg.hotkeys.nextWallpaper.shortcut === 'string' ? cfg.hotkeys.nextWallpaper.shortcut : '',
+    };
+  } else {
+    cfg.hotkeys.nextWallpaper = { enabled: false, shortcut: '' };
+  }
+
   return cfg;
 }
 

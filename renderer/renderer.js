@@ -524,6 +524,26 @@ async function renderConfig() {
   updateSingleWallRow();
   updateSlideshowControls();
   renderThemeSchedule();
+
+  // Hotkeys
+  const hk = config.hotkeys && config.hotkeys.nextWallpaper;
+  const isEnabled = hk ? !!hk.enabled : false;
+  const shortcutText = (hk && hk.shortcut) ? hk.shortcut : '';
+  setSwitch($('#swShortcutEnabled'), isEnabled);
+  const recBtn = $('#btnRecordShortcut');
+  if (recBtn) {
+    if (shortcutText) {
+      recBtn.textContent = shortcutText;
+      recBtn.classList.add('assigned');
+    } else {
+      recBtn.textContent = t('shortcuts.pressKeys');
+      recBtn.classList.remove('assigned');
+    }
+  }
+  const clearBtn = $('#btnClearShortcut');
+  if (clearBtn) {
+    clearBtn.hidden = !shortcutText;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1459,8 +1479,167 @@ async function init() {
     resizeT = setTimeout(layoutMonitors, 60);
   });
 
+  initHotkeys();
   initDragDrop();
   initLibrary();
+}
+
+function initHotkeys() {
+  const recBtn = $('#btnRecordShortcut');
+  const clearBtn = $('#btnClearShortcut');
+  const swEnabled = $('#swShortcutEnabled');
+  if (!recBtn || !clearBtn || !swEnabled) return;
+
+  let isRecording = false;
+
+  function getElectronKeyName(event) {
+    const code = event.code;
+    if (code.startsWith('Key')) {
+      return code.substring(3); // 'KeyW' -> 'W'
+    }
+    if (code.startsWith('Digit')) {
+      return code.substring(5); // 'Digit1' -> '1'
+    }
+    if (code.startsWith('F') && code.length > 1) {
+      const num = parseInt(code.substring(1), 10);
+      if (num >= 1 && num <= 24) return code;
+    }
+
+    const map = {
+      'ArrowUp': 'Up',
+      'ArrowDown': 'Down',
+      'ArrowLeft': 'Left',
+      'ArrowRight': 'Right',
+      'Space': 'Space',
+      'Escape': 'Escape',
+      'Tab': 'Tab',
+      'Backspace': 'Backspace',
+      'Delete': 'Delete',
+      'Insert': 'Insert',
+      'Enter': 'Enter',
+      'NumpadEnter': 'Enter',
+      'PageUp': 'PageUp',
+      'PageDown': 'PageDown',
+      'Home': 'Home',
+      'End': 'End',
+      'Minus': 'Minus',
+      'Equal': 'Equal',
+      'Comma': 'Comma',
+      'Period': 'Period',
+      'Slash': 'Slash',
+      'Semicolon': 'Semicolon',
+      'Quote': 'Quote',
+      'BracketLeft': 'BracketLeft',
+      'BracketRight': 'BracketRight',
+      'Backslash': 'Backslash',
+      'Backquote': 'Backquote',
+    };
+
+    return map[code] || null;
+  }
+
+  function handleKeydown(e) {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const modifiers = [];
+    if (e.ctrlKey) modifiers.push('Ctrl');
+    if (e.altKey) modifiers.push('Alt');
+    if (e.shiftKey) modifiers.push('Shift');
+    if (e.metaKey) modifiers.push('Super');
+
+    const isModifierOnly = ['ControlLeft', 'ControlRight', 'ShiftLeft', 'ShiftRight', 'AltLeft', 'AltRight', 'MetaLeft', 'MetaRight'].includes(e.code);
+
+    if (isModifierOnly) {
+      if (modifiers.length > 0) {
+        recBtn.textContent = modifiers.join(' + ') + ' + ...';
+      } else {
+        recBtn.textContent = t('shortcuts.pressKeys');
+      }
+      return;
+    }
+
+    const mainKey = getElectronKeyName(e);
+    if (!mainKey) return;
+
+    const hasModifier = modifiers.length > 0;
+    const isFunctionKey = /^F\d+$/.test(mainKey);
+    const mediaKeys = ['MediaNextTrack', 'MediaPreviousTrack', 'MediaStop', 'MediaPlayPause', 'VolumeUp', 'VolumeDown', 'VolumeMute'];
+    const isMediaKey = mediaKeys.includes(mainKey);
+
+    if (!hasModifier && !isFunctionKey && !isMediaKey) {
+      toast(t('toast.shortcutInvalid'));
+      stopRecording(false);
+      return;
+    }
+
+    const shortcut = [...modifiers, mainKey].join('+');
+    saveShortcut(shortcut);
+    stopRecording(true);
+  }
+
+  function startRecording() {
+    if (isRecording) return;
+    isRecording = true;
+    recBtn.classList.add('recording');
+    recBtn.textContent = t('shortcuts.recording') || 'Recording...';
+    window.addEventListener('keydown', handleKeydown, true);
+  }
+
+  function stopRecording(success) {
+    if (!isRecording) return;
+    isRecording = false;
+    recBtn.classList.remove('recording');
+    window.removeEventListener('keydown', handleKeydown, true);
+    if (!success) {
+      const hk = config.hotkeys && config.hotkeys.nextWallpaper;
+      const val = hk ? hk.shortcut : '';
+      recBtn.textContent = val || t('shortcuts.pressKeys');
+      if (val) recBtn.classList.add('assigned');
+      else recBtn.classList.remove('assigned');
+    }
+  }
+
+  async function saveShortcut(shortcut) {
+    const hk = {
+      nextWallpaper: {
+        enabled: true,
+        shortcut: shortcut
+      }
+    };
+    config = await window.api.setConfig({ hotkeys: hk });
+    renderConfig();
+    toast(t('toast.shortcutUpdated'));
+  }
+
+  recBtn.addEventListener('click', () => {
+    startRecording();
+  });
+
+  clearBtn.addEventListener('click', async () => {
+    const hk = {
+      nextWallpaper: {
+        enabled: false,
+        shortcut: ''
+      }
+    };
+    config = await window.api.setConfig({ hotkeys: hk });
+    renderConfig();
+    toast(t('toast.shortcutUpdated'));
+  });
+
+  swEnabled.addEventListener('click', async () => {
+    const on = swEnabled.getAttribute('aria-checked') !== 'true';
+    setSwitch(swEnabled, on);
+    const hk = {
+      nextWallpaper: {
+        enabled: on,
+        shortcut: (config.hotkeys && config.hotkeys.nextWallpaper && config.hotkeys.nextWallpaper.shortcut) || ''
+      }
+    };
+    config = await window.api.setConfig({ hotkeys: hk });
+    renderConfig();
+  });
 }
 
 function initDragDrop() {

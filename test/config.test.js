@@ -56,5 +56,20 @@ const rec = C.load(p('bad.json'));
 const backups = fs.readdirSync(tmp).filter((f) => f.startsWith('bad.json.corrupt-'));
 ok('corrupt file -> defaults + backup saved', rec.autoSwitch === true && backups.length === 1);
 
+// Hotkey normalization tests
+const fresh = C.freshDefaults();
+ok('fresh defaults contain hotkeys config', fresh.hotkeys && fresh.hotkeys.nextWallpaper && fresh.hotkeys.nextWallpaper.enabled === false && fresh.hotkeys.nextWallpaper.shortcut === '');
+
+fs.writeFileSync(p('hotkeys_bad.json'), JSON.stringify({
+  hotkeys: {
+    nextWallpaper: {
+      enabled: 1,
+      shortcut: 123
+    }
+  }
+}));
+const loadedHotkeys = C.load(p('hotkeys_bad.json'));
+ok('hotkeys config is normalized correctly', loadedHotkeys.hotkeys.nextWallpaper.enabled === true && loadedHotkeys.hotkeys.nextWallpaper.shortcut === '');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');
