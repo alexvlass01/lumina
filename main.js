@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -570,7 +570,7 @@ function wallpaperFor(monitorId, theme) {
   return (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
 }
 
-async function applyForTheme(themeName, isManual = false) {
+async function applyForTheme(themeName, isManual = false, targetMonitors = null) {
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
     console.log('[GameMode] Wallpaper change blocked due to active game / fullscreen app');
     return { ok: false, reason: 'gamemode-blocked' };
@@ -582,6 +582,7 @@ async function applyForTheme(themeName, isManual = false) {
   if (monitors.length) {
     const items = [];
     for (const m of monitors) {
+      if (targetMonitors && !targetMonitors.includes(m.id)) continue;
       const p = wallpaperFor(m.id, theme);
       if (p && fs.existsSync(p)) items.push({ id: m.id, path: p });
     }
@@ -624,9 +625,10 @@ let slideshowTimer = null;
 function clearSlideshowTimer() { if (slideshowTimer) { clearTimeout(slideshowTimer); slideshowTimer = null; } }
 
 // Сдвинуть текущий кадр каждого монитора (в рамках темы); пропускаем плейлисты < 2 картинок.
-function advanceIndices(theme) {
+function advanceIndices(theme, targetMonitors = null) {
   const shuffle = config.slideshow.order === 'shuffle';
   for (const m of monitorsCache) {
+    if (targetMonitors && !targetMonitors.includes(m.id)) continue;
     const len = playlist.resolveSlot(slotFor(m.id, theme), config.library).length;
     if (len < 2) continue;
     if (!config.slideshowIndex[m.id]) config.slideshowIndex[m.id] = { light: 0, dark: 0 };
@@ -1402,6 +1404,77 @@ app.whenReady().then(async () => {
 
   // start theme schedule (if enabled): set the right theme now + schedule flips
   applyThemeSchedule();
+
+  // ── Wallpaper triggers ───────────────────────────────────────────────
+  function triggerWithStealth(reason) {
+    if (config.triggers && config.triggers.stealth) {
+      console.log(`[StealthTrigger] Waiting for maximized window for ${reason}...`);
+      let attempts = 0;
+      const maxAttempts = 40; // 40 * 3s = 120s
+      
+      const tryStealth = async () => {
+        attempts++;
+        try {
+          const monitors = monitorsCache.length ? monitorsCache : await getMonitors();
+          if (!tryStealth.pending) tryStealth.pending = monitors.map(m => m.id);
+          
+          let covered = [];
+          try { covered = await wpHost.checkMaximized(2000); } catch (e) {}
+          
+          const toApply = [];
+          if (attempts >= maxAttempts) {
+            toApply.push(...tryStealth.pending);
+            tryStealth.pending = [];
+            console.log(`[StealthTrigger] Timeout reached. Triggering ${reason} for remaining monitors.`);
+          } else {
+            for (const id of covered) {
+              if (tryStealth.pending.includes(id)) {
+                toApply.push(id);
+                tryStealth.pending = tryStealth.pending.filter(x => x !== id);
+              }
+            }
+          }
+          
+          if (toApply.length > 0) {
+            console.log(`[StealthTrigger] Desktop covered for:`, toApply, `Triggering ${reason}.`);
+            const theme = currentThemeName();
+            advanceIndices(theme, toApply);
+            saveConfig();
+            applyForTheme(theme, true, toApply);
+          }
+          
+          if (tryStealth.pending.length > 0) {
+            setTimeout(tryStealth, 3000);
+          } else {
+            console.log(`[StealthTrigger] Finished for all monitors.`);
+          }
+        } catch (err) {
+          console.error(`[StealthTrigger] error:`, err);
+          triggerNextWallpaper(); // fallback
+        }
+      };
+      
+      // Initial delay so we don't start polling instantly on boot, give it 5s
+      setTimeout(tryStealth, 5000);
+    } else {
+      // Normal delay
+      setTimeout(() => {
+        console.log(`[Trigger] Triggering next wallpaper for ${reason}`);
+        triggerNextWallpaper();
+      }, 5000);
+    }
+  }
+
+  if (config.triggers && config.triggers.onStartup) {
+    triggerWithStealth('startup');
+  }
+
+  // Switch wallpaper when the computer wakes from sleep/hibernate
+  powerMonitor.on('resume', () => {
+    if (config.triggers && config.triggers.onWakeup) {
+      triggerWithStealth('wakeup');
+    }
+  });
 
   // background update check (installed build only); silent until an update is ready
   if (updatesSupported()) setTimeout(() => checkForUpdates(), 8000);

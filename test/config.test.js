@@ -79,5 +79,22 @@ fs.writeFileSync(p('gamemode_bad.json'), JSON.stringify({
 const loadedGameMode = C.load(p('gamemode_bad.json'));
 ok('gameModeBlock config is normalized to boolean', loadedGameMode.gameModeBlock === true);
 
+// Trigger configuration tests
+ok('fresh defaults contain triggers config', fresh.triggers && fresh.triggers.onStartup === false && fresh.triggers.onWakeup === false && fresh.triggers.stealth === false);
+fs.writeFileSync(p('triggers_bad.json'), JSON.stringify({
+  triggers: {
+    onStartup: 1,
+    onWakeup: 'yes',
+    stealth: 1
+  }
+}));
+const loadedTriggers = C.load(p('triggers_bad.json'));
+ok('triggers config is normalized to booleans', loadedTriggers.triggers.onStartup === true && loadedTriggers.triggers.onWakeup === true && loadedTriggers.triggers.stealth === true);
+
+// triggers missing entirely → defaults
+fs.writeFileSync(p('triggers_missing.json'), JSON.stringify({ autoSwitch: true }));
+const loadedNoTriggers = C.load(p('triggers_missing.json'));
+ok('missing triggers → defaults (all false)', loadedNoTriggers.triggers.onStartup === false && loadedNoTriggers.triggers.onWakeup === false && loadedNoTriggers.triggers.stealth === false);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

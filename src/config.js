@@ -30,6 +30,7 @@ const DEFAULT_CONFIG = {
   slideshowIndex: {},     // { [deviceId]: { light: idx, dark: idx } } — текущий кадр
   hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
   gameModeBlock: false,
+  triggers: { onStartup: false, onWakeup: false, stealth: false },
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -73,6 +74,14 @@ function normalize(cfg) {
   }
 
   cfg.gameModeBlock = !!cfg.gameModeBlock;
+
+  cfg.triggers = {
+    onStartup: false, onWakeup: false, stealth: false,
+    ...(cfg.triggers && typeof cfg.triggers === 'object' ? cfg.triggers : {}),
+  };
+  cfg.triggers.onStartup = !!cfg.triggers.onStartup;
+  cfg.triggers.onWakeup = !!cfg.triggers.onWakeup;
+  cfg.triggers.stealth = !!cfg.triggers.stealth;
 
   return cfg;
 }

@@ -59,6 +59,54 @@ public static class DW {
     }
     return false;
   }
+
+  public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+  [DllImport("user32.dll")]
+  public static extern bool EnumWindows(EnumWindowsProc enumProc, IntPtr lParam);
+  [DllImport("user32.dll")]
+  public static extern bool IsZoomed(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool IsWindowVisible(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool GetWindowRect(IntPtr hWnd, out DW_RECT lpRect);
+  [DllImport("dwmapi.dll")]
+  public static extern int DwmGetWindowAttribute(IntPtr hwnd, int dwAttribute, out int pvAttribute, int cbAttribute);
+
+  public static bool IsCloaked(IntPtr hWnd) {
+      int cloaked;
+      if (DwmGetWindowAttribute(hWnd, 14, out cloaked, 4) == 0) return cloaked != 0;
+      return false;
+  }
+
+  public static string[] GetCoveredMonitors() {
+    var covered = new System.Collections.Generic.List<string>();
+    uint count = Count();
+    var monitorRects = new System.Collections.Generic.Dictionary<string, DW_RECT>();
+    for (uint i = 0; i < count; i++) {
+        string id = PathAt(i);
+        try { monitorRects[id] = I.GetMonitorRECT(id); } catch {}
+    }
+
+    EnumWindows((hWnd, lParam) => {
+        if (IsWindowVisible(hWnd) && IsZoomed(hWnd) && !IsCloaked(hWnd)) {
+            DW_RECT wRect;
+            if (GetWindowRect(hWnd, out wRect)) {
+                int cx = wRect.Left + (wRect.Right - wRect.Left) / 2;
+                int cy = wRect.Top + (wRect.Bottom - wRect.Top) / 2;
+                foreach (var kvp in monitorRects) {
+                    var r = kvp.Value;
+                    if (cx >= r.Left && cx <= r.Right && cy >= r.Top && cy <= r.Bottom) {
+                        if (!covered.Contains(kvp.Key)) covered.Add(kvp.Key);
+                        break;
+                    }
+                }
+            }
+        }
+        return true;
+    }, IntPtr.Zero);
+    
+    return covered.ToArray();
+  }
 }
 "@
 [Console]::Out.WriteLine('${READY}')
@@ -90,6 +138,8 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
       $out = [pscustomobject]@{ ok=$true; position=[DW]::GetPos(); items=@($list) }
     } elseif ($cmd.op -eq 'check-fullscreen') {
       $out = [pscustomobject]@{ ok=$true; busy=[DW]::IsUserBusy() }
+    } elseif ($cmd.op -eq 'check-maximized') {
+      $out = [pscustomobject]@{ ok=$true; coveredMonitors=[DW]::GetCoveredMonitors() }
     } else {
       $out = [pscustomobject]@{ ok=$false; error='unknown op' }
     }
@@ -210,6 +260,12 @@ class WallpaperHost {
     const r = await this.send({ op: 'check-fullscreen' }, timeoutMs);
     if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'check-fullscreen failed');
     return !!r.busy;
+  }
+
+  async checkMaximized(timeoutMs) {
+    const r = await this.send({ op: 'check-maximized' }, timeoutMs);
+    if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'check-maximized failed');
+    return Array.isArray(r.coveredMonitors) ? r.coveredMonitors : (r.coveredMonitors ? [r.coveredMonitors] : []);
   }
 
   dispose() {
