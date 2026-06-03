@@ -266,6 +266,34 @@
         </div>
       </div>
 
+      <h2 class="group-title" data-i18n="triggers.group">События смены обоев</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title"><span data-i18n="triggers.startupTitle">При запуске Windows</span><span class="beta-badge">beta</span></div>
+            <div class="row-sub" data-i18n="triggers.startupSub">Переключать обои при каждом старте системы</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row" id="rowTriggerStealth">
+          <div class="row-text">
+            <div class="row-title">
+              <span data-i18n="triggers.stealthTitle">Невидимая смена</span>
+              <span class="info-icon" data-i18n-tooltip="triggers.stealthTooltip"></span>
+            </div>
+            <div class="row-sub" data-i18n="triggers.stealthSub">Ждать до 2 минут развёрнутого на весь экран окна, чтобы сменить обои незаметно</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerStealth" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title"><span data-i18n="triggers.wakeupTitle">При выходе из спящего режима</span><span class="beta-badge">beta</span></div>
+            <div class="row-sub" data-i18n="triggers.wakeupSub">Переключать обои при пробуждении компьютера из сна</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerWakeup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+      </div>
+
       <h2 class="group-title" data-i18n="theme.group">Тема Windows</h2>
       <div class="boxed-list">
         <div class="row">

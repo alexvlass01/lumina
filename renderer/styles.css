@@ -23,6 +23,10 @@
   --preview-bg: rgba(0, 0, 0, 0.04);
   --winbtn-bg: rgba(0, 0, 0, 0.06);
   --winbtn-hover: rgba(0, 0, 0, 0.12);
+  --tooltip-bg: #ffffff;
+  --tooltip-fg: #2e3436;
+  --tooltip-border: rgba(0, 0, 0, 0.15);
+  --tooltip-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   color-scheme: light;
 }
 
@@ -43,6 +47,10 @@ html.dark {
   --preview-bg: rgba(255, 255, 255, 0.05);
   --winbtn-bg: rgba(255, 255, 255, 0.10);
   --winbtn-hover: rgba(255, 255, 255, 0.17);
+  --tooltip-bg: #242424;
+  --tooltip-fg: #ffffff;
+  --tooltip-border: rgba(255, 255, 255, 0.1);
+  --tooltip-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -789,6 +797,79 @@ select option {
   background: linear-gradient(to top, var(--bg) 65%, transparent);
 }
 .lib-statusbar:empty { opacity: 0; }
+
+/* Tooltips */
+.info-icon {
+  display: inline-block;
+  margin-left: 6px;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: bold;
+  line-height: 15px;
+  text-align: center;
+  cursor: help;
+  vertical-align: top;
+  margin-top: 2px;
+  position: relative;
+  opacity: 0;
+  transition: opacity 0.2s, background 0.2s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.info-icon::before { content: "i"; }
+.row:hover .info-icon { opacity: 0.6; }
+.info-icon:hover {
+  opacity: 1 !important;
+  background: var(--accent);
+  color: #fff;
+}
+.info-icon::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  background: var(--tooltip-bg);
+  color: var(--tooltip-fg);
+  border: 1px solid var(--tooltip-border);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  white-space: normal;
+  width: 260px;
+  text-align: left;
+  line-height: 1.4;
+  box-shadow: var(--tooltip-shadow);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: all 0.2s cubic-bezier(0.2, 0, 0.2, 1);
+  z-index: 100;
+  font-weight: normal;
+}
+.info-icon:hover::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+.beta-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: bold;
+  text-transform: uppercase;
+  background: rgba(53, 132, 228, 0.15);
+  color: var(--accent);
+  border-radius: 4px;
+  vertical-align: middle;
+  line-height: 1;
+}
 
 /* ---------- Hotkeys styling ---------- */
 .shortcut-record-wrap {

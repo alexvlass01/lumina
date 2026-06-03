@@ -134,9 +134,12 @@ function t(key, params) {
 function applyI18n() {
   document.querySelectorAll('[data-i18n]').forEach((el) => { el.textContent = t(el.dataset.i18n); });
   document.querySelectorAll('[data-i18n-title]').forEach((el) => {
-    const s = t(el.dataset.i18nTitle);
-    el.title = s;
-    el.setAttribute('aria-label', s);
+    const txt = t(el.dataset.i18nTitle);
+    if (el.tagName === 'OPTGROUP') el.label = txt;
+    else el.title = txt;
+  });
+  document.querySelectorAll('[data-i18n-tooltip]').forEach((el) => {
+    el.setAttribute('data-tooltip', t(el.dataset.i18nTooltip));
   });
   document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
 }
@@ -525,6 +528,13 @@ async function renderConfig() {
   updateSingleWallRow();
   updateSlideshowControls();
   renderThemeSchedule();
+
+  // Triggers (on startup, on wake)
+  const trig = (config.triggers) || {};
+  setSwitch($('#swTriggerStartup'), !!trig.onStartup);
+  setSwitch($('#swTriggerWakeup'), !!trig.onWakeup);
+  setSwitch($('#swTriggerStealth'), !!trig.stealth);
+  $('#rowTriggerStealth').style.display = trig.onStartup ? 'flex' : 'none';
 
   // Hotkeys
   const hk = config.hotkeys && config.hotkeys.nextWallpaper;
@@ -1415,6 +1425,27 @@ async function init() {
   });
   $('#selSlideOrder').addEventListener('change', async () => {
     config = await window.api.setSlideshow({ order: $('#selSlideOrder').value });
+  });
+
+  // wallpaper triggers (on startup, on wake from sleep)
+  $('#swTriggerStartup').addEventListener('click', async () => {
+    const on = $('#swTriggerStartup').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swTriggerStartup'), on);
+    $('#rowTriggerStealth').style.display = on ? 'flex' : 'none';
+    config = await window.api.setConfig({ triggers: { ...config.triggers, onStartup: on } });
+    renderConfig();
+  });
+  $('#swTriggerWakeup').addEventListener('click', async () => {
+    const on = $('#swTriggerWakeup').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swTriggerWakeup'), on);
+    config = await window.api.setConfig({ triggers: { ...config.triggers, onWakeup: on } });
+    renderConfig();
+  });
+  $('#swTriggerStealth').addEventListener('click', async () => {
+    const on = $('#swTriggerStealth').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swTriggerStealth'), on);
+    config = await window.api.setConfig({ triggers: { ...config.triggers, stealth: on } });
+    renderConfig();
   });
 
   // theme schedule (Lumina switches the Windows theme itself)
