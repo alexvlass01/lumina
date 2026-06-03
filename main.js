@@ -586,10 +586,15 @@ function createWindow() {
       mainWindow.hide();
     }
   });
+
+  // Если окно всё-таки разрушено — сбрасываем ссылку, чтобы showWindow() пересоздал
+  // его, а не звал методы на «мёртвом» объекте (это бросает исключение → открывается
+  // трей, но окно не появляется — тот самый баг «только трей»).
+  mainWindow.on('closed', () => { mainWindow = null; });
 }
 
 function bringToFront(win) {
-  if (!win) return;
+  if (!win || win.isDestroyed()) return;
   if (win.isMinimized()) win.restore();
   if (!win.isVisible()) win.show();
   win.focus();
@@ -601,7 +606,7 @@ function bringToFront(win) {
 }
 
 function showWindow() {
-  if (!mainWindow) {
+  if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow();
     mainWindow.once('ready-to-show', () => bringToFront(mainWindow));
     return;
