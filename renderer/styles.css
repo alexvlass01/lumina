@@ -720,3 +720,29 @@ select option {
 .lib-popup-btn.danger { width: 100%; color: var(--destructive); }
 .lib-popup-btn.danger:hover { background: rgba(224, 27, 36, 0.12); }
 
+/* tags */
+.lib-railtags { display: flex; flex-direction: column; gap: 2px; }
+.lib-rail-hdr {
+  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--text-dim); padding: 12px 12px 4px;
+}
+.lib-popup-tags { padding: 2px 4px; }
+.lib-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
+.lib-chips:empty { display: none; }
+.lib-chip {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--btn-bg); color: var(--text);
+  font-size: 12px; padding: 3px 4px 3px 9px; border-radius: 12px;
+}
+.lib-chip-x {
+  border: none; background: transparent; color: var(--text-dim);
+  cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px;
+}
+.lib-chip-x:hover { color: var(--destructive); }
+.lib-tag-input {
+  width: 100%; font-family: inherit; font-size: 12.5px; color: var(--text);
+  background: var(--bg); border: 1px solid var(--card-border);
+  border-radius: 7px; padding: 5px 9px; outline: none;
+}
+.lib-tag-input:focus { border-color: var(--accent); }
+

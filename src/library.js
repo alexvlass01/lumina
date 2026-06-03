@@ -85,14 +85,48 @@ function resolveIds(library, ids) {
   return out;
 }
 
+// ---- tags (manual, on pool items) ----
+
+// Normalize a tag: trimmed, collapsed whitespace, lowercase (tags are categories).
+function normTag(tag) {
+  return String(tag || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+function addTag(library, id, tag) {
+  const it = getItem(library, id);
+  const t = normTag(tag);
+  if (!it || !t) return false;
+  if (!Array.isArray(it.tags)) it.tags = [];
+  if (it.tags.includes(t)) return false;
+  it.tags.push(t);
+  return true;
+}
+function removeTag(library, id, tag) {
+  const it = getItem(library, id);
+  const t = normTag(tag);
+  if (!it || !Array.isArray(it.tags)) return false;
+  const i = it.tags.indexOf(t);
+  if (i < 0) return false;
+  it.tags.splice(i, 1);
+  return true;
+}
+// All distinct tags across the pool, sorted.
+function allTags(library) {
+  const set = new Set();
+  for (const it of Object.values(library || {})) {
+    if (Array.isArray(it.tags)) it.tags.forEach((t) => set.add(t));
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
 // List pool items with optional filter + sort.
-//   filter: { type?: 'image'|'folder', favorite?: true }
+//   filter: { type?: 'image'|'folder', favorite?: true, tag?: 'name' }
 //   sort:   'added' (newest first, default) | 'added-asc' | 'name' | 'name-desc'
 function listItems(library, opts = {}) {
   let items = Object.values(library || {});
   const f = opts.filter || {};
   if (f.type) items = items.filter((it) => it.type === f.type);
   if (f.favorite) items = items.filter((it) => it.favorite);
+  if (f.tag) items = items.filter((it) => Array.isArray(it.tags) && it.tags.includes(f.tag));
   const byName = (a, b) => baseName(a.path).localeCompare(baseName(b.path));
   switch (opts.sort) {
     case 'name': items.sort(byName); break;
@@ -142,5 +176,6 @@ function migrateConfig(cfg) {
 
 module.exports = {
   idFor, baseName, makeItem, addItem, addPath, getItem, removeItem,
-  toggleFavorite, resolveIds, listItems, migrateSlot, migrateConfig,
+  toggleFavorite, normTag, addTag, removeTag, allTags,
+  resolveIds, listItems, migrateSlot, migrateConfig,
 };

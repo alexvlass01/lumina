@@ -68,6 +68,27 @@ ok('listItems: filter favorite', (() => {
   return f.length === 1 && f[0].path === 'C:/a.jpg';
 })());
 
+// ---- tags ----
+const lib4 = {};
+const t1 = L.addPath(lib4, 'image', 'C:/t1.jpg');
+const t2 = L.addPath(lib4, 'image', 'C:/t2.jpg');
+ok('addTag: normalizes (trim/case) + creates array', (() => {
+  L.addTag(lib4, t1, '  Nature  ');
+  return lib4[t1].tags.length === 1 && lib4[t1].tags[0] === 'nature';
+})());
+ok('addTag: dedups (case-insensitive)', L.addTag(lib4, t1, 'NATURE') === false && lib4[t1].tags.length === 1);
+ok('addTag: empty tag ignored', L.addTag(lib4, t1, '   ') === false);
+ok('removeTag: removes', (() => { L.addTag(lib4, t1, 'space'); L.removeTag(lib4, t1, 'Nature'); return JSON.stringify(lib4[t1].tags) === JSON.stringify(['space']); })());
+ok('removeTag: missing -> false', L.removeTag(lib4, t1, 'ghost') === false);
+ok('allTags: distinct + sorted', (() => {
+  L.addTag(lib4, t2, 'beach'); L.addTag(lib4, t2, 'space');
+  return JSON.stringify(L.allTags(lib4)) === JSON.stringify(['beach', 'space']);
+})());
+ok('listItems: filter by tag', (() => {
+  const r = L.listItems(lib4, { filter: { tag: 'space' } });
+  return r.length === 2;
+})());
+
 // ---- migrateSlot ----
 const ms = {};
 ok('migrateSlot: legacy string -> itemIds', (() => {

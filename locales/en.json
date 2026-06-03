@@ -96,6 +96,8 @@
     "assign": "Assign…",
     "assignTo": "Assign to monitor",
     "assigned": "In use",
+    "tags": "Tags",
+    "addTagPh": "Add a tag…",
     "remove": "Remove from library",
     "assignedToast": "Assigned",
     "removedToast": "Removed from library"

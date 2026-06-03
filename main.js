@@ -974,6 +974,16 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
   return config;
 });
 
+ipcMain.handle('library-add-tag', (e, id, tag) => {
+  if (library.addTag(config.library, id, tag)) saveConfig();
+  return config;
+});
+
+ipcMain.handle('library-remove-tag', (e, id, tag) => {
+  if (library.removeTag(config.library, id, tag)) saveConfig();
+  return config;
+});
+
 // Назначить элемент пула на монитор×тему (добавляет в плейлист слота) + применить, если тема активна.
 ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   const theme = which === 'dark' ? 'dark' : 'light';

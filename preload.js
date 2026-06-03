@@ -23,6 +23,8 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddPaths: (paths) => ipcRenderer.invoke('library-add-paths', paths),
   libraryRemove: (id) => ipcRenderer.invoke('library-remove', id),
   libraryToggleFavorite: (id) => ipcRenderer.invoke('library-toggle-favorite', id),
+  libraryAddTag: (id, tag) => ipcRenderer.invoke('library-add-tag', id, tag),
+  libraryRemoveTag: (id, tag) => ipcRenderer.invoke('library-remove-tag', id, tag),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),

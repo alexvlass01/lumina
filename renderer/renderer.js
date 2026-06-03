@@ -67,6 +67,8 @@ if (!window.api) {
       return mock;
     },
     libraryToggleFavorite: async (id) => { if (mock.library[id]) mock.library[id].favorite = !mock.library[id].favorite; return mock; },
+    libraryAddTag: async (id, tag) => { const it = mock.library[id]; const t = String(tag || '').trim().toLowerCase(); if (it && t) { it.tags = it.tags || []; if (!it.tags.includes(t)) it.tags.push(t); } return mock; },
+    libraryRemoveTag: async (id, tag) => { const it = mock.library[id]; const t = String(tag || '').trim().toLowerCase(); if (it && it.tags) it.tags = it.tags.filter((x) => x !== t); return mock; },
     libraryAssign: async (id, monitorId, which) => {
       const theme = which === 'dark' ? 'dark' : 'light';
       const mid = monitorId || 'MON-1';
@@ -536,10 +538,20 @@ function assignedIds() {
   return set;
 }
 
+function libAllTags() {
+  const set = new Set();
+  Object.values(config.library || {}).forEach((it) => (it.tags || []).forEach((tg) => set.add(tg)));
+  return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
 function libList() {
   let items = Object.values(config.library || {});
   if (LIB.filter === 'favorite') items = items.filter((it) => it.favorite);
   else if (LIB.filter === 'folder') items = items.filter((it) => it.type === 'folder');
+  else if (LIB.filter.startsWith('tag:')) {
+    const tg = LIB.filter.slice(4);
+    items = items.filter((it) => Array.isArray(it.tags) && it.tags.includes(tg));
+  }
   const q = LIB.q.trim().toLowerCase();
   if (q) items = items.filter((it) => baseName(it.path).toLowerCase().includes(q));
   if (LIB.sort === 'name') items.sort((a, b) => baseName(a.path).localeCompare(baseName(b.path)));
@@ -547,9 +559,35 @@ function libList() {
   return items;
 }
 
+function renderLibRailTags() {
+  const box = $('#libTags');
+  if (!box) return;
+  const tags = libAllTags();
+  box.innerHTML = '';
+  if (tags.length) {
+    const hdr = document.createElement('div');
+    hdr.className = 'lib-rail-hdr';
+    hdr.textContent = t('library.tags');
+    box.appendChild(hdr);
+    tags.forEach((tg) => {
+      const b = document.createElement('button');
+      b.className = 'lib-railbtn';
+      b.dataset.filter = `tag:${tg}`;
+      b.textContent = `# ${tg}`;
+      box.appendChild(b);
+    });
+  }
+  // if the active tag filter no longer exists, fall back to "all"
+  if (LIB.filter.startsWith('tag:') && !tags.includes(LIB.filter.slice(4))) LIB.filter = 'all';
+  document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
+    b.classList.toggle('active', b.dataset.filter === LIB.filter);
+  });
+}
+
 function renderLibrary() {
   const grid = $('#libGrid');
   if (!grid) return;
+  renderLibRailTags();
   const items = libList();
   const assigned = assignedIds();
   const empty = $('#libEmpty');
@@ -660,6 +698,59 @@ function openAssignMenu(it, anchor) {
   sep.className = 'lib-popup-sep';
   pop.appendChild(sep);
 
+  // tags editor (chips + add input)
+  const tagBox = document.createElement('div');
+  tagBox.className = 'lib-popup-tags';
+  const tagHdr = document.createElement('div');
+  tagHdr.className = 'lib-popup-title';
+  tagHdr.textContent = t('library.tags');
+  tagBox.appendChild(tagHdr);
+  const chips = document.createElement('div');
+  chips.className = 'lib-chips';
+  tagBox.appendChild(chips);
+  const tagInput = document.createElement('input');
+  tagInput.className = 'lib-tag-input';
+  tagInput.placeholder = t('library.addTagPh');
+  tagInput.addEventListener('click', (e) => e.stopPropagation());
+  tagBox.appendChild(tagInput);
+  pop.appendChild(tagBox);
+
+  const curTags = () => { const f = config.library[it.id]; return (f && f.tags) || []; };
+  function renderChips() {
+    chips.innerHTML = '';
+    curTags().forEach((tg) => {
+      const chip = document.createElement('span');
+      chip.className = 'lib-chip';
+      chip.textContent = tg;
+      const x = document.createElement('button');
+      x.className = 'lib-chip-x';
+      x.textContent = '×';
+      x.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        config = await window.api.libraryRemoveTag(it.id, tg);
+        renderChips();
+        renderLibrary();
+      });
+      chip.appendChild(x);
+      chips.appendChild(chip);
+    });
+  }
+  renderChips();
+  tagInput.addEventListener('keydown', async (e) => {
+    if (e.key === 'Enter' && tagInput.value.trim()) {
+      e.stopPropagation();
+      config = await window.api.libraryAddTag(it.id, tagInput.value);
+      tagInput.value = '';
+      renderChips();
+      renderLibrary();
+      tagInput.focus();
+    }
+  });
+
+  const sep2 = document.createElement('div');
+  sep2.className = 'lib-popup-sep';
+  pop.appendChild(sep2);
+
   const rm = document.createElement('button');
   rm.className = 'lib-popup-btn danger';
   rm.textContent = t('library.remove');
@@ -686,12 +777,13 @@ function openAssignMenu(it, anchor) {
 }
 
 function initLibrary() {
-  document.querySelectorAll('.lib-railbtn').forEach((b) => {
-    b.addEventListener('click', () => {
-      LIB.filter = b.dataset.filter;
-      document.querySelectorAll('.lib-railbtn').forEach((x) => x.classList.toggle('active', x === b));
-      renderLibrary();
-    });
+  // Delegated so dynamically-rendered tag buttons work too.
+  const rail = document.querySelector('#viewLibrary .lib-rail');
+  if (rail) rail.addEventListener('click', (e) => {
+    const btn = e.target.closest('.lib-railbtn');
+    if (!btn) return;
+    LIB.filter = btn.dataset.filter;
+    renderLibrary();
   });
   const sortEl = $('#libSort');
   if (sortEl) sortEl.addEventListener('change', () => { LIB.sort = sortEl.value; renderLibrary(); });
