@@ -233,6 +233,17 @@ public static class DW {
   public static int[] Rect(string id){ var r=I.GetMonitorRECT(id); return new int[]{r.Left,r.Top,r.Right,r.Bottom}; }
   public static void SetPosition(int p){ I.SetPosition(p); }
   public static void SetWallpaper(string id,string p){ I.SetWallpaper(id,p); }
+
+  [DllImport("shell32.dll")]
+  public static extern int SHQueryUserNotificationState(out int pqunsState);
+  public static bool IsUserBusy() {
+    int state;
+    int hr = SHQueryUserNotificationState(out state);
+    if (hr == 0) {
+      return (state == 2 || state == 3 || state == 4 || state == 6);
+    }
+    return false;
+  }
 }
 "@
 if ($Mode -eq 'enum') {
@@ -248,6 +259,8 @@ if ($Mode -eq 'enum') {
   $data = Get-Content -LiteralPath $DataFile -Raw -Encoding utf8 | ConvertFrom-Json
   [DW]::SetPosition([int]$data.position)
   foreach ($it in $data.items) { [DW]::SetWallpaper([string]$it.id, [string]$it.path) }
+} elseif ($Mode -eq 'check-fullscreen') {
+  [DW]::IsUserBusy()
 }
 `;
 
@@ -286,6 +299,23 @@ function ensureComHostScript() {
   }
 }
 const wpHost = new WallpaperHost(COM_HOST_SCRIPT_PATH);
+
+async function isGameOrFullscreenRunning() {
+  if (!config.gameModeBlock) return false;
+  try {
+    const isBusy = await wpHost.checkFullscreen();
+    return !!isBusy;
+  } catch (err) {
+    console.error('[GameMode] Error checking fullscreen via host:', err);
+    try {
+      const out = await runCom(['-Mode', 'check-fullscreen']);
+      return out.trim() === 'True';
+    } catch (fallbackErr) {
+      console.error('[GameMode] Error checking fullscreen via fallback:', fallbackErr);
+    }
+  }
+  return false;
+}
 
 let monitorsCache = [];
 
@@ -421,7 +451,7 @@ function clearThemeTimer() {
 }
 
 // Apply the scheduled theme now (modes: time / sun) and schedule the next flip.
-function applyThemeSchedule() {
+async function applyThemeSchedule() {
   clearThemeTimer();
   const sch = config.themeSchedule || {};
   if (sch.mode !== 'time' && sch.mode !== 'sun') return; // 'off' — Lumina does not drive the theme
@@ -430,6 +460,11 @@ function applyThemeSchedule() {
   if (!b) { themeTimer = setTimeout(applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
   const wantDark = boundariesSayDark(b, now);
   if (wantDark !== nativeTheme.shouldUseDarkColors) {
+    if (config.gameModeBlock && await isGameOrFullscreenRunning()) {
+      console.log('[GameMode] Theme schedule flip blocked. Will retry in 1 minute.');
+      themeTimer = setTimeout(applyThemeSchedule, 60000);
+      return;
+    }
     setWindowsTheme(wantDark).catch((e) => console.error('Не удалось сменить тему Windows:', e));
   }
   const nowMin = now.getHours() * 60 + now.getMinutes();
@@ -535,7 +570,11 @@ function wallpaperFor(monitorId, theme) {
   return (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
 }
 
-async function applyForTheme(themeName) {
+async function applyForTheme(themeName, isManual = false) {
+  if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
+    console.log('[GameMode] Wallpaper change blocked due to active game / fullscreen app');
+    return { ok: false, reason: 'gamemode-blocked' };
+  }
   const theme = themeName || currentThemeName();
   const monitors = monitorsCache.length ? monitorsCache : await getMonitors();
 
@@ -597,14 +636,21 @@ function advanceIndices(theme) {
 }
 
 // advance=true сдвигает кадр; false — просто применить текущее и (пере)запланировать.
-function tickSlideshow(advance) {
+async function tickSlideshow(advance, isManual = false) {
   clearSlideshowTimer();
   if (!config.slideshow || !config.slideshow.enabled) return;
+
+  if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
+    console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
+    slideshowTimer = setTimeout(() => tickSlideshow(advance, false), 60000);
+    return;
+  }
+
   const theme = currentThemeName();
   if (advance) { advanceIndices(theme); saveConfig(); }
-  applyForTheme(theme);
+  applyForTheme(theme, isManual);
   const mins = Math.max(1, Math.floor(Number(config.slideshow.intervalMin) || 30));
-  slideshowTimer = setTimeout(() => tickSlideshow(true), mins * 60000);
+  slideshowTimer = setTimeout(() => tickSlideshow(true, false), mins * 60000);
 }
 
 // ---------------------------------------------------------------------------
@@ -704,11 +750,11 @@ function hasSlideshowItems() {
 function triggerNextWallpaper() {
   const theme = currentThemeName();
   if (config.slideshow && config.slideshow.enabled) {
-    tickSlideshow(true);
+    tickSlideshow(true, true);
   } else {
     advanceIndices(theme);
     saveConfig();
-    applyForTheme(theme);
+    applyForTheme(theme, true);
   }
 }
 
@@ -758,7 +804,7 @@ const trayCtl = createTrayController({
     hasSlideshowItems: hasSlideshowItems(),
   }),
   onOpen: () => showWindow(),
-  onApplyCurrent: () => applyForTheme(),
+  onApplyCurrent: () => applyForTheme(null, true),
   onNextWallpaper: () => triggerNextWallpaper(),
   onInstallUpdate: () => quitAndInstallUpdate(),
   onQuit: () => { app.isQuitting = true; app.quit(); },
@@ -1066,7 +1112,7 @@ ipcMain.handle('library-remove', (e, id) => {
     saveConfig();
     gcWallpapers();
     trayCtl.refresh();
-    applyForTheme(); // вдруг удалили текущие обои — переприменим
+    applyForTheme(null, true); // вдруг удалили текущие обои — переприменим
   }
   return config;
 });
@@ -1095,7 +1141,7 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
   saveConfig();
   trayCtl.refresh();
-  if (theme === currentThemeName()) applyForTheme(theme);
+  if (theme === currentThemeName()) applyForTheme(theme, true);
   return config;
 });
 
@@ -1172,12 +1218,12 @@ ipcMain.handle('set-slideshow', (e, patch) => {
   config.slideshow.intervalMin = Math.floor(+config.slideshow.intervalMin);
   if (config.slideshow.order !== 'shuffle') config.slideshow.order = 'sequential';
   saveConfig();
-  if (config.slideshow.enabled) tickSlideshow(false);
-  else { clearSlideshowTimer(); applyForTheme(); }
+  if (config.slideshow.enabled) tickSlideshow(false, true);
+  else { clearSlideshowTimer(); applyForTheme(null, true); }
   return config;
 });
 
-ipcMain.handle('apply-now', (e, which) => applyForTheme(which));
+ipcMain.handle('apply-now', (e, which) => applyForTheme(which, true));
 
 // Jump to a specific playlist item for a monitor+theme and apply immediately.
 ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
@@ -1186,7 +1232,7 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
   if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
   config.slideshowIndex[monitorId][t] = index;
   saveConfig();
-  if (t === currentThemeName()) await applyForTheme(t);
+  if (t === currentThemeName()) await applyForTheme(t, true);
   return config;
 });
 

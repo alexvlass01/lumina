@@ -519,6 +519,7 @@ async function renderConfig() {
   setSwitch($('#swStartMin'), config.startMinimized !== false);
   setSwitch($('#swSingle'), !!config.singleWallpaper);
   setSwitch($('#swTelemetry'), !!config.telemetry);
+  setSwitch($('#swGameMode'), !!config.gameModeBlock);
   if ($('#whKey')) $('#whKey').value = config.wallhavenKey || '';
   $('#selStyle').value = config.style || 'fill';
   updateSingleWallRow();
@@ -1241,6 +1242,14 @@ async function init() {
     const on = $('#swTelemetry').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTelemetry'), on);
     config = await window.api.setConfig({ telemetry: on });
+  });
+
+  $('#swGameMode').addEventListener('click', async () => {
+    const on = $('#swGameMode').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swGameMode'), on);
+    config = await window.api.setConfig({ gameModeBlock: on });
+    renderConfig();
+    toast(on ? t('toast.gameModeOn') : t('toast.gameModeOff'));
   });
 
   // ---- settings: Wallhaven API key (own key; enables NSFW in online wallpapers) ----

@@ -71,5 +71,13 @@ fs.writeFileSync(p('hotkeys_bad.json'), JSON.stringify({
 const loadedHotkeys = C.load(p('hotkeys_bad.json'));
 ok('hotkeys config is normalized correctly', loadedHotkeys.hotkeys.nextWallpaper.enabled === true && loadedHotkeys.hotkeys.nextWallpaper.shortcut === '');
 
+// Game Mode configuration tests
+ok('fresh defaults contain gameModeBlock config', fresh.gameModeBlock === false);
+fs.writeFileSync(p('gamemode_bad.json'), JSON.stringify({
+  gameModeBlock: 1
+}));
+const loadedGameMode = C.load(p('gamemode_bad.json'));
+ok('gameModeBlock config is normalized to boolean', loadedGameMode.gameModeBlock === true);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

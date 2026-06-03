@@ -48,6 +48,17 @@ public static class DW {
   public static int GetPos(){ return I.GetPosition(); }
   public static void SetWallpaper(string id,string p){ I.SetWallpaper(id,p); }
   public static string GetWp(string id){ return I.GetWallpaper(id); }
+
+  [DllImport("shell32.dll")]
+  public static extern int SHQueryUserNotificationState(out int pqunsState);
+  public static bool IsUserBusy() {
+    int state;
+    int hr = SHQueryUserNotificationState(out state);
+    if (hr == 0) {
+      return (state == 2 || state == 3 || state == 4 || state == 6);
+    }
+    return false;
+  }
 }
 "@
 [Console]::Out.WriteLine('${READY}')
@@ -77,6 +88,8 @@ while ($null -ne ($line = [Console]::In.ReadLine())) {
         [void]$list.Add([pscustomobject]@{ id=$id; path=[DW]::GetWp($id) })
       }
       $out = [pscustomobject]@{ ok=$true; position=[DW]::GetPos(); items=@($list) }
+    } elseif ($cmd.op -eq 'check-fullscreen') {
+      $out = [pscustomobject]@{ ok=$true; busy=[DW]::IsUserBusy() }
     } else {
       $out = [pscustomobject]@{ ok=$false; error='unknown op' }
     }
@@ -191,6 +204,12 @@ class WallpaperHost {
     if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'get failed');
     const items = Array.isArray(r.items) ? r.items : (r.items ? [r.items] : []);
     return { position: r.position, items };
+  }
+
+  async checkFullscreen(timeoutMs) {
+    const r = await this.send({ op: 'check-fullscreen' }, timeoutMs);
+    if (!r || !r.ok) throw new Error(r && r.error ? r.error : 'check-fullscreen failed');
+    return !!r.busy;
   }
 
   dispose() {

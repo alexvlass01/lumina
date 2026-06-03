@@ -37,11 +37,16 @@ const { WallpaperHost, HOST_SCRIPT } = require('../src/wallpaper-host');
     const applyOk = await host.apply(cur.position, sameItems);
     console.log(`apply round-trip (re-applied current wallpapers, no change): ok=${applyOk}, monitors=${sameItems.length}, position=${cur.position}`);
 
+    // Test the new checkFullscreen operation
+    const isBusy = await host.checkFullscreen();
+    console.log(`checkFullscreen: ${isBusy}`);
+
     const ok = m1.length >= 1
       && m1.every((m) => typeof m.id === 'string' && Number.isFinite(m.w) && Number.isFinite(m.h))
       && m2.length === m1.length
       && second < first
-      && applyOk === true;
+      && applyOk === true
+      && typeof isBusy === 'boolean';
     console.log(ok ? '\nPASS: host works and reuse is faster.' : '\nFAIL: see values above.');
     process.exitCode = ok ? 0 : 1;
   } catch (e) {

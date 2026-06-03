@@ -29,6 +29,7 @@ const DEFAULT_CONFIG = {
   slideshow: { enabled: false, intervalMin: 30, order: 'sequential' },
   slideshowIndex: {},     // { [deviceId]: { light: idx, dark: idx } } — текущий кадр
   hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
+  gameModeBlock: false,
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -70,6 +71,8 @@ function normalize(cfg) {
   } else {
     cfg.hotkeys.nextWallpaper = { enabled: false, shortcut: '' };
   }
+
+  cfg.gameModeBlock = !!cfg.gameModeBlock;
 
   return cfg;
 }
