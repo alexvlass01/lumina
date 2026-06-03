@@ -39,10 +39,19 @@ function scanFolder(dir) {
 
 // Expand a slot to a flat list of EXISTING paths (images + folder contents),
 // de-duplicated, preserving order.
-function resolveSlot(slot) {
+//
+// New model: slot = { itemIds:[…] } + a `library` pool → items are resolved by id.
+// Backward compatible: called as resolveSlot(slot) on a legacy { items:[…] } slot
+// (no library) it behaves exactly as before. (Library model lands fully in Этап B.)
+function resolveSlot(slot, library) {
   const out = [];
   const seen = new Set();
-  const items = slot && Array.isArray(slot.items) ? slot.items : [];
+  let items;
+  if (library && slot && Array.isArray(slot.itemIds)) {
+    items = slot.itemIds.map((id) => library[id]).filter(Boolean);
+  } else {
+    items = slot && Array.isArray(slot.items) ? slot.items : [];
+  }
   for (const it of items) {
     if (!it || !it.path) continue;
     const paths = it.type === 'folder' ? scanFolder(it.path) : [it.path];

@@ -13,7 +13,8 @@ const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (only on COM failure / empty playlist)
   darkWallpaper: '',
   singleWallpaper: false, // одни обои на все мониторы (вместо своей пары на каждый)
-  monitors: {},           // { [deviceId]: { light: Slot, dark: Slot } }; Slot = { items: Item[] }
+  monitors: {},           // { [deviceId]: { light: Slot, dark: Slot } }; Slot = { items: Item[] } (→ itemIds in Этап B)
+  library: {},            // content pool { [id]: Item } — decoupled from placement (see src/library.js, future-todo #16)
   autoSwitch: true,
   style: 'fill',          // fill | fit | stretch | center | tile | span
   autostart: false,
@@ -37,6 +38,9 @@ function freshDefaults() {
 // Bring any config (old or new shape) into the current shape. Idempotent.
 function normalize(cfg) {
   if (!cfg.monitors || typeof cfg.monitors !== 'object') cfg.monitors = {};
+  // Content pool (see src/library.js). Etап A: just guarantee the field exists;
+  // Etап B will run library.migrateConfig(cfg) here to populate it + rewrite slots.
+  if (!cfg.library || typeof cfg.library !== 'object') cfg.library = {};
   cfg.themeSchedule = {
     mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '',
     ...(cfg.themeSchedule && typeof cfg.themeSchedule === 'object' ? cfg.themeSchedule : {}),

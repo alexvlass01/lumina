@@ -53,6 +53,22 @@ ok('resolveSlot: excludes missing files', !list.includes(missing));
 ok('resolveSlot: excludes non-images (.txt)', !list.some((p) => p.endsWith('.txt')));
 ok('resolveSlot: de-dups folder vs explicit', list.filter((p) => p === realImg).length === 1);
 ok('resolveSlot: includes folder images', list.some((p) => p.endsWith('a.png')) && list.some((p) => p.endsWith('b.jpg')));
+
+// ---- resolveSlot via library pool (new model: { itemIds } + library) ----
+const L = require('../src/library');
+const lib = {};
+const idImg = L.addPath(lib, 'image', realImg);
+const idDir = L.addPath(lib, 'folder', dir);
+const idGhost = L.addPath(lib, 'image', missing);
+const viaLib = P.resolveSlot({ itemIds: [idImg, idGhost, idDir] }, lib);
+ok('resolveSlot(lib): resolves itemIds via pool',
+  viaLib.some((p) => p.endsWith('a.png')) && viaLib.some((p) => p.endsWith('b.jpg')));
+ok('resolveSlot(lib): excludes missing', !viaLib.includes(missing));
+ok('resolveSlot(lib): de-dups explicit vs folder', viaLib.filter((p) => p === realImg).length === 1);
+ok('resolveSlot(lib): unknown id skipped', P.resolveSlot({ itemIds: ['nope'] }, lib).length === 0);
+ok('resolveSlot: legacy {items} still works w/o library',
+  P.resolveSlot({ items: [{ type: 'image', path: realImg }] }).length === 1);
+
 fs.rmSync(dir, { recursive: true, force: true });
 
 console.log('\nAll ' + passed + ' playlist tests passed.');
