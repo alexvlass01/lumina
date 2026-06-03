@@ -77,6 +77,7 @@ if (!window.api) {
       if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
       return mock;
     },
+    folderInfo: async () => ({ count: 0, previews: [] }),
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
     wallhavenAdd: async () => ({ config: mock, error: null }),
@@ -617,8 +618,32 @@ function buildLibCard(it, isAssigned) {
   card.dataset.id = it.id;
 
   if (it.type === 'folder') {
-    card.innerHTML = '<span class="lib-ic">📁</span>';
+    // folder card: collage of inner previews + name caption + count, so folders are distinguishable
+    const collage = document.createElement('div');
+    collage.className = 'lib-folder-collage';
+    collage.innerHTML = '<span class="lib-ic">📁</span>';
+    card.appendChild(collage);
+    const cap = document.createElement('span');
+    cap.className = 'lib-card-name';
+    cap.textContent = baseName(it.path);
+    card.appendChild(cap);
+    const cnt = document.createElement('span');
+    cnt.className = 'lib-count';
+    cnt.textContent = '📁';
+    card.appendChild(cnt);
     card.title = it.path;
+    window.api.folderInfo(it.path).then((info) => {
+      const previews = (info && info.previews) || [];
+      cnt.textContent = `📁 ${(info && info.count) || 0}`;
+      if (!previews.length) return;
+      collage.innerHTML = '';
+      previews.slice(0, 4).forEach((p) => {
+        const tile = document.createElement('div');
+        tile.className = 'ff';
+        collage.appendChild(tile);
+        window.api.fileUrl(p).then((u) => { if (u) tile.style.backgroundImage = `url("${u}")`; });
+      });
+    });
   } else {
     card.title = baseName(it.path);
     window.api.fileUrl(it.path).then((u) => {
@@ -657,8 +682,15 @@ function buildLibCard(it, isAssigned) {
   menu.addEventListener('click', (e) => { e.stopPropagation(); openAssignMenu(it, menu); });
   card.appendChild(menu);
 
+  card.addEventListener('mouseenter', () => setLibStatus(baseName(it.path)));
   card.addEventListener('click', () => openAssignMenu(it, menu));
   return card;
+}
+
+// Faint Explorer-style status line: shows the hovered item's name at the bottom.
+function setLibStatus(text) {
+  const el = $('#libStatus');
+  if (el) el.textContent = text || '';
 }
 
 function closeLibPopup() {
@@ -913,31 +945,40 @@ async function doWhSearch(reset) {
   const more = $('#whMore'); if (more) more.hidden = WH.page >= WH.lastPage;
 }
 
+// Already in the pool? Online items carry their source page; we match on it so the
+// "added ✓" survives re-searches (was only set in-session before — fixed).
+function whAlreadyAdded(item) {
+  return Object.values(config.library || {}).some((it) => it.source && it.source === item.page);
+}
+
 function buildWhCard(item) {
   const card = document.createElement('div');
   card.className = 'lib-card';
   if (item.thumb) card.style.backgroundImage = `url("${item.thumb}")`;
-  card.title = [item.resolution, item.category].filter(Boolean).join(' · ');
+  const label = [item.resolution, item.category].filter(Boolean).join(' · ');
+  card.title = label;
   const add = document.createElement('button');
   add.className = 'lib-menu-btn wh-add';
-  add.textContent = '+';
-  add.title = t('online.add');
+  const markAdded = () => {
+    add.textContent = '✓';
+    add.classList.add('added');
+    add.disabled = true;
+    add.title = t('online.added');
+  };
+  if (whAlreadyAdded(item)) markAdded();
+  else { add.textContent = '+'; add.title = t('online.add'); }
   add.addEventListener('click', async (e) => {
     e.stopPropagation();
+    if (add.disabled) return;
     add.disabled = true;
     let res;
     try { res = await window.api.wallhavenAdd(item, WH.q); } catch (err) { res = { error: 'download' }; }
     if (res && res.config) config = res.config;
-    if (res && !res.error) {
-      card.classList.add('assigned');
-      add.textContent = '✓';
-      toast(t('online.added'));
-    } else {
-      add.disabled = false;
-      toast(t('online.error', { e: (res && res.error) || '?' }));
-    }
+    if (res && !res.error) { markAdded(); toast(t('online.added')); }
+    else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }
   });
   card.appendChild(add);
+  card.addEventListener('mouseenter', () => setLibStatus(label || 'Wallhaven'));
   card.addEventListener('click', () => { if (!add.disabled) add.click(); });
   return card;
 }

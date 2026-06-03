@@ -1083,6 +1083,15 @@ ipcMain.handle('current-image', (e, monitorId, which) => {
   return currentImageFor(id, theme);
 });
 
+// Превью папки для библиотеки: число картинок внутри + первые несколько путей
+// (renderer сам сканировать ФС не может). Папки не копируем — живое сканирование.
+ipcMain.handle('folder-info', (e, dir) => {
+  try {
+    const files = playlist.scanFolder(dir);
+    return { count: files.length, previews: files.slice(0, 4) };
+  } catch { return { count: 0, previews: [] }; }
+});
+
 ipcMain.handle('set-slideshow', (e, patch) => {
   config.slideshow = { ...config.slideshow, ...(patch || {}) };
   config.slideshow.enabled = !!config.slideshow.enabled;

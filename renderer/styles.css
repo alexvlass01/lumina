@@ -753,5 +753,40 @@ select option {
 .lib-online-more .pill[hidden] { display: none; }
 .lib-card .wh-add { opacity: 0; font-size: 18px; line-height: 26px; }
 .lib-card:hover .wh-add { opacity: 1; }
+.lib-card .wh-add.added { opacity: 1; background: var(--accent); }
 .wh-key-input { min-width: 190px; font-family: inherit; }
+
+/* folder card: 2×2 collage of inner previews + name + count */
+.lib-folder-collage {
+  position: absolute; inset: 0;
+  display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; gap: 2px;
+  background: var(--card);
+}
+.lib-folder-collage .ff { background: var(--preview-bg) center / cover no-repeat; }
+.lib-folder-collage .lib-ic {
+  grid-column: 1 / -1; grid-row: 1 / -1;
+  display: flex; align-items: center; justify-content: center; font-size: 34px; line-height: 1;
+}
+.lib-card-name {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  padding: 6px 7px 4px; font-size: 11px; color: #fff; font-weight: 600;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.78), transparent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  pointer-events: none;
+}
+.lib-count {
+  position: absolute; top: 6px; left: 6px;
+  background: rgba(0, 0, 0, 0.6); color: #fff;
+  font-size: 11px; padding: 1px 7px; border-radius: 9px; pointer-events: none;
+}
+
+/* faint Explorer-style status line (name of the hovered item) */
+.lib-statusbar {
+  position: sticky; bottom: 0;
+  margin-top: 12px; padding: 6px 4px;
+  font-size: 11.5px; color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: linear-gradient(to top, var(--bg) 65%, transparent);
+}
+.lib-statusbar:empty { opacity: 0; }
 

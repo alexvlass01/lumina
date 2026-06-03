@@ -16,6 +16,7 @@ contextBridge.exposeInMainWorld('api', {
   removeSlotItem: (monitorId, which, index) => ipcRenderer.invoke('remove-slot-item', monitorId, which, index),
   clearSlot: (monitorId, which) => ipcRenderer.invoke('clear-slot', monitorId, which),
   currentImage: (monitorId, which) => ipcRenderer.invoke('current-image', monitorId, which),
+  folderInfo: (dir) => ipcRenderer.invoke('folder-info', dir),
 
   // Библиотека (пул контента)
   libraryAddImages: () => ipcRenderer.invoke('library-add-images'),
