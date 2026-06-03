@@ -808,6 +808,19 @@ function assignToSlot(slot, type, srcPath) {
   return true;
 }
 
+// Удалить элемент из пула И из всех слотов, которые на него ссылаются (без висячих id).
+function removeFromLibrary(id) {
+  if (!library.removeItem(config.library, id)) return false;
+  for (const m of Object.values(config.monitors || {})) {
+    for (const th of ['light', 'dark']) {
+      if (m[th] && Array.isArray(m[th].itemIds)) {
+        m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
+      }
+    }
+  }
+  return true;
+}
+
 // add one or more local photos to a monitor's playlist (multi-select dialog)
 ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
   if (!monitorId) return { config, added: 0 };
@@ -888,6 +901,88 @@ ipcMain.handle('clear-slot', (e, monitorId, which) => {
   ensureSlot(monitorId, which).itemIds = [];
   saveConfig();
   gcWallpapers();
+  return config;
+});
+
+// ---- Библиотека (пул контента, независимый от назначения на мониторы) ----
+
+// Добавить выбранные фото в пул (диалог мультивыбора), БЕЗ привязки к слоту.
+ipcMain.handle('library-add-images', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: tMain('library.addPhotos'),
+    properties: ['openFile', 'multiSelections'],
+    filters: IMG_FILTERS,
+  });
+  if (res.canceled || !res.filePaths.length) return { config, added: 0 };
+  const before = Object.keys(config.library).length;
+  for (const src of res.filePaths) {
+    try { library.addPath(config.library, 'image', await importWallpaper(src)); }
+    catch (err) { console.error('library: не удалось импортировать', src, err); }
+  }
+  const added = Object.keys(config.library).length - before;
+  if (added) saveConfig();
+  return { config, added };
+});
+
+// Добавить папку-источник в пул (живое сканирование, файлы не копируем).
+ipcMain.handle('library-add-folder', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: tMain('library.addFolder'),
+    properties: ['openDirectory'],
+  });
+  if (res.canceled || !res.filePaths.length) return { config, added: 0 };
+  const before = Object.keys(config.library).length;
+  library.addPath(config.library, 'folder', res.filePaths[0]);
+  const added = Object.keys(config.library).length - before;
+  if (added) saveConfig();
+  return { config, added };
+});
+
+// Добавить перетащенные пути (файлы/папки) в пул.
+ipcMain.handle('library-add-paths', async (e, paths) => {
+  if (!Array.isArray(paths)) return { config, added: 0 };
+  const before = Object.keys(config.library).length;
+  for (const src of paths) {
+    try {
+      const stats = fs.statSync(src);
+      if (stats.isDirectory()) {
+        library.addPath(config.library, 'folder', src);
+      } else if (stats.isFile() && playlist.IMG_EXTS.has(path.extname(src).toLowerCase())) {
+        library.addPath(config.library, 'image', await importWallpaper(src));
+      }
+    } catch (err) { console.error('library: drop import failed', src, err); }
+  }
+  const added = Object.keys(config.library).length - before;
+  if (added) saveConfig();
+  return { config, added };
+});
+
+// Удалить элемент из пула (и из всех слотов) + подчистить файл-сироту.
+ipcMain.handle('library-remove', (e, id) => {
+  if (removeFromLibrary(id)) {
+    saveConfig();
+    gcWallpapers();
+    trayCtl.refresh();
+    applyForTheme(); // вдруг удалили текущие обои — переприменим
+  }
+  return config;
+});
+
+ipcMain.handle('library-toggle-favorite', (e, id) => {
+  library.toggleFavorite(config.library, id);
+  saveConfig();
+  return config;
+});
+
+// Назначить элемент пула на монитор×тему (добавляет в плейлист слота) + применить, если тема активна.
+ipcMain.handle('library-assign', (e, id, monitorId, which) => {
+  const theme = which === 'dark' ? 'dark' : 'light';
+  if (!monitorId || !id || !config.library[id]) return config;
+  const slot = ensureSlot(monitorId, theme);
+  if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
+  saveConfig();
+  trayCtl.refresh();
+  if (theme === currentThemeName()) applyForTheme(theme);
   return config;
 });
 

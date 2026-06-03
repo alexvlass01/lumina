@@ -58,6 +58,23 @@ if (!window.api) {
       if (!it) return '';
       return it.type === 'folder' ? '' : it.path; // mock can't scan folders
     },
+    libraryAddImages: async () => { mockAdd('image', `C:/fake/lib${Object.keys(mock.library).length + 1}.jpg`); return { config: mock, added: 1 }; },
+    libraryAddFolder: async () => { mockAdd('folder', 'C:/fake/LibFolder'); return { config: mock, added: 1 }; },
+    libraryAddPaths: async (paths) => { (paths || []).forEach((p) => mockAdd('image', p)); return { config: mock, added: (paths || []).length }; },
+    libraryRemove: async (id) => {
+      delete mock.library[id];
+      for (const m of Object.values(mock.monitors)) for (const th of ['light', 'dark']) if (m[th] && m[th].itemIds) m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
+      return mock;
+    },
+    libraryToggleFavorite: async (id) => { if (mock.library[id]) mock.library[id].favorite = !mock.library[id].favorite; return mock; },
+    libraryAssign: async (id, monitorId, which) => {
+      const theme = which === 'dark' ? 'dark' : 'light';
+      const mid = monitorId || 'MON-1';
+      if (!mock.monitors[mid]) mock.monitors[mid] = { light: { itemIds: [] }, dark: { itemIds: [] } };
+      const slot = mock.monitors[mid][theme];
+      if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
+      return mock;
+    },
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     setSlideshowIndex: async (monitorId, which, index) => {
       const theme = which === 'dark' ? 'dark' : 'light';
@@ -115,6 +132,7 @@ function applyI18n() {
     el.title = s;
     el.setAttribute('aria-label', s);
   });
+  document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
 }
 async function loadI18n() {
   const info = await window.api.getI18n();
@@ -502,10 +520,234 @@ async function renderConfig() {
 }
 
 // ---------------------------------------------------------------------------
+// Library (content pool) — browse/organize all wallpapers, assign from a card.
+// ---------------------------------------------------------------------------
+const LIB = { filter: 'all', sort: 'added', q: '' };
+
+// ids referenced by any monitor×theme slot (to mark assigned items)
+function assignedIds() {
+  const set = new Set();
+  for (const m of Object.values(config.monitors || {})) {
+    for (const th of ['light', 'dark']) {
+      const s = m[th];
+      if (s && Array.isArray(s.itemIds)) s.itemIds.forEach((id) => set.add(id));
+    }
+  }
+  return set;
+}
+
+function libList() {
+  let items = Object.values(config.library || {});
+  if (LIB.filter === 'favorite') items = items.filter((it) => it.favorite);
+  else if (LIB.filter === 'folder') items = items.filter((it) => it.type === 'folder');
+  const q = LIB.q.trim().toLowerCase();
+  if (q) items = items.filter((it) => baseName(it.path).toLowerCase().includes(q));
+  if (LIB.sort === 'name') items.sort((a, b) => baseName(a.path).localeCompare(baseName(b.path)));
+  else items.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  return items;
+}
+
+function renderLibrary() {
+  const grid = $('#libGrid');
+  if (!grid) return;
+  const items = libList();
+  const assigned = assignedIds();
+  const empty = $('#libEmpty');
+  if (empty) empty.hidden = items.length > 0;
+  grid.innerHTML = '';
+  items.forEach((it) => grid.appendChild(buildLibCard(it, assigned.has(it.id))));
+}
+
+function buildLibCard(it, isAssigned) {
+  const card = document.createElement('div');
+  card.className = 'lib-card' + (it.type === 'folder' ? ' folder' : '') + (isAssigned ? ' assigned' : '');
+  card.dataset.id = it.id;
+
+  if (it.type === 'folder') {
+    card.innerHTML = '<span class="lib-ic">📁</span>';
+    card.title = it.path;
+  } else {
+    card.title = baseName(it.path);
+    window.api.fileUrl(it.path).then((u) => {
+      if (!u) { card.classList.add('missing'); return; }
+      const url = `${u}?v=${it.addedAt || 0}`;
+      const img = new Image();
+      img.onload = () => { card.style.backgroundImage = `url("${url}")`; card.classList.remove('missing'); };
+      img.onerror = () => card.classList.add('missing');
+      img.src = url;
+    });
+  }
+
+  const fav = document.createElement('button');
+  fav.className = 'lib-fav' + (it.favorite ? ' on' : '');
+  fav.textContent = it.favorite ? '★' : '☆';
+  fav.title = t('library.favorite');
+  fav.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    config = await window.api.libraryToggleFavorite(it.id);
+    renderLibrary();
+  });
+  card.appendChild(fav);
+
+  if (isAssigned) {
+    const badge = document.createElement('span');
+    badge.className = 'lib-badge';
+    badge.textContent = '✓';
+    badge.title = t('library.assigned');
+    card.appendChild(badge);
+  }
+
+  const menu = document.createElement('button');
+  menu.className = 'lib-menu-btn';
+  menu.textContent = '⋯';
+  menu.title = t('library.assign');
+  menu.addEventListener('click', (e) => { e.stopPropagation(); openAssignMenu(it, menu); });
+  card.appendChild(menu);
+
+  card.addEventListener('click', () => openAssignMenu(it, menu));
+  return card;
+}
+
+function closeLibPopup() {
+  const p = $('#libPopup');
+  if (p) p.remove();
+  document.removeEventListener('click', onDocClosePopup, true);
+}
+function onDocClosePopup(e) {
+  const p = $('#libPopup');
+  if (p && !p.contains(e.target)) closeLibPopup();
+}
+
+// Floating popup: assign this item to a monitor×theme, or remove it from the library.
+function openAssignMenu(it, anchor) {
+  closeLibPopup();
+  const pop = document.createElement('div');
+  pop.className = 'lib-popup';
+  pop.id = 'libPopup';
+
+  const title = document.createElement('div');
+  title.className = 'lib-popup-title';
+  title.textContent = t('library.assignTo');
+  pop.appendChild(title);
+
+  const mons = monitorList.length ? monitorList : [{ id: null, primary: true }];
+  mons.forEach((m, i) => {
+    const row = document.createElement('div');
+    row.className = 'lib-popup-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'lib-popup-mon';
+    lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
+    row.appendChild(lbl);
+    [['light', '☀'], ['dark', '🌙']].forEach(([th, ic]) => {
+      const b = document.createElement('button');
+      b.className = 'lib-popup-btn';
+      b.textContent = `${ic} ${t(th === 'dark' ? 'design.darkTheme' : 'design.lightTheme')}`;
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        config = await window.api.libraryAssign(it.id, m.id, th);
+        closeLibPopup();
+        renderLibrary();
+        renderPreviews();
+        renderHome();
+        toast(t('library.assignedToast'));
+      });
+      row.appendChild(b);
+    });
+    pop.appendChild(row);
+  });
+
+  const sep = document.createElement('div');
+  sep.className = 'lib-popup-sep';
+  pop.appendChild(sep);
+
+  const rm = document.createElement('button');
+  rm.className = 'lib-popup-btn danger';
+  rm.textContent = t('library.remove');
+  rm.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    config = await window.api.libraryRemove(it.id);
+    closeLibPopup();
+    renderLibrary();
+    renderPreviews();
+    renderHome();
+    toast(t('library.removedToast'));
+  });
+  pop.appendChild(rm);
+
+  document.body.appendChild(pop);
+  const r = anchor.getBoundingClientRect();
+  let left = r.right - pop.offsetWidth;
+  if (left < 8) left = 8;
+  let top = r.bottom + 6;
+  if (top + pop.offsetHeight > window.innerHeight - 8) top = r.top - pop.offsetHeight - 6;
+  pop.style.left = `${left}px`;
+  pop.style.top = `${Math.max(8, top)}px`;
+  setTimeout(() => document.addEventListener('click', onDocClosePopup, true), 0);
+}
+
+function initLibrary() {
+  document.querySelectorAll('.lib-railbtn').forEach((b) => {
+    b.addEventListener('click', () => {
+      LIB.filter = b.dataset.filter;
+      document.querySelectorAll('.lib-railbtn').forEach((x) => x.classList.toggle('active', x === b));
+      renderLibrary();
+    });
+  });
+  const sortEl = $('#libSort');
+  if (sortEl) sortEl.addEventListener('change', () => { LIB.sort = sortEl.value; renderLibrary(); });
+  const searchEl = $('#libSearch');
+  if (searchEl) searchEl.addEventListener('input', () => { LIB.q = searchEl.value; renderLibrary(); });
+  const addP = $('#libAddPhotos');
+  if (addP) addP.addEventListener('click', async () => {
+    const res = await window.api.libraryAddImages();
+    config = (res && res.config) || config;
+    renderLibrary();
+    if (res && res.added > 0) toast(t('toast.photosAdded', { n: res.added }));
+  });
+  const addF = $('#libAddFolder');
+  if (addF) addF.addEventListener('click', async () => {
+    const res = await window.api.libraryAddFolder();
+    config = (res && res.config) || config;
+    renderLibrary();
+    if (res && res.added > 0) toast(t('toast.folderAdded'));
+  });
+  initLibraryDragDrop();
+}
+
+function initLibraryDragDrop() {
+  const view = $('#viewLibrary');
+  const grid = $('#libGrid');
+  if (!view || !grid) return;
+  let dc = 0;
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((ev) => {
+    view.addEventListener(ev, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
+  });
+  view.addEventListener('dragenter', () => { dc++; grid.classList.add('drag-over'); });
+  view.addEventListener('dragover', (e) => { e.dataTransfer.dropEffect = 'copy'; });
+  view.addEventListener('dragleave', () => { dc--; if (dc <= 0) { dc = 0; grid.classList.remove('drag-over'); } });
+  view.addEventListener('drop', async (e) => {
+    dc = 0;
+    grid.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (!files || !files.length) return;
+    const paths = [];
+    for (let i = 0; i < files.length; i++) {
+      try { const p = window.api.getPathForFile(files[i]); if (p) paths.push(p); }
+      catch (err) { console.error('lib drop path:', err); }
+    }
+    if (!paths.length) return;
+    const res = await window.api.libraryAddPaths(paths);
+    config = (res && res.config) || config;
+    renderLibrary();
+    if (res && res.added > 0) toast(t('toast.photosAdded', { n: res.added }));
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Page navigation (Home / Settings)
 // ---------------------------------------------------------------------------
 function showPage(name) {
-  const views = { home: 'viewHome', design: 'viewDesign', prefs: 'viewPrefs' };
+  const views = { home: 'viewHome', library: 'viewLibrary', design: 'viewDesign', prefs: 'viewPrefs' };
   const target = views[name] || 'viewHome';
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== target; });
   document.querySelectorAll('.navbtn').forEach((b) => {
@@ -516,6 +758,8 @@ function showPage(name) {
 
   if (name === 'home') {
     renderHome();
+  } else if (name === 'library') {
+    renderLibrary();
   } else if (name === 'design') {
     renderPreviews();   // reflect current config
     layoutMonitors();   // stages just became visible — refit thumbnails
@@ -952,6 +1196,7 @@ async function init() {
     config = cfg;
     renderConfig();
     renderHome();
+    if (!$('#viewLibrary').hidden) renderLibrary();
   });
 
   window.api.onMonitors((list) => {
@@ -968,6 +1213,7 @@ async function init() {
   });
 
   initDragDrop();
+  initLibrary();
 }
 
 function initDragDrop() {

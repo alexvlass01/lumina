@@ -16,6 +16,14 @@ contextBridge.exposeInMainWorld('api', {
   removeSlotItem: (monitorId, which, index) => ipcRenderer.invoke('remove-slot-item', monitorId, which, index),
   clearSlot: (monitorId, which) => ipcRenderer.invoke('clear-slot', monitorId, which),
   currentImage: (monitorId, which) => ipcRenderer.invoke('current-image', monitorId, which),
+
+  // Библиотека (пул контента)
+  libraryAddImages: () => ipcRenderer.invoke('library-add-images'),
+  libraryAddFolder: () => ipcRenderer.invoke('library-add-folder'),
+  libraryAddPaths: (paths) => ipcRenderer.invoke('library-add-paths', paths),
+  libraryRemove: (id) => ipcRenderer.invoke('library-remove', id),
+  libraryToggleFavorite: (id) => ipcRenderer.invoke('library-toggle-favorite', id),
+  libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),

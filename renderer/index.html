@@ -15,6 +15,7 @@
     </div>
     <div class="tb-nav" id="tbNav">
       <button class="navbtn active" data-page="home" data-i18n="nav.home">Главная</button>
+      <button class="navbtn" data-page="library" data-i18n="nav.library">Библиотека</button>
       <button class="navbtn" data-page="design" data-i18n="nav.design">Оформление</button>
     </div>
     <div class="tb-right">
@@ -291,6 +292,34 @@
                 <input type="number" step="0.0001" id="lngInput" class="time-input num-input" placeholder="30.52" />
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===================== LIBRARY (пул обоев) ===================== -->
+    <section class="view" id="viewLibrary" hidden>
+      <div class="lib">
+        <aside class="lib-rail">
+          <button class="lib-railbtn active" data-filter="all" data-i18n="library.all">Все</button>
+          <button class="lib-railbtn" data-filter="favorite" data-i18n="library.favorites">Избранное</button>
+          <button class="lib-railbtn" data-filter="folder" data-i18n="library.folders">Папки</button>
+        </aside>
+        <div class="lib-main">
+          <div class="lib-toolbar">
+            <input type="search" id="libSearch" class="lib-search" placeholder="Поиск" data-i18n-ph="library.searchPh" />
+            <div class="select-wrap">
+              <select id="libSort">
+                <option value="added" data-i18n="library.sortAdded">Сначала новые</option>
+                <option value="name" data-i18n="library.sortName">По имени</option>
+              </select>
+            </div>
+            <button class="pill" id="libAddPhotos" data-i18n="library.addPhotos">Добавить фото…</button>
+            <button class="pill" id="libAddFolder" data-i18n="library.addFolder">Добавить папку…</button>
+          </div>
+          <div class="lib-grid" id="libGrid"></div>
+          <div class="lib-empty" id="libEmpty" hidden>
+            <span data-i18n="library.empty">Библиотека пуста — перетащите сюда картинки или нажмите «Добавить».</span>
           </div>
         </div>
       </div>

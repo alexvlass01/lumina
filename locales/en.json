@@ -1,5 +1,5 @@
 {
-  "nav": { "home": "Home", "design": "Appearance" },
+  "nav": { "home": "Home", "library": "Library", "design": "Appearance" },
   "prefs": {
     "tooltip": "App settings",
     "appGroup": "App settings",
@@ -81,6 +81,24 @@
     "addFolder": "Add folder…",
     "removeItem": "Remove",
     "dropPrompt": "Drop images or folder here"
+  },
+  "library": {
+    "all": "All",
+    "favorites": "Favorites",
+    "folders": "Folders",
+    "searchPh": "Search",
+    "sortAdded": "Newest first",
+    "sortName": "By name",
+    "addPhotos": "Add photos…",
+    "addFolder": "Add folder…",
+    "empty": "Your library is empty — drop images here or click “Add”.",
+    "favorite": "Favorite",
+    "assign": "Assign…",
+    "assignTo": "Assign to monitor",
+    "assigned": "In use",
+    "remove": "Remove from library",
+    "assignedToast": "Assigned",
+    "removedToast": "Removed from library"
   },
   "theme": {
     "group": "Windows theme",
