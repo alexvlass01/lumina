@@ -105,8 +105,39 @@ const LOCALES = {
   en: require('./locales/en.json'),
   ru: require('./locales/ru.json'),
   uk: require('./locales/uk.json'),
+  de: require('./locales/de.json'),
+  es: require('./locales/es.json'),
+  fr: require('./locales/fr.json'),
+  it: require('./locales/it.json'),
+  pt: require('./locales/pt.json'),
+  pl: require('./locales/pl.json'),
+  tr: require('./locales/tr.json'),
+  nl: require('./locales/nl.json'),
+  zh: require('./locales/zh.json'),
+  ja: require('./locales/ja.json'),
+  ko: require('./locales/ko.json'),
+  ar: require('./locales/ar.json'),
+  vi: require('./locales/vi.json'),
+  hi: require('./locales/hi.json'),
+  id: require('./locales/id.json'),
+  sv: require('./locales/sv.json'),
+  no: require('./locales/no.json'),
+  da: require('./locales/da.json'),
+  fi: require('./locales/fi.json'),
+  cs: require('./locales/cs.json'),
+  hu: require('./locales/hu.json'),
+  ro: require('./locales/ro.json'),
+  sk: require('./locales/sk.json'),
+  bg: require('./locales/bg.json'),
+  el: require('./locales/el.json'),
+  he: require('./locales/he.json'),
+  th: require('./locales/th.json'),
 };
-const SUPPORTED_LANGS = ['en', 'ru', 'uk'];
+const SUPPORTED_LANGS = [
+  'en', 'ru', 'uk', 'de', 'es', 'fr', 'it', 'pt', 'pl', 'tr', 'nl',
+  'zh', 'ja', 'ko', 'ar', 'vi', 'hi', 'id', 'sv', 'no', 'da',
+  'fi', 'cs', 'hu', 'ro', 'sk', 'bg', 'el', 'he', 'th'
+];
 
 function tPath(obj, key) {
   return key.split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
