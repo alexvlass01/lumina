@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
+const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
@@ -415,31 +416,31 @@ function primaryMonitorId() {
 function slotFor(monitorId, theme) {
   const m = config.monitors && config.monitors[monitorId];
   const slot = m && m[theme];
-  return slot && Array.isArray(slot.items) ? slot : { items: [] };
+  return slot && Array.isArray(slot.itemIds) ? slot : { itemIds: [] };
 }
 
 // Текущая картинка плейлиста монитора (по сохранённому индексу слайдшоу).
 function currentImageFor(monitorId, theme) {
-  const list = playlist.resolveSlot(slotFor(monitorId, theme));
+  const list = playlist.resolveSlot(slotFor(monitorId, theme), config.library);
   const si = config.slideshowIndex[monitorId];
   const idx = si && Number.isFinite(si[theme]) ? si[theme] : 0;
   return playlist.pickCurrent(list, idx);
 }
 
-// Все файлы, на которые ссылаются слоты (+ легаси-глобалы) — для сборки мусора.
+// Все файлы, на которые ссылается БИБЛИОТЕКА (+ легаси-глобалы) — для сборки мусора.
+// Пул контента самодостаточен: картинка остаётся, даже если не назначена ни на один
+// монитор (в этом смысл библиотеки), поэтому держим все image-пути из config.library.
 function referencedFiles() {
   const set = new Set();
   const add = (p) => { if (p) set.add(path.normalize(p).toLowerCase()); };
-  for (const id of Object.keys(config.monitors || {})) {
-    for (const theme of ['light', 'dark']) {
-      for (const it of slotFor(id, theme).items) if (it.type === 'image') add(it.path);
-    }
+  for (const it of Object.values(config.library || {})) {
+    if (it && it.type === 'image' && it.path) add(it.path);
   }
   add(config.lightWallpaper); add(config.darkWallpaper);
   return set;
 }
 
-// Удаляет из wallpapers/ файлы, не упомянутые ни в одном слоте (папки-источники не трогаем).
+// Удаляет из wallpapers/ файлы, не упомянутые в библиотеке (папки-источники не трогаем).
 function gcWallpapers() {
   try {
     const keep = referencedFiles();
@@ -516,7 +517,7 @@ function clearSlideshowTimer() { if (slideshowTimer) { clearTimeout(slideshowTim
 function advanceIndices(theme) {
   const shuffle = config.slideshow.order === 'shuffle';
   for (const m of monitorsCache) {
-    const len = playlist.resolveSlot(slotFor(m.id, theme)).length;
+    const len = playlist.resolveSlot(slotFor(m.id, theme), config.library).length;
     if (len < 2) continue;
     if (!config.slideshowIndex[m.id]) config.slideshowIndex[m.id] = { light: 0, dark: 0 };
     const cur = Number.isFinite(config.slideshowIndex[m.id][theme]) ? config.slideshowIndex[m.id][theme] : 0;
@@ -614,10 +615,10 @@ function showWindow() {
 function hasSlideshowItems() {
   const theme = currentThemeName();
   if (config.singleWallpaper) {
-    return playlist.resolveSlot(slotFor(primaryMonitorId(), theme)).length >= 2;
+    return playlist.resolveSlot(slotFor(primaryMonitorId(), theme), config.library).length >= 2;
   }
   for (const m of monitorsCache) {
-    if (playlist.resolveSlot(slotFor(m.id, theme)).length >= 2) {
+    if (playlist.resolveSlot(slotFor(m.id, theme), config.library).length >= 2) {
       return true;
     }
   }
@@ -786,11 +787,20 @@ const IMG_FILTERS = [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png', 'bmp',
 
 function ensureSlot(monitorId, which) {
   const theme = which === 'dark' ? 'dark' : 'light';
-  if (!config.monitors[monitorId]) config.monitors[monitorId] = { light: { items: [] }, dark: { items: [] } };
+  if (!config.monitors[monitorId]) config.monitors[monitorId] = { light: { itemIds: [] }, dark: { itemIds: [] } };
   const m = config.monitors[monitorId];
-  if (!m.light || !Array.isArray(m.light.items)) m.light = { items: [] };
-  if (!m.dark || !Array.isArray(m.dark.items)) m.dark = { items: [] };
+  if (!m.light || !Array.isArray(m.light.itemIds)) m.light = { itemIds: [] };
+  if (!m.dark || !Array.isArray(m.dark.itemIds)) m.dark = { itemIds: [] };
   return m[theme];
+}
+
+// Импорт картинки/папки в пул + назначение её в слот (вернёт true, если реально добавили).
+function assignToSlot(slot, type, srcPath) {
+  const id = library.addPath(config.library, type, srcPath);
+  if (!id) return false;
+  if (slot.itemIds.includes(id)) return false; // уже в этом слоте
+  slot.itemIds.push(id);
+  return true;
 }
 
 // add one or more local photos to a monitor's playlist (multi-select dialog)
@@ -807,10 +817,7 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
   for (const src of res.filePaths) {
     try {
       const stored = await importWallpaper(src);
-      if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
-        slot.items.push({ type: 'image', path: stored });
-        added++;
-      }
+      if (assignToSlot(slot, 'image', stored)) added++;
     } catch (err) { console.error('Не удалось импортировать обои:', err); }
   }
   saveConfig();
@@ -828,9 +835,7 @@ ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
   const dir = res.filePaths[0];
   const slot = ensureSlot(monitorId, which);
-  if (!slot.items.some((it) => it.type === 'folder' && it.path === dir)) {
-    slot.items.push({ type: 'folder', path: dir });
-  }
+  assignToSlot(slot, 'folder', dir);
   saveConfig();
   return { config, added: 1 };
 });
@@ -844,18 +849,12 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
     try {
       const stats = fs.statSync(src);
       if (stats.isDirectory()) {
-        if (!slot.items.some((it) => it.type === 'folder' && it.path === src)) {
-          slot.items.push({ type: 'folder', path: src });
-          added++;
-        }
+        if (assignToSlot(slot, 'folder', src)) added++;
       } else if (stats.isFile()) {
         const ext = path.extname(src).toLowerCase();
         if (playlist.IMG_EXTS.has(ext)) {
           const stored = await importWallpaper(src);
-          if (!slot.items.some((it) => it.type === 'image' && it.path === stored)) {
-            slot.items.push({ type: 'image', path: stored });
-            added++;
-          }
+          if (assignToSlot(slot, 'image', stored)) added++;
         }
       }
     } catch (err) {
@@ -872,7 +871,7 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
 ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
   if (!monitorId) return config;
   const slot = ensureSlot(monitorId, which);
-  if (index >= 0 && index < slot.items.length) slot.items.splice(index, 1);
+  if (index >= 0 && index < slot.itemIds.length) slot.itemIds.splice(index, 1);
   saveConfig();
   gcWallpapers();
   trayCtl.refresh();
@@ -881,7 +880,7 @@ ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
 
 ipcMain.handle('clear-slot', (e, monitorId, which) => {
   if (!monitorId) return config;
-  ensureSlot(monitorId, which).items = [];
+  ensureSlot(monitorId, which).itemIds = [];
   saveConfig();
   gcWallpapers();
   return config;

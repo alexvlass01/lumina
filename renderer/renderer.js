@@ -3,7 +3,8 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, monitors: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, monitors: {}, library: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
+  const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   window.api = {
     getConfig: async () => mock,
@@ -23,34 +24,38 @@ if (!window.api) {
     getTheme: async () => 'light',
     addSlotImages: async (id, which) => {
       const theme = which === 'dark' ? 'dark' : 'light';
-      if (!mock.monitors[id]) mock.monitors[id] = { light: { items: [] }, dark: { items: [] } };
+      if (!mock.monitors[id]) mock.monitors[id] = { light: { itemIds: [] }, dark: { itemIds: [] } };
       const slot = mock.monitors[id][theme];
-      slot.items.push({ type: 'image', path: `C:/fake/photo${slot.items.length + 1}.jpg` });
+      const iid = mockAdd('image', `C:/fake/photo${Object.keys(mock.library).length + 1}.jpg`);
+      if (!slot.itemIds.includes(iid)) slot.itemIds.push(iid);
       return { config: mock, added: 1 };
     },
     addSlotFolder: async (id, which) => {
       const theme = which === 'dark' ? 'dark' : 'light';
-      if (!mock.monitors[id]) mock.monitors[id] = { light: { items: [] }, dark: { items: [] } };
-      mock.monitors[id][theme].items.push({ type: 'folder', path: 'C:/fake/Pictures' });
+      if (!mock.monitors[id]) mock.monitors[id] = { light: { itemIds: [] }, dark: { itemIds: [] } };
+      const slot = mock.monitors[id][theme];
+      const iid = mockAdd('folder', 'C:/fake/Pictures');
+      if (!slot.itemIds.includes(iid)) slot.itemIds.push(iid);
       return { config: mock, added: 1 };
     },
     removeSlotItem: async (id, which, index) => {
       const theme = which === 'dark' ? 'dark' : 'light';
       const slot = mock.monitors[id] && mock.monitors[id][theme];
-      if (slot && slot.items) slot.items.splice(index, 1);
+      if (slot && slot.itemIds) slot.itemIds.splice(index, 1);
       return mock;
     },
     clearSlot: async (id, which) => {
       const theme = which === 'dark' ? 'dark' : 'light';
-      if (mock.monitors[id] && mock.monitors[id][theme]) mock.monitors[id][theme].items = [];
+      if (mock.monitors[id] && mock.monitors[id][theme]) mock.monitors[id][theme].itemIds = [];
       return mock;
     },
     currentImage: async (id, which) => {
       const theme = which === 'dark' ? 'dark' : 'light';
       const realId = mock.singleWallpaper ? 'MON-1' : id;
       const slot = mock.monitors[realId] && mock.monitors[realId][theme];
-      if (!slot || !slot.items.length) return '';
-      const it = slot.items[0];
+      const ids = slot && slot.itemIds ? slot.itemIds : [];
+      const it = ids.map((x) => mock.library[x]).filter(Boolean)[0];
+      if (!it) return '';
       return it.type === 'folder' ? '' : it.path; // mock can't scan folders
     },
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
@@ -302,11 +307,14 @@ function editTargetId() {
 
 function baseName(p) { return String(p).split(/[\\/]/).filter(Boolean).pop() || String(p); }
 
-// элементы плейлиста выбранного (или основного) монитора для темы
+// элементы плейлиста выбранного (или основного) монитора для темы.
+// Слот хранит ССЫЛКИ (itemIds) в пул config.library — резолвим в объекты {id,type,path}.
 function slotItems(theme) {
   const m = config.monitors && config.monitors[editTargetId()];
   const slot = m && m[theme];
-  return slot && Array.isArray(slot.items) ? slot.items : [];
+  const ids = slot && Array.isArray(slot.itemIds) ? slot.itemIds : [];
+  const lib = config.library || {};
+  return ids.map((id) => lib[id]).filter(Boolean);
 }
 
 async function setPreview(which, filePath) {

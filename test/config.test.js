@@ -8,6 +8,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const C = require('../src/config');
+const L = require('../src/library');
 
 let passed = 0;
 const ok = (n, c) => { assert.ok(c, n); console.log('  ✓ ' + n); passed++; };
@@ -32,9 +33,10 @@ fs.writeFileSync(p('legacy.json'), JSON.stringify({
   slideshow: { intervalMin: 0, order: 'weird', enabled: 1 },
 }));
 const mig = C.load(p('legacy.json'));
-ok('legacy string slot migrated to playlist',
-  JSON.stringify(mig.monitors.M1.light) === JSON.stringify({ items: [{ type: 'image', path: 'C:/a.jpg' }] })
-  && mig.monitors.M1.dark.items.length === 0);
+ok('legacy string slot migrated to library itemIds',
+  mig.monitors.M1.light.itemIds.length === 1
+  && L.getItem(mig.library, mig.monitors.M1.light.itemIds[0]).path === 'C:/a.jpg'
+  && mig.monitors.M1.dark.itemIds.length === 0);
 ok('slideshow values sanitized',
   mig.slideshow.intervalMin === 30 && mig.slideshow.order === 'sequential' && mig.slideshow.enabled === true);
 
@@ -44,8 +46,9 @@ cfg.style = 'fit';
 cfg.monitors.MON = { light: { items: [{ type: 'folder', path: 'C:/pics' }] }, dark: { items: [] } };
 C.save(cfg, p('rt.json'));
 const back = C.load(p('rt.json'));
-ok('save then reload round-trips',
-  back.style === 'fit' && back.monitors.MON.light.items[0].type === 'folder');
+ok('save then reload round-trips (slots → library itemIds)',
+  back.style === 'fit'
+  && L.getItem(back.library, back.monitors.MON.light.itemIds[0]).type === 'folder');
 
 // corrupt file -> defaults + a backup is written
 fs.writeFileSync(p('bad.json'), '{ this is not valid json ');

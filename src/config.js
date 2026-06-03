@@ -7,7 +7,7 @@
 
 const fs = require('fs');
 const path = require('path');
-const playlist = require('./playlist');
+const library = require('./library');
 
 const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (only on COM failure / empty playlist)
@@ -38,18 +38,14 @@ function freshDefaults() {
 // Bring any config (old or new shape) into the current shape. Idempotent.
 function normalize(cfg) {
   if (!cfg.monitors || typeof cfg.monitors !== 'object') cfg.monitors = {};
-  // Content pool (see src/library.js). Etап A: just guarantee the field exists;
-  // Etап B will run library.migrateConfig(cfg) here to populate it + rewrite slots.
-  if (!cfg.library || typeof cfg.library !== 'object') cfg.library = {};
   cfg.themeSchedule = {
     mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '',
     ...(cfg.themeSchedule && typeof cfg.themeSchedule === 'object' ? cfg.themeSchedule : {}),
   };
-  // migrate each monitor slot from legacy "string path" → playlist { items: [...] }
-  for (const id of Object.keys(cfg.monitors)) {
-    const m = cfg.monitors[id] || {};
-    cfg.monitors[id] = { light: playlist.normalizeSlot(m.light), dark: playlist.normalizeSlot(m.dark) };
-  }
+  // Content-pool model (see src/library.js, future-todo #16): populate cfg.library and
+  // rewrite each monitor slot { string | items[] } → { itemIds[] }. Handles legacy
+  // shapes and is idempotent (re-running on a migrated config is a no-op).
+  library.migrateConfig(cfg);
   cfg.slideshow = {
     enabled: false, intervalMin: 30, order: 'sequential',
     ...(cfg.slideshow && typeof cfg.slideshow === 'object' ? cfg.slideshow : {}),
