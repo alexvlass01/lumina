@@ -9,6 +9,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
+const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
@@ -53,6 +54,35 @@ async function importWallpaper(srcPath) {
   const dest = path.join(WALLPAPERS_DIR, `wp-${hash}${ext}`);
   if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
   return dest;
+}
+
+// Download a remote image into the app's data dir (content-addressed, like importWallpaper).
+async function downloadWallpaperFromUrl(url) {
+  await fs.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
+  let ext = '.jpg';
+  try { const e = path.extname(new URL(url).pathname).toLowerCase(); if (/^\.[a-z0-9]{2,5}$/.test(e)) ext = e; } catch {}
+  const dest = path.join(WALLPAPERS_DIR, `wp-${hash}${ext}`);
+  if (!fs.existsSync(dest)) await fs.promises.writeFile(dest, buf);
+  return dest;
+}
+
+// Bundled Wallhaven API key — official builds only. It lives in a gitignored file
+// (wallhaven-key.json) so it's never in the public repo; absent for self-builds, where
+// the app simply stays keyless (SFW+sketchy still work, NSFW needs the user's own key).
+function loadBundledWallhavenKey() {
+  try {
+    const k = require('./wallhaven-key.json');
+    return k && typeof k.apikey === 'string' ? k.apikey.trim() : '';
+  } catch { return ''; }
+}
+const BUNDLED_WALLHAVEN_KEY = loadBundledWallhavenKey();
+// Effective key: the user's own (⚙) wins; otherwise the bundled one (if any).
+function wallhavenKey() {
+  return (config.wallhavenKey && config.wallhavenKey.trim()) || BUNDLED_WALLHAVEN_KEY || '';
 }
 
 // Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).
@@ -994,6 +1024,56 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   trayCtl.refresh();
   if (theme === currentThemeName()) applyForTheme(theme);
   return config;
+});
+
+// ---- Wallhaven (онлайн-обои) ----
+
+// Состояние ключа для UI: есть ли вообще ключ (свой или зашитый) → доступен ли NSFW.
+ipcMain.handle('wallhaven-status', () => ({ hasKey: !!wallhavenKey(), bundled: !!BUNDLED_WALLHAVEN_KEY }));
+
+// Поиск. Без NSFW — keyless (purity sfw+sketchy, IP пользователя). NSFW — только если
+// есть ключ; и ключ шлём ТОЛЬКО ради NSFW (keyless-путь не нагружает общий ключ).
+ipcMain.handle('wallhaven-search', async (e, opts) => {
+  const o = opts || {};
+  const key = wallhavenKey();
+  const wantNsfw = !!o.nsfw && !!key;
+  const purity = wallhaven.purityMask({ sfw: true, sketchy: o.sketchy !== false, nsfw: wantNsfw });
+  const url = wallhaven.buildSearchUrl({
+    q: o.q || '',
+    purity,
+    categories: o.categories || '111',
+    sorting: o.sorting || 'date_added',
+    page: o.page || 1,
+    apikey: wantNsfw ? key : '',
+  });
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': 'Lumina' } });
+    if (!res.ok) return { items: [], meta: {}, error: String(res.status), hasKey: !!key };
+    const json = await res.json();
+    return { ...wallhaven.parseSearch(json), error: null, hasKey: !!key };
+  } catch (err) {
+    console.error('wallhaven search:', err);
+    return { items: [], meta: {}, error: 'network', hasKey: !!key };
+  }
+});
+
+// Скачать полное изображение в пул (как обычный image-элемент) + метаданные (источник, авто-теги по запросу).
+ipcMain.handle('wallhaven-add', async (e, item, query) => {
+  if (!item || !item.full) return { config, error: 'badItem' };
+  try {
+    const stored = await downloadWallpaperFromUrl(item.full);
+    const id = library.addPath(config.library, 'image', stored);
+    const it = config.library[id];
+    if (it) {
+      it.source = item.page || item.source || '';
+      String(query || '').split(/[\s,]+/).filter(Boolean).forEach((tg) => library.addTag(config.library, id, tg));
+    }
+    saveConfig();
+    return { config, id, error: null };
+  } catch (err) {
+    console.error('wallhaven add:', err);
+    return { config, error: 'download' };
+  }
 });
 
 // resolved current image for a slot (renderer can't scan folders itself)

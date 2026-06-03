@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' file: data:; style-src 'self' 'unsafe-inline';" />
+        content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc; style-src 'self' 'unsafe-inline';" />
   <title>Lumina</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -304,23 +304,47 @@
           <button class="lib-railbtn active" data-filter="all" data-i18n="library.all">Все</button>
           <button class="lib-railbtn" data-filter="favorite" data-i18n="library.favorites">Избранное</button>
           <button class="lib-railbtn" data-filter="folder" data-i18n="library.folders">Папки</button>
+          <button class="lib-railbtn lib-railonline" data-filter="online" data-i18n="online.rail">🌐 Онлайн</button>
           <div class="lib-railtags" id="libTags"></div>
         </aside>
         <div class="lib-main">
-          <div class="lib-toolbar">
-            <input type="search" id="libSearch" class="lib-search" placeholder="Поиск" data-i18n-ph="library.searchPh" />
-            <div class="select-wrap">
-              <select id="libSort">
-                <option value="added" data-i18n="library.sortAdded">Сначала новые</option>
-                <option value="name" data-i18n="library.sortName">По имени</option>
-              </select>
+          <div class="lib-local" id="libLocal">
+            <div class="lib-toolbar">
+              <input type="search" id="libSearch" class="lib-search" placeholder="Поиск" data-i18n-ph="library.searchPh" />
+              <div class="select-wrap">
+                <select id="libSort">
+                  <option value="added" data-i18n="library.sortAdded">Сначала новые</option>
+                  <option value="name" data-i18n="library.sortName">По имени</option>
+                </select>
+              </div>
+              <button class="pill" id="libAddPhotos" data-i18n="library.addPhotos">Добавить фото…</button>
+              <button class="pill" id="libAddFolder" data-i18n="library.addFolder">Добавить папку…</button>
             </div>
-            <button class="pill" id="libAddPhotos" data-i18n="library.addPhotos">Добавить фото…</button>
-            <button class="pill" id="libAddFolder" data-i18n="library.addFolder">Добавить папку…</button>
+            <div class="lib-grid" id="libGrid"></div>
+            <div class="lib-empty" id="libEmpty" hidden>
+              <span data-i18n="library.empty">Библиотека пуста — перетащите сюда картинки или нажмите «Добавить».</span>
+            </div>
           </div>
-          <div class="lib-grid" id="libGrid"></div>
-          <div class="lib-empty" id="libEmpty" hidden>
-            <span data-i18n="library.empty">Библиотека пуста — перетащите сюда картинки или нажмите «Добавить».</span>
+
+          <div class="lib-online" id="libOnline" hidden>
+            <div class="lib-toolbar">
+              <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" />
+              <div class="select-wrap">
+                <select id="whSort">
+                  <option value="date_added" data-i18n="online.sortLatest">Новые</option>
+                  <option value="toplist" data-i18n="online.sortTop">Топ</option>
+                  <option value="random" data-i18n="online.sortRandom">Случайно</option>
+                  <option value="views" data-i18n="online.sortViews">Просмотры</option>
+                </select>
+              </div>
+              <button class="pill" id="whNsfw" data-i18n="online.nsfw">NSFW</button>
+              <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
+            </div>
+            <div class="lib-online-note" id="whNote"></div>
+            <div class="lib-grid" id="whGrid"></div>
+            <div class="lib-online-more">
+              <button class="pill" id="whMore" hidden data-i18n="online.more">Показать ещё</button>
+            </div>
           </div>
         </div>
       </div>
@@ -364,6 +388,13 @@
             <div class="row-sub" data-i18n="prefs.telemetrySub">Помогает находить и исправлять ошибки. По умолчанию выключено; сейчас ничего не отправляется.</div>
           </div>
           <button class="gtkswitch" id="swTelemetry" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="prefs.wallhavenTitle">Ключ Wallhaven</div>
+            <div class="row-sub" data-i18n="prefs.wallhavenSub">Необязательно. Свой ключ с wallhaven.cc включает NSFW в онлайн-обоях.</div>
+          </div>
+          <input type="password" id="whKey" class="time-input wh-key-input" placeholder="API key" data-i18n-ph="prefs.wallhavenPh" />
         </div>
         <div class="row">
           <div class="row-text">

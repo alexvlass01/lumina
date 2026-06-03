@@ -23,3 +23,7 @@ Lumina-DEV.bat
 
 # Local roadmap snapshot (kept local, not published)
 ROADMAP.md
+
+# Bundled Wallhaven API key (official builds only) — NEVER publish.
+# Copy wallhaven-key.example.json → wallhaven-key.json and put your key there.
+wallhaven-key.json

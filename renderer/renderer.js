@@ -77,6 +77,9 @@ if (!window.api) {
       if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
       return mock;
     },
+    wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
+    wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
+    wallhavenAdd: async () => ({ config: mock, error: null }),
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     setSlideshowIndex: async (monitorId, which, index) => {
       const theme = which === 'dark' ? 'dark' : 'light';
@@ -515,6 +518,7 @@ async function renderConfig() {
   setSwitch($('#swStartMin'), config.startMinimized !== false);
   setSwitch($('#swSingle'), !!config.singleWallpaper);
   setSwitch($('#swTelemetry'), !!config.telemetry);
+  if ($('#whKey')) $('#whKey').value = config.wallhavenKey || '';
   $('#selStyle').value = config.style || 'fill';
   updateSingleWallRow();
   updateSlideshowControls();
@@ -525,6 +529,7 @@ async function renderConfig() {
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
 const LIB = { filter: 'all', sort: 'added', q: '' };
+const WH = { q: '', sort: 'date_added', nsfw: false, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
 
 // ids referenced by any monitor×theme slot (to mark assigned items)
 function assignedIds() {
@@ -585,9 +590,19 @@ function renderLibRailTags() {
 }
 
 function renderLibrary() {
+  renderLibRailTags();
+  const local = $('#libLocal');
+  const online = $('#libOnline');
+  if (LIB.filter === 'online') {
+    if (local) local.hidden = true;
+    if (online) online.hidden = false;
+    renderOnline();
+    return;
+  }
+  if (online) online.hidden = true;
+  if (local) local.hidden = false;
   const grid = $('#libGrid');
   if (!grid) return;
-  renderLibRailTags();
   const items = libList();
   const assigned = assignedIds();
   const empty = $('#libEmpty');
@@ -803,6 +818,24 @@ function initLibrary() {
     renderLibrary();
     if (res && res.added > 0) toast(t('toast.folderAdded'));
   });
+
+  // online (Wallhaven)
+  const whSearchBtn = $('#whSearch');
+  if (whSearchBtn) whSearchBtn.addEventListener('click', () => doWhSearch(true));
+  const whQ = $('#whQuery');
+  if (whQ) whQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') doWhSearch(true); });
+  const whSortEl = $('#whSort');
+  if (whSortEl) whSortEl.addEventListener('change', () => { WH.sort = whSortEl.value; if (WH.searched) doWhSearch(true); });
+  const whNsfwBtn = $('#whNsfw');
+  if (whNsfwBtn) whNsfwBtn.addEventListener('click', () => {
+    if (!WH.hasKey) { toast(t('online.nsfwNeedsKey')); return; }
+    WH.nsfw = !WH.nsfw;
+    updateNsfwToggle();
+    if (WH.searched) doWhSearch(true);
+  });
+  const whMoreBtn = $('#whMore');
+  if (whMoreBtn) whMoreBtn.addEventListener('click', () => { WH.page += 1; doWhSearch(false); });
+
   initLibraryDragDrop();
 }
 
@@ -833,6 +866,80 @@ function initLibraryDragDrop() {
     renderLibrary();
     if (res && res.added > 0) toast(t('toast.photosAdded', { n: res.added }));
   });
+}
+
+// ---- Online (Wallhaven) ----
+function updateNsfwToggle() {
+  const btn = $('#whNsfw');
+  if (!btn) return;
+  btn.classList.toggle('done', WH.nsfw && WH.hasKey);
+  btn.disabled = !WH.hasKey;
+  btn.title = WH.hasKey ? '' : t('online.nsfwNeedsKey');
+}
+
+async function renderOnline() {
+  if (!WH.statusFetched) {
+    try { const st = await window.api.wallhavenStatus(); WH.hasKey = !!st.hasKey; }
+    catch { WH.hasKey = false; }
+    WH.statusFetched = true;
+  }
+  updateNsfwToggle();
+  if (!WH.searched) {
+    const note = $('#whNote');
+    if (note) note.textContent = t('online.hint');
+    const grid = $('#whGrid'); if (grid) grid.innerHTML = '';
+    const more = $('#whMore'); if (more) more.hidden = true;
+  }
+}
+
+async function doWhSearch(reset) {
+  const qEl = $('#whQuery');
+  WH.q = (qEl && qEl.value || '').trim();
+  if (reset) WH.page = 1;
+  const note = $('#whNote');
+  const grid = $('#whGrid');
+  if (note) note.textContent = t('online.loading');
+  let res;
+  try { res = await window.api.wallhavenSearch({ q: WH.q, sort: WH.sort, nsfw: WH.nsfw, page: WH.page }); }
+  catch (err) { res = { error: 'network' }; }
+  WH.searched = true;
+  WH.hasKey = !!res.hasKey;
+  updateNsfwToggle();
+  if (res.error) { if (note) note.textContent = t('online.error', { e: res.error }); return; }
+  WH.lastPage = (res.meta && res.meta.lastPage) || 1;
+  if (reset && grid) grid.innerHTML = '';
+  (res.items || []).forEach((it) => grid.appendChild(buildWhCard(it)));
+  if (note) note.textContent = (grid && grid.children.length) ? '' : t('online.noResults');
+  const more = $('#whMore'); if (more) more.hidden = WH.page >= WH.lastPage;
+}
+
+function buildWhCard(item) {
+  const card = document.createElement('div');
+  card.className = 'lib-card';
+  if (item.thumb) card.style.backgroundImage = `url("${item.thumb}")`;
+  card.title = [item.resolution, item.category].filter(Boolean).join(' · ');
+  const add = document.createElement('button');
+  add.className = 'lib-menu-btn wh-add';
+  add.textContent = '+';
+  add.title = t('online.add');
+  add.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    add.disabled = true;
+    let res;
+    try { res = await window.api.wallhavenAdd(item, WH.q); } catch (err) { res = { error: 'download' }; }
+    if (res && res.config) config = res.config;
+    if (res && !res.error) {
+      card.classList.add('assigned');
+      add.textContent = '✓';
+      toast(t('online.added'));
+    } else {
+      add.disabled = false;
+      toast(t('online.error', { e: (res && res.error) || '?' }));
+    }
+  });
+  card.appendChild(add);
+  card.addEventListener('click', () => { if (!add.disabled) add.click(); });
+  return card;
 }
 
 // ---------------------------------------------------------------------------
@@ -1073,6 +1180,13 @@ async function init() {
     const on = $('#swTelemetry').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTelemetry'), on);
     config = await window.api.setConfig({ telemetry: on });
+  });
+
+  // ---- settings: Wallhaven API key (own key; enables NSFW in online wallpapers) ----
+  const whKeyEl = $('#whKey');
+  if (whKeyEl) whKeyEl.addEventListener('change', async () => {
+    config = await window.api.setConfig({ wallhavenKey: whKeyEl.value.trim() });
+    WH.statusFetched = false; // re-detect key availability next time the online panel opens
   });
 
   // ---- settings: re-open the welcome screen ----

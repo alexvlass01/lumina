@@ -1,0 +1,4 @@
+{
+  "_comment": "Bundled Wallhaven API key for OFFICIAL builds only. Copy this file to 'wallhaven-key.json' (gitignored) and paste your key below. It is bundled into your packaged build but never committed to git. Absent for self-builds → the app stays keyless (SFW+sketchy work; NSFW then needs the user's own key entered in Settings). Get a key at wallhaven.cc/settings/account.",
+  "apikey": ""
+}

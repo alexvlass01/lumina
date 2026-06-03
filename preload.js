@@ -26,6 +26,11 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddTag: (id, tag) => ipcRenderer.invoke('library-add-tag', id, tag),
   libraryRemoveTag: (id, tag) => ipcRenderer.invoke('library-remove-tag', id, tag),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
+
+  // Wallhaven (онлайн-обои)
+  wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),
+  wallhavenSearch: (opts) => ipcRenderer.invoke('wallhaven-search', opts),
+  wallhavenAdd: (item, query) => ipcRenderer.invoke('wallhaven-add', item, query),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
