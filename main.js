@@ -817,11 +817,18 @@ const trayCtl = createTrayController({
 // Autostart
 // ---------------------------------------------------------------------------
 function applyLoginItem() {
+  const args = [];
+  if (!app.isPackaged) {
+    args.push(`"${app.getAppPath()}"`);
+  }
+  if (config.startMinimized) {
+    args.push('--hidden');
+  }
+
   app.setLoginItemSettings({
     openAtLogin: config.autostart,
     path: process.execPath,
-    // --hidden = стартовать свёрнутым в трей; управляется отдельным тумблером startMinimized
-    args: config.startMinimized ? ['--hidden'] : [],
+    args: args,
   });
 }
 
