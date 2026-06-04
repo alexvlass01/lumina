@@ -21,20 +21,27 @@ That's it. The app keeps running in the **system tray** after you close the wind
 
 ## Features
 
-- 🌗 **Separate wallpapers for day and night** — light theme gets one, dark theme another.
+- 🌗 **Separate wallpapers for day and night** — one for the light theme, another for dark.
 - 🖥 **A different wallpaper per monitor**, with a visual monitor map.
 - ⚡ **Automatic** — the wallpaper changes the moment Windows switches theme.
-- 🌓 **Can switch the Windows theme itself** on a schedule — by fixed time or by sunrise/sunset (your coordinates). A built-in replacement for "Auto Dark Mode".
-- 🎚 **Fit modes:** fill, fit, stretch, center, tile, span across monitors.
+- 📚 **Wallpaper library** — keep all your wallpapers in one place: mark favourites, add tags, and browse folders. Open a folder to see what's inside, step into sub-folders, and find your way back with breadcrumbs.
+- 🔀 **Slideshow** — let a set of wallpapers rotate on a timer instead of showing just one picture.
+- 🌐 **Online wallpapers** — search by tags and download fresh wallpapers right inside the app.
+- 🖱 **Drag & drop** — drop an image straight onto the app to add it.
+- 🌓 **Can switch the Windows theme itself** on a schedule — by fixed time or by sunrise/sunset for your location. A built-in replacement for "Auto Dark Mode".
+- ⌨️ **Global hotkey** — jump to the next wallpaper with a keyboard shortcut.
+- 🎮 **Game Mode** — pauses wallpaper and theme changes while you play games or use full-screen apps.
+- 🥷 **Quiet switching** — when a full-screen window is open, Lumina waits and changes the wallpaper without interrupting you.
+- 🎚 **Fit modes:** fill, fit, stretch, center, tile, or span across monitors.
 - 📌 **Tray app** that runs in the background; 🚀 optional **autostart** with Windows.
-- 🌍 **Languages:** English, Українська, Русский (or follow the system language).
+- 🌍 **30 languages** (or just follow your system language).
 - 🎨 Clean **Adwaita-style** interface with light and dark palettes.
 
 ## How it works
 
-- Watches the Windows theme via Electron's `nativeTheme` (reacts to *Settings → Personalization → Colors → Mode*).
-- Sets a per-monitor wallpaper through the Windows `IDesktopWallpaper` COM API — no third-party binaries.
-- Images you pick are copied into the app's data folder, so they don't disappear after an update or if you move the original.
+- Lumina watches the Windows light/dark setting (*Settings → Personalization → Colors → Mode*) and reacts instantly.
+- It sets a separate wallpaper on each monitor using built-in Windows features — no extra software or drivers.
+- Wallpapers you pick are copied into the app's own folder, so they don't disappear after an update or if you move the original.
 
 ## Build from source (for developers)
 
