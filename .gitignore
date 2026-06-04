@@ -24,6 +24,9 @@ Lumina-DEV.bat
 # Local roadmap snapshot (kept local, not published)
 ROADMAP.md
 
+# Local handoff log between sessions/agents (kept local, not published)
+STATUS.md
+
 # Bundled Wallhaven API key (official builds only) — NEVER publish.
-# Copy wallhaven-key.example.json → wallhaven-key.json and put your key there.
+# Create wallhaven-key.json with {"apikey":"..."} for NSFW in official builds.
 wallhaven-key.json
