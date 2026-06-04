@@ -53,6 +53,7 @@
     "detecting": "Detecting…",
     "applyNow": "Apply now",
     "currentDesktop": "On your desktop now",
+    "editMonitor": "Set up wallpapers",
     "statusGroup": "Status",
     "trayNote": "The app keeps running in the system tray after the window is closed.",
     "noWallpaper": "no wallpaper",
@@ -223,5 +224,18 @@
     "stealthTitle": "Stealth switch",
     "stealthSub": "Wait up to 2 minutes for a full-screen window to switch wallpapers invisibly",
     "stealthTooltip": "Lumina will wait until you open a full-screen window on the monitor before changing its wallpaper, making the transition invisible to you."
+  },
+  "smart": {
+    "updateTitle": "Update available!",
+    "updateText": "A new version of Lumina is downloaded and ready to install. Restart the app to apply the update.",
+    "updateBtn": "Restart",
+    "tips": [
+      "Did you know Lumina can hide? Enable Stealth Mode in settings, and the wallpaper will only change when your entire screen is covered by a window.",
+      "In Appearance, you can drag and drop images or whole folders directly onto the monitor cards.",
+      "Enable Game Mode in settings so Lumina pauses wallpaper changes and slideshows while you are playing.",
+      "Each monitor can have its own day/night wallpaper pair and its own slideshow. Or you can turn on 'One wallpaper for all monitors'.",
+      "Assign a folder in the Library. If you add new photos to that folder, your slideshow will update automatically.",
+      "Set the theme schedule to 'By sun', and Lumina will switch the light and dark themes exactly at sunrise and sunset."
+    ]
   }
 }

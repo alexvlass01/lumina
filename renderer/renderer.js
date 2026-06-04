@@ -178,6 +178,7 @@ function refreshTexts() {
   renderHome();                 // status values + thumbnail labels
   updateShortcutButtons();      // re-translate shortcut buttons + keep "done" state
   renderUpdate();               // re-translate update status + button
+  renderSmartPanel();           // re-translate smart panel texts
 }
 
 // ---------------------------------------------------------------------------
@@ -1125,6 +1126,63 @@ function openAssignMenu(it, anchor) {
   setTimeout(() => document.addEventListener('click', onDocClosePopup, true), 0);
 }
 
+// ---------------------------------------------------------------------------
+// Smart Panel
+// ---------------------------------------------------------------------------
+let currentSmartTipIndex = -1;
+
+function showSmartTip() {
+  const tips = tPath(I18N.dict, 'smart.tips') || tPath(I18N.fallback, 'smart.tips') || [];
+  if (!tips || !tips.length) return;
+  const panel = $('#smartPanel');
+  if (!panel) return;
+  panel.className = 'smart-panel';
+  $('#spIcon').textContent = '💡';
+  $('#spTitle').hidden = true; // No title for tips, looks cleaner
+  $('#spText').textContent = tips[currentSmartTipIndex % tips.length];
+  $('#btnSpAction').hidden = true;
+  panel.hidden = false;
+  
+  panel.style.animation = 'none';
+  panel.offsetHeight; // trigger reflow
+  panel.style.animation = 'fadeSlideIn 0.3s ease';
+}
+
+// Smart panel = an "update ready" notice (if one is downloaded) or a random tip of the day.
+async function renderSmartPanel() {
+  const panel = $('#smartPanel');
+  if (!panel) return;
+
+  // update ready → "restart to update" with an action button
+  const up = await window.api.getUpdateState();
+  if (up && up.state === 'ready') {
+    panel.className = 'smart-panel update';
+    $('#spIcon').textContent = '🚀';
+    $('#spTitle').hidden = false;
+    $('#spTitle').textContent = t('smart.updateTitle');
+    $('#spText').textContent = t('smart.updateText');
+    const btn = $('#btnSpAction');
+    btn.textContent = t('smart.updateBtn');
+    btn.className = 'pill suggested';
+    btn.hidden = false;
+    btn.onclick = () => window.api.installUpdate();
+    panel.hidden = false;
+    return;
+  }
+
+  // otherwise → tip of the day (random, picked once per session)
+  const tips = tPath(I18N.dict, 'smart.tips') || tPath(I18N.fallback, 'smart.tips') || [];
+  if (tips && tips.length) {
+    if (currentSmartTipIndex === -1) currentSmartTipIndex = Math.floor(Math.random() * tips.length);
+    showSmartTip();
+  }
+}
+
+function initSmartPanel() {
+  window.api.onUpdate(() => renderSmartPanel());
+  renderSmartPanel();
+}
+
 function initLibrary() {
   // Delegated so dynamically-rendered tag buttons work too.
   const rail = document.querySelector('#viewLibrary .lib-rail');
@@ -1340,7 +1398,7 @@ async function updateShortcutButtons() {
 }
 
 // Home dashboard: current wallpaper per monitor (active theme) + status.
-const HOME_THUMB_H = 116;
+const HOME_THUMB_H = 180;
 function renderHome() {
   if (!config) return;
   const wrap = $('#homeMonitors');
@@ -1406,7 +1464,11 @@ function renderHome() {
           const ar = m.h ? m.w / m.h : 16 / 9;
           const cell = document.createElement('div');
           cell.className = 'home-mon';
-          
+          cell.title = t('home.editMonitor') || "Настроить обои";
+          cell.addEventListener('click', () => {
+            selectMonitor(m);
+            showPage('design');
+          });
           const thumb = document.createElement('div');
           thumb.className = 'home-thumb';
           thumb.style.height = HOME_THUMB_H + 'px';
@@ -1444,9 +1506,6 @@ function renderHome() {
       }
     }
   }
-  const a = $('#stAuto'); if (a) a.textContent = config.autoSwitch ? t('val.on') : t('val.off');
-  const s = $('#stStartup'); if (s) s.textContent = config.autostart ? t('val.on') : t('val.off');
-  const mc = $('#stMonitors'); if (mc) mc.textContent = String(monitorList.length);
 }
 
 // ---------------------------------------------------------------------------
@@ -1498,6 +1557,7 @@ async function init() {
   });
 
   window.api.getUpdateState().then(renderUpdate);
+  initSmartPanel();
 
   // ---- page navigation ----
   document.querySelectorAll('.navbtn').forEach((b) => {
@@ -1505,13 +1565,6 @@ async function init() {
   });
   $('#btnPrefs').addEventListener('click', () => showPage('prefs'));
 
-  // ---- home: apply current theme now ----
-  $('#btnApplyNow').addEventListener('click', async () => {
-    const res = await window.api.applyNow();
-    if (res.ok) toast(t('toast.applied'));
-    else if (res.reason === 'no-wallpaper') toast(t('toast.noWallpaper'));
-    else toast(t('toast.error', { msg: res.reason }));
-  });
 
   // ---- settings: quit the app ----
   $('#btnQuit').addEventListener('click', () => window.api.quitApp());

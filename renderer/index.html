@@ -113,35 +113,34 @@
 
     <!-- ===================== HOME ===================== -->
     <section class="view" id="viewHome">
-      <section class="hero" id="hero">
-        <div class="hero-icon" id="heroIcon"></div>
-        <div class="hero-text">
-          <div class="hero-title" id="heroTitle" data-i18n="home.themeTitle">Текущая тема Windows</div>
-          <div class="hero-sub" id="heroSub" data-i18n="home.detecting">Определяю…</div>
+      <div class="home-layout">
+        <div class="home-main-card">
+          <div class="home-main-header">
+            <h2 class="group-title" data-i18n="home.currentDesktop" style="margin-bottom: 0;">Сейчас на рабочем столе</h2>
+            <div style="flex-grow: 1;"></div>
+            <div class="home-theme-text-only" id="themeIndicator">
+              <span id="heroIcon">☀️</span>
+              <span id="heroSub" data-i18n="home.detecting" style="font-weight: 600; color: var(--text-dim); font-size: 13.5px;">Определяю…</span>
+            </div>
+          </div>
+          
+          <div class="home-monitors" id="homeMonitors"></div>
         </div>
-        <button class="pill suggested" id="btnApplyNow" data-i18n="home.applyNow">Применить сейчас</button>
-      </section>
 
-      <h2 class="group-title" data-i18n="home.currentDesktop">Сейчас на рабочем столе</h2>
-      <div class="home-monitors" id="homeMonitors"></div>
-
-      <h2 class="group-title" data-i18n="home.statusGroup">Статус</h2>
-      <div class="boxed-list">
-        <div class="row">
-          <div class="row-text"><div class="row-title" data-i18n="status.autoSwitch">Автосмена при переключении темы</div></div>
-          <div class="status-val" id="stAuto">—</div>
-        </div>
-        <div class="row">
-          <div class="row-text"><div class="row-title" data-i18n="status.autostart">Автозапуск с Windows</div></div>
-          <div class="status-val" id="stStartup">—</div>
-        </div>
-        <div class="row">
-          <div class="row-text"><div class="row-title" data-i18n="status.monitors">Мониторов подключено</div></div>
-          <div class="status-val" id="stMonitors">—</div>
-        </div>
+        <!-- Smart Panel -->
+        <section class="smart-panel" id="smartPanel" hidden>
+          <div class="smart-panel-icon-wrap">
+            <div class="smart-panel-icon" id="spIcon">💡</div>
+          </div>
+          <div class="smart-panel-content">
+            <div class="smart-panel-title" id="spTitle">Совет дня</div>
+            <div class="smart-panel-text" id="spText"></div>
+          </div>
+          <div class="smart-panel-actions" id="spActions">
+            <button class="pill" id="btnSpAction" hidden></button>
+          </div>
+        </section>
       </div>
-
-      <p class="footer-note" data-i18n="home.trayNote">Приложение продолжает работать в системном трее после закрытия окна.</p>
     </section>
 
     <!-- ===================== DESIGN (обои) ===================== -->
