@@ -765,7 +765,6 @@ select option {
 .lib-card .wh-add { opacity: 0; font-size: 18px; line-height: 26px; }
 .lib-card:hover .wh-add { opacity: 1; }
 .lib-card .wh-add.added { opacity: 1; background: var(--accent); }
-.wh-key-input { min-width: 190px; font-family: inherit; }
 
 /* folder card: 2×2 collage of inner previews + name + count */
 .lib-folder-collage {

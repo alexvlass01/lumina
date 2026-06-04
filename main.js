@@ -72,7 +72,7 @@ async function downloadWallpaperFromUrl(url) {
 
 // Bundled Wallhaven API key — official builds only. It lives in a gitignored file
 // (wallhaven-key.json) so it's never in the public repo; absent for self-builds, where
-// the app simply stays keyless (SFW+sketchy still work, NSFW needs the user's own key).
+// the app simply stays keyless (SFW+sketchy still work, NSFW needs the bundled key).
 function loadBundledWallhavenKey() {
   try {
     const k = require('./wallhaven-key.json');
@@ -80,9 +80,10 @@ function loadBundledWallhavenKey() {
   } catch { return ''; }
 }
 const BUNDLED_WALLHAVEN_KEY = loadBundledWallhavenKey();
-// Effective key: the user's own (⚙) wins; otherwise the bundled one (if any).
+// Effective key: the bundled one (official builds only). Users can't enter their own —
+// the Wallhaven key is internal-only by design.
 function wallhavenKey() {
-  return (config.wallhavenKey && config.wallhavenKey.trim()) || BUNDLED_WALLHAVEN_KEY || '';
+  return BUNDLED_WALLHAVEN_KEY || '';
 }
 
 // Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).

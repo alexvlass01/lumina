@@ -521,7 +521,6 @@ async function renderConfig() {
   setSwitch($('#swSingle'), !!config.singleWallpaper);
   setSwitch($('#swTelemetry'), !!config.telemetry);
   setSwitch($('#swGameMode'), !!config.gameModeBlock);
-  if ($('#whKey')) $('#whKey').value = config.wallhavenKey || '';
   $('#selStyle').value = config.style || 'fill';
   updateSingleWallRow();
   updateSlideshowControls();
@@ -1533,13 +1532,6 @@ async function init() {
     config = await window.api.setConfig({ gameModeBlock: on });
     renderConfig();
     toast(on ? t('toast.gameModeOn') : t('toast.gameModeOff'));
-  });
-
-  // ---- settings: Wallhaven API key (own key; enables NSFW in online wallpapers) ----
-  const whKeyEl = $('#whKey');
-  if (whKeyEl) whKeyEl.addEventListener('change', async () => {
-    config = await window.api.setConfig({ wallhavenKey: whKeyEl.value.trim() });
-    WH.statusFetched = false; // re-detect key availability next time the online panel opens
   });
 
   // ---- settings: re-open the welcome screen ----
