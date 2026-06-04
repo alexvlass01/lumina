@@ -37,6 +37,53 @@ function scanFolder(dir) {
   return files;
 }
 
+// Like scanFolder but returns BOTH subfolders and images (one level) — for in-place
+// library navigation (opening a folder to browse its contents + drill into subfolders).
+const folderEntriesCache = new Map(); // dir -> { at, entries }
+function scanFolderEntries(dir) {
+  const cached = folderEntriesCache.get(dir);
+  if (cached && Date.now() - cached.at < 5000) return cached.entries;
+  const folders = [];
+  const images = [];
+  try {
+    for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, d.name);
+      if (d.isDirectory()) folders.push(full);
+      else if (d.isFile() && IMG_EXTS.has(path.extname(d.name).toLowerCase())) images.push(full);
+    }
+    folders.sort((a, b) => a.localeCompare(b));
+    images.sort((a, b) => a.localeCompare(b));
+  } catch { /* unreadable dir -> empty */ }
+  const entries = { folders, images };
+  folderEntriesCache.set(dir, { at: Date.now(), entries });
+  return entries;
+}
+
+// Recursively collect image paths under `dir`, depth- and count-limited. Guards
+// against huge trees (cap) and symlink cycles (realpath set). Powers the flat
+// "All" view and folder image counts. NOTE: deliberately NOT used by resolveSlot —
+// the slideshow stays one-level so assigning a folder behaves as before.
+function scanFolderImagesDeep(dir, opts = {}) {
+  const maxDepth = Number.isFinite(opts.maxDepth) ? opts.maxDepth : 8;
+  const cap = Number.isFinite(opts.cap) ? opts.cap : 10000;
+  const out = [];
+  const seenDirs = new Set();
+  const stack = [{ dir, depth: 0 }];
+  while (stack.length && out.length < cap) {
+    const { dir: d, depth } = stack.pop();
+    let real;
+    try { real = fs.realpathSync(d); } catch { continue; }
+    if (seenDirs.has(real)) continue; // cycle guard
+    seenDirs.add(real);
+    const { folders, images } = scanFolderEntries(d);
+    for (const img of images) { if (out.length >= cap) break; out.push(img); }
+    if (depth < maxDepth) {
+      for (const f of folders) stack.push({ dir: f, depth: depth + 1 });
+    }
+  }
+  return out;
+}
+
 // Expand a slot to a flat list of EXISTING paths (images + folder contents),
 // de-duplicated, preserving order.
 //
@@ -63,6 +110,17 @@ function resolveSlot(slot, library) {
   return out;
 }
 
+// Index of a specific path within a slot's EXPANDED playlist (-1 if absent). The
+// slideshow index addresses the expanded list (a folder is one strip item but many
+// resolved paths), so "apply this exact thumbnail" must map a path → expanded index
+// rather than trusting the strip's item index. Case-insensitive match.
+function resolvedIndexOf(slot, library, p) {
+  if (!p) return -1;
+  const list = resolveSlot(slot, library);
+  const key = String(p).toLowerCase();
+  return list.findIndex((x) => String(x).toLowerCase() === key);
+}
+
 // Element of `list` at `idx`, wrapped into range. '' for an empty list.
 function pickCurrent(list, idx) {
   if (!list || !list.length) return '';
@@ -81,4 +139,7 @@ function nextIndex(cur, len, shuffle, rnd = Math.random) {
   return n;
 }
 
-module.exports = { IMG_EXTS, normalizeSlot, scanFolder, resolveSlot, pickCurrent, nextIndex };
+module.exports = {
+  IMG_EXTS, normalizeSlot, scanFolder, scanFolderEntries, scanFolderImagesDeep,
+  resolveSlot, resolvedIndexOf, pickCurrent, nextIndex,
+};

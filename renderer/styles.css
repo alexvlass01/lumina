@@ -674,6 +674,9 @@ select option {
   background: var(--preview-bg) center / cover no-repeat;
   cursor: pointer; overflow: hidden;
   transition: transform .08s ease, box-shadow .12s ease;
+  /* don't render/decode off-screen cards (huge "All" grids stay smooth) */
+  content-visibility: auto;
+  contain-intrinsic-size: 200px 125px;
 }
 .lib-card:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
 .lib-card.folder { display: flex; align-items: center; justify-content: center; background: var(--card); }
@@ -797,6 +800,29 @@ select option {
   background: linear-gradient(to top, var(--bg) 65%, transparent);
 }
 .lib-statusbar:empty { opacity: 0; }
+
+/* breadcrumbs (folder navigation) */
+.lib-breadcrumbs {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 4px;
+  margin-bottom: 14px;
+}
+.lib-breadcrumbs[hidden] { display: none; }
+.lib-crumb {
+  border: none; background: transparent; color: var(--text);
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  padding: 4px 8px; border-radius: 7px; cursor: pointer;
+  max-width: 220px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.lib-crumb:hover { background: var(--row-hover); }
+.lib-crumb.current { color: var(--accent); cursor: default; }
+.lib-crumb.current:hover { background: transparent; }
+.lib-crumb-back { color: var(--text-dim); }
+.lib-crumb-sep { color: var(--text-dim); font-size: 13px; pointer-events: none; }
+.lib-assign-folder { margin-left: auto; }
+
+/* lazy-render sentinel (invisible spacer at the end of the flat "All" grid) */
+.lib-sentinel { height: 1px; }
+.lib-sentinel[hidden] { display: none; }
 
 /* Tooltips */
 .info-icon {

@@ -1204,13 +1204,66 @@ ipcMain.handle('current-image', (e, monitorId, which) => {
   return currentImageFor(id, theme);
 });
 
-// Превью папки для библиотеки: число картинок внутри + первые несколько путей
+// Превью папки для библиотеки: число картинок внутри + N подпапок + первые превью
 // (renderer сам сканировать ФС не может). Папки не копируем — живое сканирование.
 ipcMain.handle('folder-info', (e, dir) => {
   try {
-    const files = playlist.scanFolder(dir);
-    return { count: files.length, previews: files.slice(0, 4) };
-  } catch { return { count: 0, previews: [] }; }
+    const { folders, images } = playlist.scanFolderEntries(dir);
+    return { count: images.length, subfolders: folders.length, previews: images.slice(0, 4) };
+  } catch { return { count: 0, subfolders: 0, previews: [] }; }
+});
+
+// Маленький тамбнейл для библиотечных превью (через Windows shell) → data-URL. Без него
+// карточки грузили бы полноразмерные (до 4K) файлы → тормоза декодирования + «лесенка»
+// при даунскейле. LRU-кэш по "путь|WxH" (хранит и промахи как '' — не пересоздаём впустую).
+const thumbCache = new Map();
+const THUMB_CAP = 800;
+ipcMain.handle('thumb', async (e, p, w, h) => {
+  if (!p || typeof p !== 'string') return '';
+  const W = w || 320; const H = h || 200;
+  const key = `${p}|${W}x${H}`;
+  const hit = thumbCache.get(key);
+  if (hit !== undefined) { thumbCache.delete(key); thumbCache.set(key, hit); return hit; } // LRU bump
+  let url = '';
+  try {
+    const img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
+    if (img && !img.isEmpty()) url = img.toDataURL();
+  } catch { url = ''; }
+  thumbCache.set(key, url);
+  if (thumbCache.size > THUMB_CAP) { const k0 = thumbCache.keys().next().value; thumbCache.delete(k0); }
+  return url;
+});
+
+// Содержимое папки для навигации ВНУТРЬ библиотеки: подпапки + картинки (один уровень).
+ipcMain.handle('folder-entries', (e, dir) => {
+  try {
+    const { folders, images } = playlist.scanFolderEntries(dir);
+    return {
+      folders: folders.map((p) => ({ path: p, name: path.basename(p) })),
+      images,
+      count: images.length,
+    };
+  } catch { return { folders: [], images: [], count: 0 }; }
+});
+
+// Плоский разворот всех папок-источников в картинки (рекурсивно, с лимитами) для вкладки «Все».
+// Возвращает ТОЛЬКО эфемерные (не в пуле) — pool-картинки у renderer уже есть в config.library.
+ipcMain.handle('expand-folders', () => {
+  try {
+    const flat = library.flattenImages(config.library, (d) => playlist.scanFolderImagesDeep(d));
+    return { images: flat.filter((x) => !x.inPool).map((x) => ({ path: x.path, id: x.id })) };
+  } catch (err) { console.error('expand-folders:', err); return { images: [] }; }
+});
+
+// «Материализация» картинки/папки из живого источника в пул — БЕЗ копирования (по ссылке на
+// оригинальный путь, как и сама папка-источник живёт по оригиналу). Нужно, чтобы назначить/★
+// картинку из открытой папки: получаем настоящий id, дальше работают обычные library-assign/
+// toggle-favorite/assign-меню. id = idFor(origPath) → совпадает с pool-item ⇒ нет дублей в «Все».
+ipcMain.handle('library-materialize', (e, p, type) => {
+  if (!p || typeof p !== 'string') return { config, id: null };
+  const id = library.addPath(config.library, type === 'folder' ? 'folder' : 'image', p);
+  if (id) saveConfig();
+  return { config, id };
 });
 
 ipcMain.handle('set-slideshow', (e, patch) => {
@@ -1233,6 +1286,21 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
   const t = theme === 'dark' ? 'dark' : 'light';
   if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
   config.slideshowIndex[monitorId][t] = index;
+  saveConfig();
+  if (t === currentThemeName()) await applyForTheme(t, true);
+  return config;
+});
+
+// «Установить именно эту картинку» по клику на миниатюру. Индекс слайдшоу адресует
+// РАЗВЁРНУТЫЙ плейлист (папка = много файлов), поэтому ищем индекс по ПУТИ, а не по
+// позиции в стрипе (иначе при папке в плейлисте ставится не то фото).
+ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
+  if (!monitorId || !p) return config;
+  const t = theme === 'dark' ? 'dark' : 'light';
+  const idx = playlist.resolvedIndexOf(slotFor(monitorId, t), config.library, p);
+  if (idx < 0) return config; // путь не в развёрнутом плейлисте (исключён/файла нет)
+  if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
+  config.slideshowIndex[monitorId][t] = idx;
   saveConfig();
   if (t === currentThemeName()) await applyForTheme(t, true);
   return config;

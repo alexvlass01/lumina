@@ -150,4 +150,22 @@ ok('migrateConfig: empty/garbage safe', (() => {
   return typeof cfg.library === 'object' && Object.keys(cfg.library).length === 0;
 })());
 
+// ---- flattenImages: pool images + expanded folders, deduped by id ----
+const lib5 = {};
+L.addPath(lib5, 'image', 'C:/photos/a.jpg');
+L.addPath(lib5, 'folder', 'C:/photos/dir');
+// stub scanDeep: the folder expands to b.jpg + a.jpg (a.jpg duplicates the pool image by path)
+const scanDeep = (d) => (d === 'C:/photos/dir' ? ['C:/photos/dir/b.jpg', 'C:/photos/a.jpg'] : []);
+const flat = L.flattenImages(lib5, scanDeep);
+ok('flattenImages: pool image present + inPool=true',
+  flat.some((x) => x.path === 'C:/photos/a.jpg' && x.inPool === true));
+ok('flattenImages: folder image present + inPool=false',
+  flat.some((x) => x.path === 'C:/photos/dir/b.jpg' && x.inPool === false));
+ok('flattenImages: dedup pool vs folder by id (a.jpg once, pool wins)',
+  flat.filter((x) => x.id === L.idFor('C:/photos/a.jpg')).length === 1
+  && flat.find((x) => x.id === L.idFor('C:/photos/a.jpg')).inPool === true);
+ok('flattenImages: folder items themselves excluded', !flat.some((x) => x.path === 'C:/photos/dir'));
+ok('flattenImages: no scanDeep -> pool images only',
+  L.flattenImages(lib5, null).every((x) => x.inPool) && L.flattenImages(lib5, null).length === 1);
+
 console.log('\nAll ' + passed + ' library tests passed.');

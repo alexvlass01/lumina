@@ -77,7 +77,10 @@ if (!window.api) {
       if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
       return mock;
     },
-    folderInfo: async () => ({ count: 0, previews: [] }),
+    folderInfo: async () => ({ count: 0, subfolders: 0, previews: [] }),
+    folderEntries: async () => ({ folders: [], images: [], count: 0 }),
+    expandFolders: async () => ({ images: [] }),
+    libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
     wallhavenAdd: async () => ({ config: mock, error: null }),
@@ -88,10 +91,12 @@ if (!window.api) {
       mock.slideshowIndex[monitorId][theme] = index;
       return mock;
     },
+    setSlideshowToPath: async () => mock,
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
     setAutostart: async (v) => (mock.autostart = v),
     setStartMinimized: async (v) => (mock.startMinimized = v),
     fileUrl: async (p) => p,
+    thumb: async (p) => p,
     quitApp: () => {},
     createShortcuts: async (which) => {
       if (which === 'desktop' || which === 'both' || !which) mockSc.desktop = true;
@@ -427,16 +432,8 @@ function renderStrip(theme) {
       el.title = it.path;
     } else {
       el.title = baseName(it.path);
-      // Preload thumbnail image before displaying to prevent flicker
-      window.api.fileUrl(it.path).then((u) => {
-        if (u) {
-          const img = new Image();
-          img.onload = () => {
-            el.style.backgroundImage = `url("${u}")`;
-          };
-          img.src = u;
-        }
-      });
+      // small thumbnail (data-URL is instant, no flicker; avoids decoding full-size files)
+      window.api.thumb(it.path, 200, 130).then((u) => { if (u) el.style.backgroundImage = `url("${u}")`; });
 
       // Click on thumbnail → switch wallpaper to this item
       if (items.length > 1) {
@@ -445,7 +442,8 @@ function renderStrip(theme) {
           if (ev.target.closest('.thumb-remove')) return; // don't trigger on delete button
           const mon = editTargetId();
           if (!mon) return;
-          config = await window.api.setSlideshowIndex(mon, theme, idx);
+          // apply by PATH (folders expand, so the strip index != the slideshow index)
+          config = await window.api.setSlideshowToPath(mon, theme, it.path);
           // Clear preview cache so setPreview reloads with the new image
           const preview = theme === 'dark' ? $('#previewDark') : $('#previewLight');
           if (preview) preview.removeAttribute('data-bg-path');
@@ -560,7 +558,10 @@ async function renderConfig() {
 // ---------------------------------------------------------------------------
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
-const LIB = { filter: 'all', sort: 'added', q: '' };
+const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [] };
+let libObserver = null; // IntersectionObserver for lazy "All" rendering
+let allViewToken = 0;   // guards async folder/All renders against races
+let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
 const WH = { q: '', sort: 'date_added', nsfw: false, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
 
 // ids referenced by any monitor×theme slot (to mark assigned items)
@@ -628,17 +629,28 @@ function renderLibrary() {
   if (LIB.filter === 'online') {
     if (local) local.hidden = true;
     if (online) online.hidden = false;
+    exitFolderState(); // leaving the local view drops any folder navigation
+    renderBreadcrumbs();
     renderOnline();
     return;
   }
   if (online) online.hidden = true;
   if (local) local.hidden = false;
+  renderBreadcrumbs();
+  const tok = ++allViewToken; // invalidate any in-flight async render
+
+  if (LIB.folderPath) { renderFolderView(tok); return; }
+  if (LIB.filter === 'all') { renderAllView(tok); return; }
+
+  // "Папки" / favorite / tag → plain pool-items grid (folders are entities here)
+  resetLibObservers();
+  const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
   const grid = $('#libGrid');
   if (!grid) return;
   const items = libList();
   const assigned = assignedIds();
   const empty = $('#libEmpty');
-  if (empty) empty.hidden = items.length > 0;
+  if (empty) { empty.hidden = items.length > 0; if (!items.length) setLibEmptyText('library.empty'); }
   grid.innerHTML = '';
   items.forEach((it) => grid.appendChild(buildLibCard(it, assigned.has(it.id))));
 }
@@ -649,42 +661,10 @@ function buildLibCard(it, isAssigned) {
   card.dataset.id = it.id;
 
   if (it.type === 'folder') {
-    // folder card: collage of inner previews + name caption + count, so folders are distinguishable
-    const collage = document.createElement('div');
-    collage.className = 'lib-folder-collage';
-    collage.innerHTML = '<span class="lib-ic">📁</span>';
-    card.appendChild(collage);
-    const cap = document.createElement('span');
-    cap.className = 'lib-card-name';
-    cap.textContent = baseName(it.path);
-    card.appendChild(cap);
-    const cnt = document.createElement('span');
-    cnt.className = 'lib-count';
-    cnt.textContent = '📁';
-    card.appendChild(cnt);
-    card.title = it.path;
-    window.api.folderInfo(it.path).then((info) => {
-      const previews = (info && info.previews) || [];
-      cnt.textContent = `📁 ${(info && info.count) || 0}`;
-      if (!previews.length) return;
-      collage.innerHTML = '';
-      previews.slice(0, 4).forEach((p) => {
-        const tile = document.createElement('div');
-        tile.className = 'ff';
-        collage.appendChild(tile);
-        window.api.fileUrl(p).then((u) => { if (u) tile.style.backgroundImage = `url("${u}")`; });
-      });
-    });
+    fillFolderCollage(card, it.path);
   } else {
     card.title = baseName(it.path);
-    window.api.fileUrl(it.path).then((u) => {
-      if (!u) { card.classList.add('missing'); return; }
-      const url = `${u}?v=${it.addedAt || 0}`;
-      const img = new Image();
-      img.onload = () => { card.style.backgroundImage = `url("${url}")`; card.classList.remove('missing'); };
-      img.onerror = () => card.classList.add('missing');
-      img.src = url;
-    });
+    lazyThumb(card, it.path, 320, 200);
   }
 
   const fav = document.createElement('button');
@@ -714,14 +694,306 @@ function buildLibCard(it, isAssigned) {
   card.appendChild(menu);
 
   card.addEventListener('mouseenter', () => setLibStatus(baseName(it.path)));
-  card.addEventListener('click', () => openAssignMenu(it, menu));
+  card.addEventListener('click', () => {
+    if (it.type === 'folder') enterFolder(it.path, baseName(it.path));
+    else openAssignMenu(it, menu);
+  });
   return card;
+}
+
+// Fill a .lib-card.folder with the 2×2 preview collage + name + count (count shows
+// "N · ▸M" when the folder has M subfolders). Shared by pool folders and subfolders.
+function fillFolderCollage(card, dirPath) {
+  const collage = document.createElement('div');
+  collage.className = 'lib-folder-collage';
+  collage.innerHTML = '<span class="lib-ic">📁</span>';
+  card.appendChild(collage);
+  const cap = document.createElement('span');
+  cap.className = 'lib-card-name';
+  cap.textContent = baseName(dirPath);
+  card.appendChild(cap);
+  const cnt = document.createElement('span');
+  cnt.className = 'lib-count';
+  cnt.textContent = '📁';
+  card.appendChild(cnt);
+  card.title = dirPath;
+  window.api.folderInfo(dirPath).then((info) => {
+    const previews = (info && info.previews) || [];
+    const sub = (info && info.subfolders) || 0;
+    const n = (info && info.count) || 0;
+    cnt.textContent = sub > 0 ? `📁 ${n} · ▸${sub}` : `📁 ${n}`;
+    if (!previews.length) return;
+    collage.innerHTML = '';
+    previews.slice(0, 4).forEach((p) => {
+      const tile = document.createElement('div');
+      tile.className = 'ff';
+      collage.appendChild(tile);
+      window.api.thumb(p, 160, 160).then((u) => { if (u) tile.style.backgroundImage = `url("${u}")`; });
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Folder navigation (open a folder in place, drill into subfolders, breadcrumbs)
+// ---------------------------------------------------------------------------
+function exitFolderState() { LIB.folderPath = null; LIB.crumbs = []; }
+
+function enterFolder(p, name) {
+  LIB.folderPath = p;
+  LIB.crumbs.push({ path: p, name: name || baseName(p) });
+  if (LIB.q) { LIB.q = ''; const s = $('#libSearch'); if (s) s.value = ''; }
+  renderLibrary();
+}
+function crumbTo(i) {
+  LIB.crumbs = LIB.crumbs.slice(0, i + 1);
+  LIB.folderPath = LIB.crumbs.length ? LIB.crumbs[LIB.crumbs.length - 1].path : null;
+  renderLibrary();
+}
+function exitToFolders() { exitFolderState(); renderLibrary(); }
+
+// Render the breadcrumb bar (hidden unless inside a folder). Includes a "‹ all folders"
+// back link and an "Assign this folder" action that materializes the current dir + assigns.
+function renderBreadcrumbs() {
+  const bar = $('#libCrumbs');
+  if (!bar) return;
+  if (!LIB.folderPath || !LIB.crumbs.length) { bar.hidden = true; bar.innerHTML = ''; return; }
+  bar.hidden = false;
+  bar.innerHTML = '';
+  const back = document.createElement('button');
+  back.className = 'lib-crumb lib-crumb-back';
+  back.textContent = t('library.back');
+  back.addEventListener('click', exitToFolders);
+  bar.appendChild(back);
+  LIB.crumbs.forEach((c, i) => {
+    const sep = document.createElement('span');
+    sep.className = 'lib-crumb-sep';
+    sep.textContent = '›';
+    bar.appendChild(sep);
+    const b = document.createElement('button');
+    b.className = 'lib-crumb' + (i === LIB.crumbs.length - 1 ? ' current' : '');
+    b.textContent = c.name;
+    b.addEventListener('click', () => crumbTo(i));
+    bar.appendChild(b);
+  });
+  const assignBtn = document.createElement('button');
+  assignBtn.className = 'pill lib-assign-folder';
+  assignBtn.textContent = t('library.assignThisFolder');
+  assignBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const res = await window.api.libraryMaterialize(LIB.folderPath, 'folder');
+    config = (res && res.config) || config;
+    const it = res && res.id && config.library[res.id];
+    if (it) openAssignMenu(it, assignBtn);
+  });
+  bar.appendChild(assignBtn);
+}
+
+// path → pool image item lookup (normalized like library.idFor, minus the hash), so a
+// folder image that's already in the pool renders as the real card (favorite/assigned).
+function normPathKey(p) {
+  return String(p || '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
+}
+function poolImageMap() {
+  const map = new Map();
+  for (const it of Object.values(config.library || {})) {
+    if (it && it.type === 'image' && it.path) map.set(normPathKey(it.path), it);
+  }
+  return map;
+}
+
+// ---- lazy thumbnails: fetch a small preview only when the card scrolls into view ----
+// Большие сетки «Все» иначе декодировали бы тысячи полноразмерных фото разом → зависания.
+function resetLibObservers() {
+  if (libObserver) { libObserver.disconnect(); libObserver = null; }
+  if (thumbIO) { thumbIO.disconnect(); thumbIO = null; }
+}
+function loadThumbInto(card) {
+  const p = card.dataset.thumbPath;
+  if (!p) return;
+  window.api.thumb(p, +card.dataset.thumbW || 320, +card.dataset.thumbH || 200).then((u) => {
+    if (!u) { card.classList.add('missing'); return; }
+    card.classList.remove('missing');
+    card.style.backgroundImage = `url("${u}")`;
+  });
+}
+function lazyThumb(card, p, w, h) {
+  card.dataset.thumbPath = p;
+  if (w) card.dataset.thumbW = w;
+  if (h) card.dataset.thumbH = h;
+  if ('IntersectionObserver' in window) {
+    if (!thumbIO) {
+      thumbIO = new IntersectionObserver((ents) => {
+        for (const en of ents) {
+          if (en.isIntersecting) { thumbIO.unobserve(en.target); loadThumbInto(en.target); }
+        }
+      }, { root: null, rootMargin: '300px' });
+    }
+    thumbIO.observe(card);
+  } else {
+    loadThumbInto(card); // no observer support → load immediately
+  }
+}
+
+// Inside-a-folder view: subfolders first (drill in), then images (one level).
+async function renderFolderView(tok) {
+  const grid = $('#libGrid');
+  const empty = $('#libEmpty');
+  if (!grid) return;
+  resetLibObservers();
+  const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
+  const dir = LIB.folderPath;
+  let res;
+  try { res = await window.api.folderEntries(dir); } catch { res = null; }
+  if (tok !== allViewToken) return; // navigated away while awaiting
+  const folders = (res && res.folders) || [];
+  let images = (res && res.images) || [];
+  const q = LIB.q.trim().toLowerCase();
+  if (q) images = images.filter((p) => baseName(p).toLowerCase().includes(q));
+  if (LIB.sort === 'name') images = images.slice().sort((a, b) => baseName(a).localeCompare(baseName(b)));
+  const assigned = assignedIds();
+  const pmap = poolImageMap();
+  grid.innerHTML = '';
+  folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
+  images.forEach((p) => grid.appendChild(buildPathImageCard(p, assigned, pmap)));
+  const total = folders.length + images.length;
+  if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
+}
+
+// A subfolder card (not a pool item): click drills in; ⋯ assigns it as a source.
+function buildSubfolderCard(f) {
+  const card = document.createElement('div');
+  card.className = 'lib-card folder';
+  card.dataset.path = f.path;
+  fillFolderCollage(card, f.path);
+  const menu = document.createElement('button');
+  menu.className = 'lib-menu-btn';
+  menu.textContent = '⋯';
+  menu.title = t('library.assign');
+  menu.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const res = await window.api.libraryMaterialize(f.path, 'folder');
+    config = (res && res.config) || config;
+    const it = res && res.id && config.library[res.id];
+    if (it) openAssignMenu(it, menu);
+  });
+  card.appendChild(menu);
+  card.addEventListener('mouseenter', () => setLibStatus(f.path));
+  card.addEventListener('click', () => enterFolder(f.path, f.name));
+  return card;
+}
+
+// An image found by path: real pool card if it's already in the pool, else ephemeral.
+function buildPathImageCard(p, assigned, pmap) {
+  const real = pmap ? pmap.get(normPathKey(p)) : null;
+  if (real) return buildLibCard(real, assigned.has(real.id));
+  return buildEphemeralImageCard(p);
+}
+
+// Image living inside a folder, not yet in the pool. Any action first "materializes"
+// it (adds by reference, no copy) → then the normal assign menu / favorite flow runs.
+function buildEphemeralImageCard(p) {
+  const card = document.createElement('div');
+  card.className = 'lib-card';
+  card.title = baseName(p);
+  lazyThumb(card, p, 320, 200);
+  const materialize = async () => {
+    const res = await window.api.libraryMaterialize(p, 'image');
+    config = (res && res.config) || config;
+    return res && res.id ? config.library[res.id] : null;
+  };
+
+  const fav = document.createElement('button');
+  fav.className = 'lib-fav';
+  fav.textContent = '☆';
+  fav.title = t('library.favorite');
+  fav.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const it = await materialize();
+    if (it) { config = await window.api.libraryToggleFavorite(it.id); }
+    renderLibrary();
+  });
+  card.appendChild(fav);
+
+  const menu = document.createElement('button');
+  menu.className = 'lib-menu-btn';
+  menu.textContent = '⋯';
+  menu.title = t('library.assign');
+  const open = async () => {
+    const it = await materialize();
+    if (it) openAssignMenu(it, menu); // menu anchor is still in the DOM (no re-render yet)
+  };
+  menu.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+  card.appendChild(menu);
+
+  card.addEventListener('mouseenter', () => setLibStatus(baseName(p)));
+  card.addEventListener('click', open);
+  return card;
+}
+
+// Flat "All" view: pool images + recursively-expanded folder images, deduped, lazily
+// rendered in chunks (folders can hold thousands of files).
+async function renderAllView(tok) {
+  const grid = $('#libGrid');
+  const empty = $('#libEmpty');
+  if (!grid) return;
+  resetLibObservers();
+  const poolImgs = Object.values(config.library || {}).filter((it) => it.type === 'image' && it.path);
+  let folderImgs = [];
+  try { const res = await window.api.expandFolders(); folderImgs = (res && res.images) || []; }
+  catch { folderImgs = []; }
+  if (tok !== allViewToken || LIB.folderPath || LIB.filter !== 'all') return; // stale
+  // entries: pool items (with metadata) + ephemeral folder images (no overlap — expand
+  // excludes anything already in the pool by content id)
+  let entries = poolImgs.map((it) => ({ path: it.path, item: it }))
+    .concat(folderImgs.map((fi) => ({ path: fi.path, item: null })));
+  const q = LIB.q.trim().toLowerCase();
+  if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
+  if (LIB.sort === 'name') entries.sort((a, b) => baseName(a.path).localeCompare(baseName(b.path)));
+  else entries.sort((a, b) => ((b.item && b.item.addedAt) || 0) - ((a.item && a.item.addedAt) || 0));
+  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }
+  grid.innerHTML = '';
+  renderEntriesLazily(grid, entries, assignedIds(), tok);
+}
+
+// Append entries in chunks; an IntersectionObserver on #libSentinel pulls the next chunk
+// as the user scrolls. Falls back to rendering everything if observers are unavailable.
+function renderEntriesLazily(grid, entries, assigned, tok) {
+  const CHUNK = 60;
+  const sentinel = $('#libSentinel');
+  let i = 0;
+  const drawNext = () => {
+    if (tok !== allViewToken) return;
+    const end = Math.min(i + CHUNK, entries.length);
+    for (; i < end; i++) {
+      const en = entries[i];
+      grid.appendChild(en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path));
+    }
+    if (sentinel) sentinel.hidden = i >= entries.length;
+  };
+  drawNext();
+  if (libObserver) { libObserver.disconnect(); libObserver = null; }
+  if (sentinel && 'IntersectionObserver' in window) {
+    libObserver = new IntersectionObserver((ents) => {
+      if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) drawNext();
+    }, { root: null, rootMargin: '400px' });
+    libObserver.observe(sentinel);
+  } else {
+    while (i < entries.length) drawNext(); // no observer → render all
+  }
 }
 
 // Faint Explorer-style status line: shows the hovered item's name at the bottom.
 function setLibStatus(text) {
   const el = $('#libStatus');
   if (el) el.textContent = text || '';
+}
+
+// Set the empty-state caption (different wording inside an empty folder vs empty library).
+function setLibEmptyText(key) {
+  const empty = $('#libEmpty');
+  if (!empty) return;
+  const sp = empty.querySelector('span') || empty;
+  sp.textContent = t(key);
 }
 
 function closeLibPopup() {
@@ -861,6 +1133,7 @@ function initLibrary() {
     const btn = e.target.closest('.lib-railbtn');
     if (!btn) return;
     LIB.filter = btn.dataset.filter;
+    exitFolderState(); // switching rail leaves any open folder
     renderLibrary();
   });
   const sortEl = $('#libSort');

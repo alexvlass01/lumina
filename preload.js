@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('api', {
   clearSlot: (monitorId, which) => ipcRenderer.invoke('clear-slot', monitorId, which),
   currentImage: (monitorId, which) => ipcRenderer.invoke('current-image', monitorId, which),
   folderInfo: (dir) => ipcRenderer.invoke('folder-info', dir),
+  folderEntries: (dir) => ipcRenderer.invoke('folder-entries', dir),
 
   // Библиотека (пул контента)
   libraryAddImages: () => ipcRenderer.invoke('library-add-images'),
@@ -27,6 +28,8 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddTag: (id, tag) => ipcRenderer.invoke('library-add-tag', id, tag),
   libraryRemoveTag: (id, tag) => ipcRenderer.invoke('library-remove-tag', id, tag),
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
+  libraryMaterialize: (p, type) => ipcRenderer.invoke('library-materialize', p, type),
+  expandFolders: () => ipcRenderer.invoke('expand-folders'),
 
   // Wallhaven (онлайн-обои)
   wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),
@@ -34,10 +37,12 @@ contextBridge.exposeInMainWorld('api', {
   wallhavenAdd: (item, query) => ipcRenderer.invoke('wallhaven-add', item, query),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
+  setSlideshowToPath: (monitorId, which, p) => ipcRenderer.invoke('set-slideshow-to-path', monitorId, which, p),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   setStartMinimized: (v) => ipcRenderer.invoke('set-start-minimized', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
+  thumb: (p, w, h) => ipcRenderer.invoke('thumb', p, w, h),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
   shortcutsStatus: () => ipcRenderer.invoke('shortcuts-status'),

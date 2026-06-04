@@ -69,6 +69,43 @@ ok('resolveSlot(lib): unknown id skipped', P.resolveSlot({ itemIds: ['nope'] }, 
 ok('resolveSlot: legacy {items} still works w/o library',
   P.resolveSlot({ items: [{ type: 'image', path: realImg }] }).length === 1);
 
+// ---- resolvedIndexOf (path -> EXPANDED index; folder expands so strip idx != real idx) ----
+const slotFD = { itemIds: [idDir, idImg] }; // folder(dir)=a.png,b.jpg THEN explicit a.png (dedups)
+ok('resolvedIndexOf: folder image maps to its expanded index',
+  P.resolvedIndexOf(slotFD, lib, path.join(dir, 'b.jpg')) === 1);
+ok('resolvedIndexOf: first image at 0', P.resolvedIndexOf(slotFD, lib, realImg) === 0);
+ok('resolvedIndexOf: missing path -> -1', P.resolvedIndexOf(slotFD, lib, path.join(dir, 'zzz.jpg')) === -1);
+ok('resolvedIndexOf: case-insensitive', P.resolvedIndexOf(slotFD, lib, path.join(dir, 'B.JPG')) === 1);
+
 fs.rmSync(dir, { recursive: true, force: true });
+
+// ---- scanFolderEntries + scanFolderImagesDeep (real temp tree with nesting) ----
+const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-fold-'));
+fs.writeFileSync(path.join(tree, 'top.jpg'), 'x');
+fs.writeFileSync(path.join(tree, 'note.txt'), 'x'); // not an image
+const sub = path.join(tree, 'sub');
+fs.mkdirSync(sub);
+fs.writeFileSync(path.join(sub, 'deep.png'), 'x');
+const sub2 = path.join(sub, 'sub2');
+fs.mkdirSync(sub2);
+fs.writeFileSync(path.join(sub2, 'deeper.webp'), 'x');
+
+const ent = P.scanFolderEntries(tree);
+ok('scanFolderEntries: lists subfolders', ent.folders.some((p) => p.endsWith('sub')));
+ok('scanFolderEntries: lists one-level images', ent.images.some((p) => p.endsWith('top.jpg')));
+ok('scanFolderEntries: excludes non-images', !ent.images.some((p) => p.endsWith('.txt')));
+ok('scanFolderEntries: does NOT recurse images', !ent.images.some((p) => p.endsWith('deep.png')));
+
+const deep = P.scanFolderImagesDeep(tree);
+ok('scanFolderImagesDeep: includes top + all nested levels',
+  deep.some((p) => p.endsWith('top.jpg')) && deep.some((p) => p.endsWith('deep.png')) && deep.some((p) => p.endsWith('deeper.webp')));
+ok('scanFolderImagesDeep: excludes non-images', !deep.some((p) => p.endsWith('.txt')));
+ok('scanFolderImagesDeep: respects maxDepth (0 = top level only)', (() => {
+  const d0 = P.scanFolderImagesDeep(tree, { maxDepth: 0 });
+  return d0.some((p) => p.endsWith('top.jpg')) && !d0.some((p) => p.endsWith('deep.png'));
+})());
+ok('scanFolderImagesDeep: respects cap', P.scanFolderImagesDeep(tree, { cap: 1 }).length === 1);
+
+fs.rmSync(tree, { recursive: true, force: true });
 
 console.log('\nAll ' + passed + ' playlist tests passed.');

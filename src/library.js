@@ -85,6 +85,34 @@ function resolveIds(library, ids) {
   return out;
 }
 
+// Flatten the pool into a deduped image list for the "All" view: every image item
+// PLUS the recursively-expanded contents of every folder item. `scanDeep(dir)` is
+// injected (main passes the FS-backed recursive scanner; tests pass a stub) so this
+// stays pure and unit-testable. Returns [{ id, path, inPool }] deduped by id with
+// pool items winning (they own metadata: favorite/tags/assigned), so a folder image
+// that was already "materialized" into the pool shows once, as the real item.
+function flattenImages(library, scanDeep) {
+  const out = [];
+  const seen = new Set();
+  const push = (p, inPool) => {
+    if (!p) return;
+    const id = idFor(p);
+    if (seen.has(id)) return;
+    seen.add(id);
+    out.push({ id, path: p, inPool: !!inPool });
+  };
+  const lib = library || {};
+  for (const it of Object.values(lib)) {
+    if (it && it.type === 'image' && it.path) push(it.path, true);
+  }
+  for (const it of Object.values(lib)) {
+    if (it && it.type === 'folder' && it.path && typeof scanDeep === 'function') {
+      for (const p of scanDeep(it.path)) push(p, false);
+    }
+  }
+  return out;
+}
+
 // ---- tags (manual, on pool items) ----
 
 // Normalize a tag: trimmed, collapsed whitespace, lowercase (tags are categories).
@@ -177,5 +205,5 @@ function migrateConfig(cfg) {
 module.exports = {
   idFor, baseName, makeItem, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
-  resolveIds, listItems, migrateSlot, migrateConfig,
+  resolveIds, flattenImages, listItems, migrateSlot, migrateConfig,
 };
