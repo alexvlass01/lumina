@@ -817,18 +817,16 @@ const trayCtl = createTrayController({
 // Autostart
 // ---------------------------------------------------------------------------
 function applyLoginItem() {
-  const args = [];
-  if (!app.isPackaged) {
-    args.push(`"${app.getAppPath()}"`);
-  }
-  if (config.startMinimized) {
-    args.push('--hidden');
-  }
-
+  // Автозапуском Windows управляет ТОЛЬКО установленная (Squirrel) сборка. Dev и портативная
+  // НЕ трогают реестр: иначе каждая сборка регистрируется под СВОИМ ключом (electron.app.<name>,
+  // имя/путь различаются), записи в HKCU\…\Run накапливаются, и при входе в Windows стартует сразу
+  // НЕСКОЛЬКО разных версий (баг 2026-06-05: поднималась портативная/dev вместо установленной,
+  // а из-за дубль-экземпляра second-instance вылезало окно даже при --hidden).
+  if (!updatesSupported()) return;
   app.setLoginItemSettings({
     openAtLogin: config.autostart,
     path: process.execPath,
-    args: args,
+    args: config.startMinimized ? ['--hidden'] : [],
   });
 }
 
