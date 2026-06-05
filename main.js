@@ -33,6 +33,7 @@ if (!gotLock) {
 }
 
 const STARTED_HIDDEN = process.argv.includes('--hidden');
+const START_TS = Date.now();
 
 let mainWindow = null;
 app.isQuitting = false;
@@ -1432,7 +1433,13 @@ ipcMain.handle('create-shortcuts', (e, which) => {
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
-app.on('second-instance', () => showWindow());
+app.on('second-instance', () => {
+  // Защита от ДУБЛЯ автозапуска: если в реестре осталось несколько устаревших записей (от dev/
+  // портативной сборок), при входе в Windows поднимается несколько экземпляров — второй НЕ должен
+  // «будить» окно, раз мы стартовали скрыто (--hidden). Ручной повторный запуск (позже) показывает окно.
+  if (STARTED_HIDDEN && Date.now() - START_TS < 10000) return;
+  showWindow();
+});
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
