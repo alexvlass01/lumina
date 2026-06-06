@@ -831,6 +831,20 @@ function applyLoginItem() {
   });
 }
 
+// Подчистить ОСИРОТЕВШИЕ записи автозапуска от dev/portable сборок (`electron.app.*`): право на
+// автозапуск Windows есть только у установленной версии. Записи могут жить не только в `…\Run`, но и в
+// `…\Explorer\StartupApproved\Run` (ветка статусов) — её Диспетчер задач показывает как автозапуск, и
+// обычным `reg query …\Run` её не видно. Тихо, fire-and-forget; трогаем ТОЛЬКО наши ключи.
+function cleanStrayAutostartEntries() {
+  if (!updatesSupported()) return; // только установленная (Squirrel) сборка чистит
+  const keys = [
+    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run',
+    'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\StartupApproved\\Run',
+  ];
+  const names = ['electron.app.Lumina', 'electron.app.Electron', 'electron.app.Adwaita Wallpaper'];
+  for (const k of keys) for (const n of names) execFile('reg', ['delete', k, '/v', n, '/f'], () => {});
+}
+
 function setAutostart(enabled) {
   config.autostart = enabled;
   applyLoginItem();
@@ -1470,6 +1484,7 @@ app.whenReady().then(async () => {
 
   // keep the OS login item in sync with config (openAtLogin + the --hidden arg)
   applyLoginItem();
+  cleanStrayAutostartEntries(); // убрать осиротевшие dev/portable записи автозапуска (см. функцию)
 
   createWindow();
   trayCtl.create();
