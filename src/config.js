@@ -22,6 +22,7 @@ const DEFAULT_CONFIG = {
   language: 'system',     // 'system' | 'en' | 'ru' | 'uk'
   firstRunDone: false,
   telemetry: false,       // задел: анонимная статистика (пока ничего не отправляется)
+  librarySort: 'added',   // сортировка в «Библиотеке»: 'added' | 'name' | 'size' | 'shuffle'
   // Lumina itself switching the Windows theme on a schedule. mode: 'off'|'time'|'sun'
   themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
   // Слайдшоу: плейлист крутится по интервалу. order: 'sequential' | 'shuffle'

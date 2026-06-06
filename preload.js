@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('api', {
   libraryAssign: (id, monitorId, which) => ipcRenderer.invoke('library-assign', id, monitorId, which),
   libraryMaterialize: (p, type) => ipcRenderer.invoke('library-materialize', p, type),
   expandFolders: () => ipcRenderer.invoke('expand-folders'),
+  libraryEnsureSizes: () => ipcRenderer.invoke('library-ensure-sizes'),
 
   // Wallhaven (онлайн-обои)
   wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),
@@ -39,6 +40,7 @@ contextBridge.exposeInMainWorld('api', {
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
   setSlideshowToPath: (monitorId, which, p) => ipcRenderer.invoke('set-slideshow-to-path', monitorId, which, p),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
+  nextWallpaper: () => ipcRenderer.invoke('next-wallpaper'),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   setStartMinimized: (v) => ipcRenderer.invoke('set-start-minimized', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),

@@ -325,6 +325,14 @@ body.first-run .tb-right { display: none; }
   font-size: 14px;
 }
 
+.home-card-actions { display: flex; justify-content: flex-end; }
+.home-next-wall {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 14px;
+}
+.home-next-wall .hnw-ic { font-size: 13px; line-height: 1; }
+.home-next-wall[hidden] { display: none; }
+
 /* ---------- Smart Panel ---------- */
 .smart-panel {
   display: flex;

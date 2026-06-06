@@ -125,6 +125,11 @@
           </div>
           
           <div class="home-monitors" id="homeMonitors"></div>
+          <div class="home-card-actions">
+            <button class="pill home-next-wall" id="btnNextWall" hidden data-i18n-title="home.nextWallpaperHint">
+              <span class="hnw-ic">⏭</span><span data-i18n="home.nextWallpaper">Сменить обои</span>
+            </button>
+          </div>
         </div>
 
         <!-- Smart Panel -->
@@ -369,6 +374,8 @@
                 <select id="libSort">
                   <option value="added" data-i18n="library.sortAdded">Сначала новые</option>
                   <option value="name" data-i18n="library.sortName">По имени</option>
+                  <option value="size" data-i18n="library.sortSize">По размеру</option>
+                  <option value="shuffle" data-i18n="library.sortShuffle">Вперемешку</option>
                 </select>
               </div>
               <button class="pill" id="libAddPhotos" data-i18n="library.addPhotos">Добавить фото…</button>

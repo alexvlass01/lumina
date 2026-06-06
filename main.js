@@ -1132,6 +1132,20 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
   return config;
 });
 
+// Заполнить размеры файлов (байты) для сортировки «по размеру» — лениво, по запросу.
+// Считаем только для image-элементов без size; folder/недоступные → 0.
+ipcMain.handle('library-ensure-sizes', () => {
+  let changed = false;
+  for (const it of Object.values(config.library || {})) {
+    if (it && it.type === 'image' && it.path && typeof it.size !== 'number') {
+      try { it.size = fs.statSync(it.path).size; } catch { it.size = 0; }
+      changed = true;
+    }
+  }
+  if (changed) saveConfig();
+  return config;
+});
+
 ipcMain.handle('library-add-tag', (e, id, tag) => {
   if (library.addTag(config.library, id, tag)) saveConfig();
   return config;
@@ -1286,6 +1300,10 @@ ipcMain.handle('set-slideshow', (e, patch) => {
 });
 
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which, true));
+
+// Ручная смена обоев на следующий кадр (кнопка на Главной / хоткей). Крутит слайдшоу,
+// если включено, иначе просто сдвигает индекс плейлиста и применяет.
+ipcMain.handle('next-wallpaper', () => { triggerNextWallpaper(); return config; });
 
 // Jump to a specific playlist item for a monitor+theme and apply immediately.
 ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {

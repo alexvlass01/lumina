@@ -80,6 +80,7 @@ if (!window.api) {
     folderInfo: async () => ({ count: 0, subfolders: 0, previews: [] }),
     folderEntries: async () => ({ folders: [], images: [], count: 0 }),
     expandFolders: async () => ({ images: [] }),
+    libraryEnsureSizes: async () => mock,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
@@ -93,6 +94,7 @@ if (!window.api) {
     },
     setSlideshowToPath: async () => mock,
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
+    nextWallpaper: async () => mock,
     setAutostart: async (v) => (mock.autostart = v),
     setStartMinimized: async (v) => (mock.startMinimized = v),
     fileUrl: async (p) => p,
@@ -558,7 +560,7 @@ async function renderConfig() {
 // ---------------------------------------------------------------------------
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
-const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [] };
+const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {} };
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
@@ -582,6 +584,18 @@ function libAllTags() {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+// Сортировка массива на месте по LIB.sort (added/name/size/shuffle). `get` — аксессоры,
+// чтобы одна логика работала и для элементов пула, и для записей плоского «Все» ({path,item,id}).
+function sortItems(arr, get) {
+  const g = get || { path: (x) => x.path, added: (x) => x.addedAt || 0, size: (x) => x.size || 0, id: (x) => x.id };
+  if (LIB.sort === 'name') arr.sort((a, b) => baseName(g.path(a)).localeCompare(baseName(g.path(b))));
+  else if (LIB.sort === 'size') arr.sort((a, b) => g.size(b) - g.size(a));
+  else if (LIB.sort === 'shuffle') {
+    arr.forEach((x) => { const id = g.id(x); if (LIB.shuffleRank[id] === undefined) LIB.shuffleRank[id] = Math.random(); });
+    arr.sort((a, b) => LIB.shuffleRank[g.id(a)] - LIB.shuffleRank[g.id(b)]);
+  } else arr.sort((a, b) => g.added(b) - g.added(a));
+}
+
 function libList() {
   let items = Object.values(config.library || {});
   if (LIB.filter === 'favorite') items = items.filter((it) => it.favorite);
@@ -592,8 +606,7 @@ function libList() {
   }
   const q = LIB.q.trim().toLowerCase();
   if (q) items = items.filter((it) => baseName(it.path).toLowerCase().includes(q));
-  if (LIB.sort === 'name') items.sort((a, b) => baseName(a.path).localeCompare(baseName(b.path)));
-  else items.sort((a, b) => (b.addedAt || 0) - (a.addedAt || 0));
+  sortItems(items);
   return items;
 }
 
@@ -944,12 +957,16 @@ async function renderAllView(tok) {
   if (tok !== allViewToken || LIB.folderPath || LIB.filter !== 'all') return; // stale
   // entries: pool items (with metadata) + ephemeral folder images (no overlap — expand
   // excludes anything already in the pool by content id)
-  let entries = poolImgs.map((it) => ({ path: it.path, item: it }))
-    .concat(folderImgs.map((fi) => ({ path: fi.path, item: null })));
+  let entries = poolImgs.map((it) => ({ path: it.path, item: it, id: it.id }))
+    .concat(folderImgs.map((fi) => ({ path: fi.path, item: null, id: fi.id })));
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
-  if (LIB.sort === 'name') entries.sort((a, b) => baseName(a.path).localeCompare(baseName(b.path)));
-  else entries.sort((a, b) => ((b.item && b.item.addedAt) || 0) - ((a.item && a.item.addedAt) || 0));
+  sortItems(entries, {
+    path: (x) => x.path,
+    added: (x) => (x.item && x.item.addedAt) || 0,
+    size: (x) => (x.item && x.item.size) || 0,
+    id: (x) => x.id,
+  });
   if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }
   grid.innerHTML = '';
   renderEntriesLazily(grid, entries, assignedIds(), tok);
@@ -1194,7 +1211,17 @@ function initLibrary() {
     renderLibrary();
   });
   const sortEl = $('#libSort');
-  if (sortEl) sortEl.addEventListener('change', () => { LIB.sort = sortEl.value; renderLibrary(); });
+  if (sortEl) {
+    LIB.sort = config.librarySort || 'added';
+    sortEl.value = LIB.sort;
+    sortEl.addEventListener('change', async () => {
+      LIB.sort = sortEl.value;
+      if (LIB.sort === 'shuffle') LIB.shuffleRank = {}; // новый случайный порядок при каждом выборе
+      if (LIB.sort === 'size') config = await window.api.libraryEnsureSizes();
+      config = await window.api.setConfig({ librarySort: LIB.sort });
+      renderLibrary();
+    });
+  }
   const searchEl = $('#libSearch');
   if (searchEl) searchEl.addEventListener('input', () => { LIB.q = searchEl.value; renderLibrary(); });
   const addP = $('#libAddPhotos');
@@ -1398,9 +1425,32 @@ async function updateShortcutButtons() {
 }
 
 // Home dashboard: current wallpaper per monitor (active theme) + status.
+// Кнопка «Сменить обои» на Главной: видна, когда есть что листать (слайдшоу включено,
+// либо в плейлисте текущей темы ≥2 кадров / есть папка-источник).
+function hasNextWallpaper() {
+  if (config.slideshow && config.slideshow.enabled) return true;
+  const th = currentTheme;
+  for (const m of Object.values(config.monitors || {})) {
+    const slot = m && m[th];
+    if (slot && Array.isArray(slot.itemIds)) {
+      if (slot.itemIds.length >= 2) return true;
+      for (const id of slot.itemIds) {
+        const it = (config.library || {})[id];
+        if (it && it.type === 'folder') return true;
+      }
+    }
+  }
+  return false;
+}
+function updateNextWallBtn() {
+  const b = $('#btnNextWall');
+  if (b) b.hidden = !hasNextWallpaper();
+}
+
 const HOME_THUMB_H = 180;
 function renderHome() {
   if (!config) return;
+  updateNextWallBtn();
   const wrap = $('#homeMonitors');
   if (wrap) {
     if (!monitorList.length) {
@@ -1565,6 +1615,13 @@ async function init() {
   });
   $('#btnPrefs').addEventListener('click', () => showPage('prefs'));
 
+  // ---- home: switch to the next wallpaper now ----
+  const btnNextWall = $('#btnNextWall');
+  if (btnNextWall) btnNextWall.addEventListener('click', async () => {
+    btnNextWall.disabled = true;
+    try { await window.api.nextWallpaper(); toast(t('toast.nextWallpaper')); }
+    finally { setTimeout(() => { renderHome(); renderPreviews(); btnNextWall.disabled = false; }, 350); }
+  });
 
   // ---- settings: quit the app ----
   $('#btnQuit').addEventListener('click', () => window.api.quitApp());
