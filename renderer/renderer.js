@@ -577,7 +577,7 @@ async function renderConfig() {
 // ---------------------------------------------------------------------------
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
-const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {} };
+const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null };
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
@@ -724,9 +724,34 @@ function buildLibCard(it, isAssigned) {
   card.appendChild(menu);
 
   card.addEventListener('mouseenter', () => setLibStatus(baseName(it.path)));
-  card.addEventListener('click', () => {
-    if (it.type === 'folder') enterFolder(it.path, baseName(it.path));
-    else openAssignMenu(it, menu);
+  card.addEventListener('mouseleave', () => setLibStatus(''));
+  card.addEventListener('click', (e) => {
+    // Folder click — always navigate unless using Ctrl/Shift
+    if (it.type === 'folder' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+      enterFolder(it.path, baseName(it.path));
+      return;
+    }
+    // Ctrl+click: toggle this item in/out of selection
+    if (e.ctrlKey || e.metaKey) {
+      if (LIB.selection.has(it.id)) { LIB.selection.delete(it.id); }
+      else { LIB.selection.add(it.id); LIB.lastSelected = it.id; }
+    // Shift+click: select range from anchor to this item
+    } else if (e.shiftKey && LIB.lastSelected) {
+      const cards = Array.from(document.querySelectorAll('.lib-card[data-id]'));
+      const idx1 = cards.findIndex(c => c.dataset.id === LIB.lastSelected);
+      const idx2 = cards.findIndex(c => c.dataset.id === it.id);
+      if (idx1 !== -1 && idx2 !== -1) {
+        LIB.selection.clear();
+        const lo = Math.min(idx1, idx2), hi = Math.max(idx1, idx2);
+        for (let i = lo; i <= hi; i++) LIB.selection.add(cards[i].dataset.id);
+      }
+    // Plain click with something selected — clear selection, open normal menu
+    } else {
+      if (LIB.selection.size > 0) { clearSelection(); syncSelectionUI(); return; }
+      openAssignMenu(it, menu);
+      return;
+    }
+    syncSelectionUI();
   });
   return card;
 }
@@ -1022,6 +1047,79 @@ function setLibStatus(text) {
   if (el) el.textContent = text || '';
 }
 
+// ---- Multi-selection helpers ----
+function clearSelection() {
+  LIB.selection.clear();
+  LIB.lastSelected = null;
+}
+
+function syncSelectionUI() {
+  // Sync .selected class on cards
+  document.querySelectorAll('.lib-card[data-id]').forEach(c => {
+    c.classList.toggle('selected', LIB.selection.has(c.dataset.id));
+  });
+  // Show/hide selection bar
+  const bar = $('#libSelectionBar');
+  if (!bar) return;
+  if (LIB.selection.size === 0) {
+    bar.hidden = true;
+    return;
+  }
+  bar.hidden = false;
+  const n = LIB.selection.size;
+  $('#libSelCount').textContent = t('library.selected', { n });
+  $('#libSelAssign').textContent = t('library.massAssign');
+  $('#libSelDelete').textContent = t('library.massDelete');
+}
+
+function openMassAssignMenu() {
+  closeLibPopup();
+  const pop = document.createElement('div');
+  pop.className = 'lib-popup';
+  pop.id = 'libPopup';
+
+  const title = document.createElement('div');
+  title.className = 'lib-popup-title';
+  title.textContent = t('library.assignTo');
+  pop.appendChild(title);
+
+  const mons = monitorList.length ? monitorList : [{ id: null, primary: true }];
+  mons.forEach((m, i) => {
+    const row = document.createElement('div');
+    row.className = 'lib-popup-row';
+    const lbl = document.createElement('span');
+    lbl.className = 'lib-popup-mon';
+    lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
+    row.appendChild(lbl);
+    [['light', '☀'], ['dark', '🌙']].forEach(([th, ic]) => {
+      const b = document.createElement('button');
+      b.className = 'lib-popup-btn';
+      b.textContent = `${ic} ${t(th === 'dark' ? 'design.darkTheme' : 'design.lightTheme')}`;
+      b.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        for (const id of LIB.selection) {
+          config = await window.api.libraryAssign(id, m.id, th);
+        }
+        closeLibPopup();
+        clearSelection();
+        syncSelectionUI();
+        renderLibrary();
+        renderPreviews();
+        renderHome();
+        toast(t('library.assignedToast'));
+      });
+      row.appendChild(b);
+    });
+    pop.appendChild(row);
+  });
+
+  // Position in center of screen
+  document.body.appendChild(pop);
+  const rect = pop.getBoundingClientRect();
+  pop.style.left = `${(window.innerWidth - rect.width) / 2}px`;
+  pop.style.top = `${(window.innerHeight - rect.height) / 2}px`;
+}
+
 // Set the empty-state caption (different wording inside an empty folder vs empty library).
 function setLibEmptyText(key) {
   const empty = $('#libEmpty');
@@ -1226,6 +1324,41 @@ function initLibrary() {
     LIB.filter = btn.dataset.filter;
     exitFolderState(); // switching rail leaves any open folder
     renderLibrary();
+  });
+
+  // Click on empty space in library clears selection
+  const libView = $('#viewLibrary');
+  if (libView) libView.addEventListener('click', (e) => {
+    if (LIB.selection.size === 0) return;
+    if (e.target.closest('.lib-card') || e.target.closest('.lib-popup') || e.target.closest('.lib-selection-bar') || e.target.closest('button') || e.target.closest('input') || e.target.closest('select')) return;
+    clearSelection();
+    syncSelectionUI();
+  });
+
+  // Escape key clears selection
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && LIB.selection.size > 0) {
+      clearSelection();
+      syncSelectionUI();
+    }
+  });
+
+  // Selection bar buttons
+  const selClear = $('#libSelClear');
+  if (selClear) selClear.addEventListener('click', () => { clearSelection(); syncSelectionUI(); });
+  const selAssign = $('#libSelAssign');
+  if (selAssign) selAssign.addEventListener('click', () => openMassAssignMenu());
+  const selDelete = $('#libSelDelete');
+  if (selDelete) selDelete.addEventListener('click', async () => {
+    for (const id of LIB.selection) {
+      config = await window.api.libraryRemove(id);
+    }
+    clearSelection();
+    syncSelectionUI();
+    renderLibrary();
+    renderPreviews();
+    renderHome();
+    toast(t('library.removedToast'));
   });
   const sortEl = $('#libSort');
   if (sortEl) {

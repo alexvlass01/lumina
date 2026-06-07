@@ -1,5 +1,9 @@
 {
-  "nav": { "home": "Home", "library": "Library", "design": "Appearance" },
+  "nav": {
+    "home": "Home",
+    "library": "Library",
+    "design": "Appearance"
+  },
   "prefs": {
     "tooltip": "App settings",
     "appGroup": "App settings",
@@ -30,7 +34,9 @@
     "updateError": "Couldn't check for updates",
     "quit": "Quit application"
   },
-  "lang": { "system": "System" },
+  "lang": {
+    "system": "System"
+  },
   "welcome": {
     "title": "Welcome to Lumina",
     "sub": "Lumina keeps separate wallpapers for the light and dark theme — per monitor — and switches them automatically when the Windows theme changes. It runs in the background, in the system tray.",
@@ -109,7 +115,10 @@
     "addTagPh": "Add a tag…",
     "remove": "Remove from library",
     "assignedToast": "Assigned",
-    "removedToast": "Removed from library"
+    "removedToast": "Removed from library",
+    "selected": "Selected: {n}",
+    "massAssign": "Assign...",
+    "massDelete": "Remove from library"
   },
   "online": {
     "rail": "🌐 Online",
@@ -160,7 +169,10 @@
     "orderTitle": "Order",
     "orderSub": "How the next picture is chosen"
   },
-  "order": { "sequential": "In order", "shuffle": "Shuffle" },
+  "order": {
+    "sequential": "In order",
+    "shuffle": "Shuffle"
+  },
   "style": {
     "fill": "Fill",
     "fit": "Fit",
@@ -169,8 +181,15 @@
     "tile": "Tile",
     "span": "Span across monitors"
   },
-  "monitor": { "label": "Monitor {n}", "primary": "primary", "vertical": "vertical" },
-  "val": { "on": "On", "off": "Off" },
+  "monitor": {
+    "label": "Monitor {n}",
+    "primary": "primary",
+    "vertical": "vertical"
+  },
+  "val": {
+    "on": "On",
+    "off": "Off"
+  },
   "toast": {
     "applied": "Wallpaper applied",
     "nextWallpaper": "Wallpaper switched",
