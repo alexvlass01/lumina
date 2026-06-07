@@ -389,6 +389,7 @@ function setWindowsTheme(isDark) {
 }
 
 let themeTimer = null;
+let lastScheduledTheme = null;
 
 function parseHM(s) {
   const [h, m] = String(s || '').split(':').map(Number);
@@ -452,7 +453,6 @@ function clearThemeTimer() {
   if (themeTimer) { clearTimeout(themeTimer); themeTimer = null; }
 }
 
-// Apply the scheduled theme now (modes: time / sun) and schedule the next flip.
 async function applyThemeSchedule() {
   clearThemeTimer();
   const sch = config.themeSchedule || {};
@@ -461,6 +461,27 @@ async function applyThemeSchedule() {
   const b = scheduleBoundaries(now);
   if (!b) { themeTimer = setTimeout(applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
   const wantDark = boundariesSayDark(b, now);
+  const scheduledTheme = wantDark ? 'dark' : 'light';
+
+  // Smart reset: if the schedule crossed a boundary (e.g. sunrise to sunset) and the theme was manually overridden, drop the override.
+  if (lastScheduledTheme && lastScheduledTheme !== scheduledTheme) {
+    if (config.themeOverride != null) {
+      console.log('[Theme] Scheduled boundary crossed. Dropping themeOverride.');
+      config.themeOverride = null;
+      saveConfig();
+    }
+  }
+  lastScheduledTheme = scheduledTheme;
+
+  // If there's an active override, we skip applying the scheduled theme to Windows, but keep the timer running to detect the next boundary.
+  if (config.themeOverride != null) {
+    const nowMin = now.getHours() * 60 + now.getMinutes();
+    const minsUntil = [b.lightMin, b.darkMin].map((x) => { let d = x - nowMin; if (d <= 0) d += 1440; return d; });
+    const mins = Math.max(1, Math.min(...minsUntil));
+    themeTimer = setTimeout(applyThemeSchedule, mins * 60000 + 3000);
+    return;
+  }
+
   if (wantDark !== nativeTheme.shouldUseDarkColors) {
     if (config.gameModeBlock && await isGameOrFullscreenRunning()) {
       console.log('[GameMode] Theme schedule flip blocked. Will retry in 1 minute.');
@@ -1315,6 +1336,37 @@ ipcMain.handle('set-slideshow', (e, patch) => {
 
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which, true));
 
+ipcMain.handle('cycle-theme-override', async () => {
+  let next = null;
+  const isDark = nativeTheme.shouldUseDarkColors;
+
+  if (config.themeOverride == null) {
+    config._lastAutoTheme = isDark ? 'dark' : 'light';
+    next = isDark ? 'light' : 'dark';
+  } else {
+    const opp = config._lastAutoTheme === 'dark' ? 'light' : 'dark';
+    if (config.themeOverride === opp) {
+      next = config._lastAutoTheme;
+    } else {
+      next = null;
+    }
+  }
+  
+  config.themeOverride = next;
+  saveConfig();
+  
+  if (next === 'light') {
+    await setWindowsTheme(false);
+    applyThemeSchedule(); // Re-start timer to listen for boundaries
+  } else if (next === 'dark') {
+    await setWindowsTheme(true);
+    applyThemeSchedule(); // Re-start timer to listen for boundaries
+  } else {
+    applyThemeSchedule();
+  }
+  return next;
+});
+
 // Ручная смена обоев на следующий кадр (кнопка на Главной / хоткей). Крутит слайдшоу,
 // если включено, иначе просто сдвигает индекс плейлиста и применяет.
 ipcMain.handle('next-wallpaper', () => { triggerNextWallpaper(); return config; });
@@ -1500,6 +1552,12 @@ app.whenReady().then(async () => {
   }
 
   nativeTheme.on('updated', () => {
+    const isDark = nativeTheme.shouldUseDarkColors;
+    if ((config.themeOverride === 'light' && isDark) || (config.themeOverride === 'dark' && !isDark)) {
+      config.themeOverride = null;
+      saveConfig();
+    }
+    
     if (mainWindow && !mainWindow.isDestroyed()) {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }

@@ -487,6 +487,21 @@ function applyThemeToUI(theme) {
   const isDark = theme === 'dark';
   $('#heroIcon').textContent = isDark ? '🌙' : '☀️';
   $('#heroSub').textContent = isDark ? t('home.themeDark') : t('home.themeLight');
+  
+  if (config) {
+    const mode = config.themeOverride;
+    const ind = $('#themeIndicator');
+    ind.style.cursor = 'pointer';
+    if (mode === 'light') {
+      ind.title = 'Принудительно Светлая (клик для переключения)';
+      $('#heroIcon').textContent = '☀️ 📌';
+    } else if (mode === 'dark') {
+      ind.title = 'Принудительно Тёмная (клик для переключения)';
+      $('#heroIcon').textContent = '🌙 📌';
+    } else {
+      ind.title = 'Режим: Авто (клик для переключения)';
+    }
+  }
 
   document.querySelectorAll('.wallcard').forEach((c) => {
     c.style.outline = c.dataset.theme === theme ? '2px solid var(--accent)' : 'none';
@@ -1706,6 +1721,12 @@ async function init() {
     config = await window.api.setConfig({ firstRunDone: true });
     renderConfig(); // sync the main settings controls with welcome choices
     exitFirstRun();
+  });
+
+  $('#themeIndicator').addEventListener('click', async () => {
+    const override = await window.api.cycleThemeOverride();
+    config.themeOverride = override;
+    applyThemeToUI(currentTheme); // Update tooltip immediately
   });
 
   // shortcut to Library to pick wallpapers when the monitor preview is empty

@@ -41,6 +41,7 @@ contextBridge.exposeInMainWorld('api', {
   setSlideshowToPath: (monitorId, which, p) => ipcRenderer.invoke('set-slideshow-to-path', monitorId, which, p),
   applyNow: (which) => ipcRenderer.invoke('apply-now', which),
   nextWallpaper: () => ipcRenderer.invoke('next-wallpaper'),
+  cycleThemeOverride: () => ipcRenderer.invoke('cycle-theme-override'),
   setAutostart: (v) => ipcRenderer.invoke('set-autostart', v),
   setStartMinimized: (v) => ipcRenderer.invoke('set-start-minimized', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
