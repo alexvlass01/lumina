@@ -118,6 +118,8 @@
     "sortTop": "Top",
     "sortRandom": "Random",
     "sortViews": "Views",
+    "filterToggle": "Content filters",
+    "purityLabel": "Content purity:",
     "nsfw": "NSFW",
     "search": "Search",
     "more": "Show more",

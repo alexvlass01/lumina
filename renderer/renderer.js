@@ -1338,7 +1338,7 @@ function updatePurityToggle() {
       const lbl = $('#lblPurityNsfw');
       if (lbl) {
         lbl.style.opacity = WH.hasKey ? '1' : '0.5';
-        lbl.title = WH.hasKey ? '' : '18+ (нужен ключ)';
+        lbl.title = WH.hasKey ? '' : t('online.nsfwNeedsKey');
       }
     }
   });
