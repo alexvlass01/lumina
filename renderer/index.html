@@ -394,7 +394,11 @@
                   <option value="views" data-i18n="online.sortViews">Просмотры</option>
                 </select>
               </div>
-              <button class="pill" id="whNsfw" data-i18n="online.nsfw">NSFW</button>
+              <div class="wh-purity-group" id="whPurityGroup">
+                <button class="pill purity-btn active" data-purity="sfw" title="Safe For Work (безопасные)">SFW</button>
+                <button class="pill purity-btn active" data-purity="sketchy" title="На грани / Откровенные">Sketchy</button>
+                <button class="pill purity-btn" data-purity="nsfw" title="18+ (нужен ключ)">NSFW</button>
+              </div>
               <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
             </div>
             <div class="lib-online-note" id="whNote"></div>

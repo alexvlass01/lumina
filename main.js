@@ -1213,8 +1213,10 @@ ipcMain.handle('wallhaven-status', () => ({ hasKey: !!wallhavenKey(), bundled: !
 ipcMain.handle('wallhaven-search', async (e, opts) => {
   const o = opts || {};
   const key = wallhavenKey();
-  const wantNsfw = !!o.nsfw && !!key;
-  const purity = wallhaven.purityMask({ sfw: true, sketchy: o.sketchy !== false, nsfw: wantNsfw });
+  
+  const p = o.purity || { sfw: true, sketchy: true, nsfw: false };
+  const wantNsfw = !!p.nsfw && !!key;
+  const purity = wallhaven.purityMask({ sfw: !!p.sfw, sketchy: !!p.sketchy, nsfw: wantNsfw });
   const url = wallhaven.buildSearchUrl({
     q: o.q || '',
     purity,

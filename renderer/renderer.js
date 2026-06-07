@@ -581,7 +581,7 @@ const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [],
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
-const WH = { q: '', sort: 'date_added', nsfw: false, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
+const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
 
 // ids referenced by any monitor×theme slot (to mark assigned items)
 function assignedIds() {
@@ -1263,13 +1263,25 @@ function initLibrary() {
   if (whQ) whQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') doWhSearch(true); });
   const whSortEl = $('#whSort');
   if (whSortEl) whSortEl.addEventListener('change', () => { WH.sort = whSortEl.value; if (WH.searched) doWhSearch(true); });
-  const whNsfwBtn = $('#whNsfw');
-  if (whNsfwBtn) whNsfwBtn.addEventListener('click', () => {
-    if (!WH.hasKey) { toast(t('online.nsfwNeedsKey')); return; }
-    WH.nsfw = !WH.nsfw;
-    updateNsfwToggle();
-    if (WH.searched) doWhSearch(true);
-  });
+  const purityGroup = $('#whPurityGroup');
+  if (purityGroup) {
+    purityGroup.querySelectorAll('.purity-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.purity;
+        if (p === 'nsfw' && !WH.hasKey) { toast(t('online.nsfwNeedsKey')); return; }
+        WH.purity[p] = !WH.purity[p];
+        
+        // Prevent unchecking everything (at least one must be active)
+        if (!WH.purity.sfw && !WH.purity.sketchy && !WH.purity.nsfw) {
+          WH.purity[p] = true;
+          return;
+        }
+        
+        updatePurityToggle();
+        if (WH.searched) doWhSearch(true);
+      });
+    });
+  }
   const whMoreBtn = $('#whMore');
   if (whMoreBtn) whMoreBtn.addEventListener('click', () => { WH.page += 1; doWhSearch(false); });
 
@@ -1306,12 +1318,27 @@ function initLibraryDragDrop() {
 }
 
 // ---- Online (Wallhaven) ----
-function updateNsfwToggle() {
-  const btn = $('#whNsfw');
-  if (!btn) return;
-  btn.classList.toggle('done', WH.nsfw && WH.hasKey);
-  btn.disabled = !WH.hasKey;
-  btn.title = WH.hasKey ? '' : t('online.nsfwNeedsKey');
+function updatePurityToggle() {
+  const group = $('#whPurityGroup');
+  if (!group) return;
+  
+  group.querySelectorAll('.purity-btn').forEach(btn => {
+    const p = btn.dataset.purity;
+    btn.classList.toggle('active', !!WH.purity[p]);
+    
+    if (p === 'nsfw') {
+      if (!WH.hasKey) {
+        btn.classList.remove('active');
+        WH.purity.nsfw = false;
+        btn.style.opacity = '0.5';
+        btn.style.cursor = 'default';
+      } else {
+        btn.style.opacity = '1';
+        btn.style.cursor = 'pointer';
+        btn.title = '18+';
+      }
+    }
+  });
 }
 
 async function renderOnline() {
@@ -1320,7 +1347,7 @@ async function renderOnline() {
     catch { WH.hasKey = false; }
     WH.statusFetched = true;
   }
-  updateNsfwToggle();
+  updatePurityToggle();
   if (!WH.searched) {
     const note = $('#whNote');
     if (note) note.textContent = t('online.hint');
@@ -1337,11 +1364,11 @@ async function doWhSearch(reset) {
   const grid = $('#whGrid');
   if (note) note.textContent = t('online.loading');
   let res;
-  try { res = await window.api.wallhavenSearch({ q: WH.q, sort: WH.sort, nsfw: WH.nsfw, page: WH.page }); }
+  try { res = await window.api.wallhavenSearch({ q: WH.q, sort: WH.sort, purity: WH.purity, page: WH.page }); }
   catch (err) { res = { error: 'network' }; }
   WH.searched = true;
   WH.hasKey = !!res.hasKey;
-  updateNsfwToggle();
+  updatePurityToggle();
   if (res.error) { if (note) note.textContent = t('online.error', { e: res.error }); return; }
   WH.lastPage = (res.meta && res.meta.lastPage) || 1;
   if (reset && grid) grid.innerHTML = '';
