@@ -844,10 +844,19 @@ function applyLoginItem() {
   // НЕСКОЛЬКО разных версий (баг 2026-06-05: поднималась портативная/dev вместо установленной,
   // а из-за дубль-экземпляра second-instance вылезало окно даже при --hidden).
   if (!updatesSupported()) return;
+  // Point the Run entry at the STABLE Squirrel Update.exe (one level above app-<ver>), NOT at
+  // process.execPath. execPath is the versioned `…\app-<ver>\Lumina.exe`, and Squirrel removes the
+  // old app-<ver> folder on update — so a versioned Run entry goes stale after every update and the
+  // app silently stops auto-starting (bug 2026-06-07). `Update.exe --processStart Lumina.exe` always
+  // launches the current version and survives updates.
+  const exeName = path.basename(process.execPath); // Lumina.exe
+  const updateExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
+  const args = ['--processStart', exeName];
+  if (config.startMinimized) args.push('--process-start-args', '--hidden');
   app.setLoginItemSettings({
     openAtLogin: config.autostart,
-    path: process.execPath,
-    args: config.startMinimized ? ['--hidden'] : [],
+    path: updateExe,
+    args,
   });
 }
 
