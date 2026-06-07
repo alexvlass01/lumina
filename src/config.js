@@ -25,6 +25,8 @@ const DEFAULT_CONFIG = {
   librarySort: 'added',   // сортировка в «Библиотеке»: 'added' | 'name' | 'size' | 'shuffle'
   // Lumina itself switching the Windows theme on a schedule. mode: 'off'|'time'|'sun'
   themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
+  themeOverride: null,    // manual override from the Home theme indicator: null (Auto) | 'light' | 'dark'
+  _lastAutoTheme: null,   // theme that was active when the override was engaged (drives the Auto→light→dark→Auto cycle)
   // Слайдшоу: плейлист крутится по интервалу. order: 'sequential' | 'shuffle'
   slideshow: { enabled: false, intervalMin: 30, order: 'sequential' },
   slideshowIndex: {},     // { [deviceId]: { light: idx, dark: idx } } — текущий кадр

@@ -453,6 +453,7 @@ function clearThemeTimer() {
   if (themeTimer) { clearTimeout(themeTimer); themeTimer = null; }
 }
 
+// Apply the scheduled theme now (modes: time / sun) and schedule the next flip.
 async function applyThemeSchedule() {
   clearThemeTimer();
   const sch = config.themeSchedule || {};
@@ -463,13 +464,11 @@ async function applyThemeSchedule() {
   const wantDark = boundariesSayDark(b, now);
   const scheduledTheme = wantDark ? 'dark' : 'light';
 
-  // Smart reset: if the schedule crossed a boundary (e.g. sunrise to sunset) and the theme was manually overridden, drop the override.
-  if (lastScheduledTheme && lastScheduledTheme !== scheduledTheme) {
-    if (config.themeOverride != null) {
-      console.log('[Theme] Scheduled boundary crossed. Dropping themeOverride.');
-      config.themeOverride = null;
-      saveConfig();
-    }
+  // Smart reset: crossing a schedule boundary (e.g. sunrise→sunset) clears a manual override.
+  if (lastScheduledTheme && lastScheduledTheme !== scheduledTheme && config.themeOverride != null) {
+    console.log('[Theme] Scheduled boundary crossed — dropping manual override.');
+    config.themeOverride = null;
+    saveConfig();
   }
   lastScheduledTheme = scheduledTheme;
 
@@ -1213,7 +1212,6 @@ ipcMain.handle('wallhaven-status', () => ({ hasKey: !!wallhavenKey(), bundled: !
 ipcMain.handle('wallhaven-search', async (e, opts) => {
   const o = opts || {};
   const key = wallhavenKey();
-  
   const p = o.purity || { sfw: true, sketchy: true, nsfw: false };
   const wantNsfw = !!p.nsfw && !!key;
   const purity = wallhaven.purityMask({ sfw: !!p.sfw, sketchy: !!p.sketchy, nsfw: wantNsfw });
@@ -1338,34 +1336,24 @@ ipcMain.handle('set-slideshow', (e, patch) => {
 
 ipcMain.handle('apply-now', (e, which) => applyForTheme(which, true));
 
+// Theme indicator on Home is a 3-step toggle: Auto → force opposite of the current
+// auto theme → force the auto theme → back to Auto. _lastAutoTheme remembers what
+// "auto" was when we left it, so the cycle is deterministic.
 ipcMain.handle('cycle-theme-override', async () => {
-  let next = null;
   const isDark = nativeTheme.shouldUseDarkColors;
-
+  let next;
   if (config.themeOverride == null) {
     config._lastAutoTheme = isDark ? 'dark' : 'light';
-    next = isDark ? 'light' : 'dark';
+    next = isDark ? 'light' : 'dark';            // force the opposite first
   } else {
-    const opp = config._lastAutoTheme === 'dark' ? 'light' : 'dark';
-    if (config.themeOverride === opp) {
-      next = config._lastAutoTheme;
-    } else {
-      next = null;
-    }
+    const opposite = config._lastAutoTheme === 'dark' ? 'light' : 'dark';
+    next = config.themeOverride === opposite ? config._lastAutoTheme : null;
   }
-  
+
   config.themeOverride = next;
   saveConfig();
-  
-  if (next === 'light') {
-    await setWindowsTheme(false);
-    applyThemeSchedule(); // Re-start timer to listen for boundaries
-  } else if (next === 'dark') {
-    await setWindowsTheme(true);
-    applyThemeSchedule(); // Re-start timer to listen for boundaries
-  } else {
-    applyThemeSchedule();
-  }
+  if (next) await setWindowsTheme(next === 'dark');
+  applyThemeSchedule(); // re-arm the boundary timer (no-op flip if schedule is off)
   return next;
 });
 
@@ -1559,7 +1547,6 @@ app.whenReady().then(async () => {
       config.themeOverride = null;
       saveConfig();
     }
-    
     if (mainWindow && !mainWindow.isDestroyed()) {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }

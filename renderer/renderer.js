@@ -487,19 +487,21 @@ function applyThemeToUI(theme) {
   const isDark = theme === 'dark';
   $('#heroIcon').textContent = isDark ? '🌙' : '☀️';
   $('#heroSub').textContent = isDark ? t('home.themeDark') : t('home.themeLight');
-  
+
+  // Theme indicator doubles as a toggle: a 📌 pin marks a manual override (forced
+  // light/dark), no pin means Auto. Tooltip explains the current mode + that it's clickable.
   if (config) {
     const mode = config.themeOverride;
     const ind = $('#themeIndicator');
     ind.style.cursor = 'pointer';
     if (mode === 'light') {
-      ind.title = 'Принудительно Светлая (клик для переключения)';
-      $('#heroIcon').textContent = '☀️ 📌';
+      ind.title = t('home.forceLight');
+      $('#heroIcon').textContent = '☀️📌';
     } else if (mode === 'dark') {
-      ind.title = 'Принудительно Тёмная (клик для переключения)';
-      $('#heroIcon').textContent = '🌙 📌';
+      ind.title = t('home.forceDark');
+      $('#heroIcon').textContent = '🌙📌';
     } else {
-      ind.title = 'Режим: Авто (клик для переключения)';
+      ind.title = t('home.themeAuto');
     }
   }
 
@@ -1408,20 +1410,18 @@ function initLibrary() {
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     cb.addEventListener('change', () => {
       const p = cb.dataset.purity;
-      if (p === 'nsfw' && !WH.hasKey) { 
-        cb.checked = false; 
-        toast(t('online.nsfwNeedsKey')); 
-        return; 
+      if (p === 'nsfw' && !WH.hasKey) {
+        cb.checked = false;
+        toast(t('online.nsfwNeedsKey'));
+        return;
       }
       WH.purity[p] = cb.checked;
-      
-      // Prevent unchecking everything
+      // Don't allow unchecking the last category — keep at least one purity on.
       if (!WH.purity.sfw && !WH.purity.sketchy && !WH.purity.nsfw) {
         cb.checked = true;
         WH.purity[p] = true;
         return;
       }
-      
       if (WH.searched) doWhSearch(true);
     });
   });
@@ -1465,7 +1465,6 @@ function updatePurityToggle() {
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     const p = cb.dataset.purity;
     cb.checked = !!WH.purity[p];
-    
     if (p === 'nsfw') {
       cb.disabled = !WH.hasKey;
       const lbl = $('#lblPurityNsfw');

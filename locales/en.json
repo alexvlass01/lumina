@@ -67,7 +67,10 @@
     "noWallpaper": "no wallpaper",
     "noMonitors": "No monitors detected",
     "themeLight": "Light (day)",
-    "themeDark": "Dark (night)"
+    "themeDark": "Dark (night)",
+    "forceLight": "Forced Light (click to switch)",
+    "forceDark": "Forced Dark (click to switch)",
+    "themeAuto": "Auto mode (click to switch)"
   },
   "status": {
     "autoSwitch": "Auto-switch on theme change",
