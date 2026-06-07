@@ -728,28 +728,35 @@ function buildLibCard(it, isAssigned) {
   card.addEventListener('mouseenter', () => setLibStatus(baseName(it.path)));
   card.addEventListener('mouseleave', () => setLibStatus(''));
   card.addEventListener('click', (e) => {
-    // Folder click — always navigate unless using Ctrl/Shift
+    // Folder with no modifiers → navigate into it.
     if (it.type === 'folder' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
       enterFolder(it.path, baseName(it.path));
       return;
     }
-    // Ctrl+click: toggle this item in/out of selection
-    if (e.ctrlKey || e.metaKey) {
-      if (LIB.selection.has(it.id)) { LIB.selection.delete(it.id); }
-      else { LIB.selection.add(it.id); LIB.lastSelected = it.id; }
-    // Shift+click: select range from anchor to this item
-    } else if (e.shiftKey && LIB.lastSelected) {
-      const cards = Array.from(document.querySelectorAll('.lib-card[data-id]'));
-      const idx1 = cards.findIndex(c => c.dataset.id === LIB.lastSelected);
-      const idx2 = cards.findIndex(c => c.dataset.id === it.id);
-      if (idx1 !== -1 && idx2 !== -1) {
-        LIB.selection.clear();
-        const lo = Math.min(idx1, idx2), hi = Math.max(idx1, idx2);
-        for (let i = lo; i <= hi; i++) LIB.selection.add(cards[i].dataset.id);
+    if (e.shiftKey) {
+      // Shift+click: extend the selection from the anchor to this card (Explorer-style).
+      // Without an anchor yet, behave like a plain select of this single card.
+      if (LIB.lastSelected && LIB.lastSelected !== it.id) {
+        const cards = Array.from(document.querySelectorAll('.lib-card[data-id]'));
+        const i1 = cards.findIndex((c) => c.dataset.id === LIB.lastSelected);
+        const i2 = cards.findIndex((c) => c.dataset.id === it.id);
+        if (i1 !== -1 && i2 !== -1) {
+          LIB.selection.clear();
+          for (let i = Math.min(i1, i2); i <= Math.max(i1, i2); i++) LIB.selection.add(cards[i].dataset.id);
+        }
+      } else {
+        LIB.selection.add(it.id);
+        LIB.lastSelected = it.id;
       }
-    // Plain click with something selected — clear selection, open normal menu
+    } else if (e.ctrlKey || e.metaKey) {
+      // Ctrl+click: toggle this card and make it the new range anchor.
+      if (LIB.selection.has(it.id)) LIB.selection.delete(it.id);
+      else LIB.selection.add(it.id);
+      LIB.lastSelected = it.id;
     } else {
+      // Plain click: leave selection mode if active, otherwise open the quick assign menu.
       if (LIB.selection.size > 0) { clearSelection(); syncSelectionUI(); return; }
+      LIB.lastSelected = it.id; // remember anchor so a later Shift+click can extend from here
       openAssignMenu(it, menu);
       return;
     }
@@ -1074,12 +1081,9 @@ function syncSelectionUI() {
   $('#libSelDelete').textContent = t('library.massDelete');
 }
 
-function openMassAssignMenu() {
-  closeLibPopup();
-  const pop = document.createElement('div');
-  pop.className = 'lib-popup';
-  pop.id = 'libPopup';
-
+// Shared monitor×theme grid for both the single- and multi-assign popups.
+// onPick(monitorId, theme) performs the actual assignment.
+function appendAssignRows(pop, onPick) {
   const title = document.createElement('div');
   title.className = 'lib-popup-title';
   title.textContent = t('library.assignTo');
@@ -1097,29 +1101,41 @@ function openMassAssignMenu() {
       const b = document.createElement('button');
       b.className = 'lib-popup-btn';
       b.textContent = `${ic} ${t(th === 'dark' ? 'design.darkTheme' : 'design.lightTheme')}`;
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        for (const id of LIB.selection) {
-          config = await window.api.libraryAssign(id, m.id, th);
-        }
-        closeLibPopup();
-        clearSelection();
-        syncSelectionUI();
-        renderLibrary();
-        renderPreviews();
-        renderHome();
-        toast(t('library.assignedToast'));
-      });
+      b.addEventListener('click', (e) => { e.stopPropagation(); onPick(m.id, th); });
       row.appendChild(b);
     });
     pop.appendChild(row);
   });
+}
 
-  // Position in center of screen
+// Bulk assign: apply the chosen monitor×theme to every selected item. Anchored above the
+// "assign" button in the selection bar (which sits at the bottom of the window).
+function openMassAssignMenu(anchor) {
+  closeLibPopup();
+  const pop = document.createElement('div');
+  pop.className = 'lib-popup';
+  pop.id = 'libPopup';
+
+  appendAssignRows(pop, async (monitorId, th) => {
+    for (const id of LIB.selection) config = await window.api.libraryAssign(id, monitorId, th);
+    closeLibPopup();
+    clearSelection();
+    syncSelectionUI();
+    renderLibrary();
+    renderPreviews();
+    renderHome();
+    toast(t('library.assignedToast'));
+  });
+
   document.body.appendChild(pop);
-  const rect = pop.getBoundingClientRect();
-  pop.style.left = `${(window.innerWidth - rect.width) / 2}px`;
-  pop.style.top = `${(window.innerHeight - rect.height) / 2}px`;
+  const r = anchor.getBoundingClientRect();
+  let left = r.left + r.width / 2 - pop.offsetWidth / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - pop.offsetWidth - 8));
+  let top = r.top - pop.offsetHeight - 8;
+  if (top < 8) top = r.bottom + 8; // not enough room above → drop below
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  setTimeout(() => document.addEventListener('click', onDocClosePopup, true), 0);
 }
 
 // Set the empty-state caption (different wording inside an empty folder vs empty library).
@@ -1147,35 +1163,13 @@ function openAssignMenu(it, anchor) {
   pop.className = 'lib-popup';
   pop.id = 'libPopup';
 
-  const title = document.createElement('div');
-  title.className = 'lib-popup-title';
-  title.textContent = t('library.assignTo');
-  pop.appendChild(title);
-
-  const mons = monitorList.length ? monitorList : [{ id: null, primary: true }];
-  mons.forEach((m, i) => {
-    const row = document.createElement('div');
-    row.className = 'lib-popup-row';
-    const lbl = document.createElement('span');
-    lbl.className = 'lib-popup-mon';
-    lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
-    row.appendChild(lbl);
-    [['light', '☀'], ['dark', '🌙']].forEach(([th, ic]) => {
-      const b = document.createElement('button');
-      b.className = 'lib-popup-btn';
-      b.textContent = `${ic} ${t(th === 'dark' ? 'design.darkTheme' : 'design.lightTheme')}`;
-      b.addEventListener('click', async (e) => {
-        e.stopPropagation();
-        config = await window.api.libraryAssign(it.id, m.id, th);
-        closeLibPopup();
-        renderLibrary();
-        renderPreviews();
-        renderHome();
-        toast(t('library.assignedToast'));
-      });
-      row.appendChild(b);
-    });
-    pop.appendChild(row);
+  appendAssignRows(pop, async (monitorId, th) => {
+    config = await window.api.libraryAssign(it.id, monitorId, th);
+    closeLibPopup();
+    renderLibrary();
+    renderPreviews();
+    renderHome();
+    toast(t('library.assignedToast'));
   });
 
   const sep = document.createElement('div');
@@ -1349,7 +1343,7 @@ function initLibrary() {
   const selClear = $('#libSelClear');
   if (selClear) selClear.addEventListener('click', () => { clearSelection(); syncSelectionUI(); });
   const selAssign = $('#libSelAssign');
-  if (selAssign) selAssign.addEventListener('click', () => openMassAssignMenu());
+  if (selAssign) selAssign.addEventListener('click', () => openMassAssignMenu(selAssign));
   const selDelete = $('#libSelDelete');
   if (selDelete) selDelete.addEventListener('click', async () => {
     for (const id of LIB.selection) {
@@ -1790,9 +1784,11 @@ async function init() {
 
   // ---- page navigation ----
   document.querySelectorAll('.navbtn').forEach((b) => {
-    b.addEventListener('click', () => showPage(b.dataset.page));
+    // Blur after a mouse click so the tab doesn't keep keyboard focus — otherwise pressing a
+    // modifier (e.g. Shift for range-select) would light up its focus ring out of nowhere.
+    b.addEventListener('click', () => { showPage(b.dataset.page); b.blur(); });
   });
-  $('#btnPrefs').addEventListener('click', () => showPage('prefs'));
+  $('#btnPrefs').addEventListener('click', (e) => { showPage('prefs'); e.currentTarget.blur(); });
 
   // ---- home: switch to the next wallpaper now ----
   const btnNextWall = $('#btnNextWall');

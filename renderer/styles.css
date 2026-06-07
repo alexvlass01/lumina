@@ -188,6 +188,11 @@ body {
 .tb-nav:not(:has(.navbtn.active)):hover {
   opacity: 1;
 }
+
+/* Keyboard focus: a tidy on-brand ring only for keyboard users; never the UA default (which can
+   render as a stray orange box). Mouse clicks don't leave a ring. */
+:focus:not(:focus-visible) { outline: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tb-right { display: flex; align-items: center; -webkit-app-region: no-drag; app-region: no-drag; }
 .tb-btn.active { background: var(--btn-bg); color: var(--accent); }
 
@@ -950,13 +955,14 @@ select option {
   font-size: 11px; padding: 1px 7px; border-radius: 9px; pointer-events: none;
 }
 
-/* faint Explorer-style status line (name of the hovered item) */
+/* Explorer-style status line (name of the hovered item). Solid page-coloured background so it
+   cleanly masks content scrolling underneath instead of leaving a faint translucent band. */
 .lib-statusbar {
   position: sticky; bottom: 0;
   margin-top: 12px; padding: 6px 4px;
   font-size: 11.5px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  background: linear-gradient(to top, var(--bg) 65%, transparent);
+  background: var(--bg);
 }
 .lib-statusbar:empty { opacity: 0; }
 
@@ -1159,13 +1165,17 @@ select option {
 .lib-card.selected .lib-fav,
 .lib-card.selected .lib-menu-btn { display: none !important; }
 
+/* Floating contextual action bar — a centred elevated pill, not a full-width strip. */
 .lib-selection-bar {
-  position: sticky; bottom: 0;
+  position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
+  max-width: calc(100% - 32px);
   background: var(--card);
-  border-top: 1px solid var(--card-border);
-  padding: 8px 16px;
-  display: flex; align-items: center; gap: 10px;
-  z-index: 100;
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 8px 8px 8px 16px;
+  display: flex; align-items: center; gap: 8px;
+  z-index: 150;
 }
 .lib-selection-bar[hidden] { display: none; }
-.lib-sel-count { font-size: 13px; font-weight: 600; margin-right: auto; }
+.lib-sel-count { font-size: 13px; font-weight: 600; margin-right: 6px; white-space: nowrap; }
