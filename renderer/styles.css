@@ -549,6 +549,14 @@ html.dark .smart-panel.update .smart-panel-title { color: #33d17a; }
   display: flex; align-items: center; justify-content: center;
   /* width/height set in JS (layoutMonitors) */
 }
+.monitor.empty {
+  cursor: pointer;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.monitor.empty:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
 .preview-empty { color: var(--text-dim); font-size: 12px; text-align: center; padding: 4px; }
 
 /* ---------- Slideshow playlist: thumbnail strip ---------- */

@@ -372,6 +372,7 @@ async function setPreview(which, filePath) {
   let newHtml = '';
   
   if (filePath) {
+    el.classList.remove('empty');
     const url = await window.api.fileUrl(filePath);
     const newBgUrl = `${url}?v=${Date.now()}`;
     newBg = `url("${newBgUrl}")`;
@@ -384,6 +385,7 @@ async function setPreview(which, filePath) {
       img.src = newBgUrl;
     });
   } else {
+    el.classList.add('empty');
     newHtml = `<span class="preview-empty">${t('design.notSelected')}</span>`;
   }
 
@@ -1706,36 +1708,16 @@ async function init() {
     exitFirstRun();
   });
 
-  // add photos / a folder to the SELECTED monitor's playlist (primary in single mode)
-  document.querySelectorAll('[data-add-photos]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const which = btn.dataset.addPhotos;
-      const mon = editTargetId();
-      if (!mon) return;
-      const res = await window.api.addSlotImages(mon, which);
-      config = (res && res.config) || config;
-      renderSlot(which);
-      renderHome();
-      if (res && res.added) {
-        toast(t('toast.photosAdded', { n: res.added }));
-        if (which === currentTheme) window.api.applyNow(which);
-      }
-    });
-  });
-  document.querySelectorAll('[data-add-folder]').forEach((btn) => {
-    btn.addEventListener('click', async () => {
-      const which = btn.dataset.addFolder;
-      const mon = editTargetId();
-      if (!mon) return;
-      const res = await window.api.addSlotFolder(mon, which);
-      config = (res && res.config) || config;
-      renderSlot(which);
-      renderHome();
-      if (res && res.added) {
-        toast(t('toast.folderAdded'));
-        if (which === currentTheme) window.api.applyNow(which);
-      }
-    });
+  // shortcut to Library to pick wallpapers when the monitor preview is empty
+  ['#previewLight', '#previewDark'].forEach((sel) => {
+    const el = $(sel);
+    if (el) {
+      el.addEventListener('click', () => {
+        if (el.classList.contains('empty')) {
+          showPage('library');
+        }
+      });
+    }
   });
 
   // switches

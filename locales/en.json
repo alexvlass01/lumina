@@ -82,8 +82,7 @@
     "styleSub": "How the image fits the desktop",
     "singleTitle": "One wallpaper for all monitors",
     "singleSub": "Use a single image across every monitor",
-    "addPhotos": "Add photos…",
-    "addFolder": "Add folder…",
+    "selectFromLibrary": "Select from Library",
     "removeItem": "Remove",
     "dropPrompt": "Drop images or folder here"
   },
