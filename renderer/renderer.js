@@ -1263,25 +1263,35 @@ function initLibrary() {
   if (whQ) whQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') doWhSearch(true); });
   const whSortEl = $('#whSort');
   if (whSortEl) whSortEl.addEventListener('change', () => { WH.sort = whSortEl.value; if (WH.searched) doWhSearch(true); });
-  const purityGroup = $('#whPurityGroup');
-  if (purityGroup) {
-    purityGroup.querySelectorAll('.purity-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const p = btn.dataset.purity;
-        if (p === 'nsfw' && !WH.hasKey) { toast(t('online.nsfwNeedsKey')); return; }
-        WH.purity[p] = !WH.purity[p];
-        
-        // Prevent unchecking everything (at least one must be active)
-        if (!WH.purity.sfw && !WH.purity.sketchy && !WH.purity.nsfw) {
-          WH.purity[p] = true;
-          return;
-        }
-        
-        updatePurityToggle();
-        if (WH.searched) doWhSearch(true);
-      });
+  const whFilterToggle = $('#whFilterToggle');
+  const whFiltersRow = $('#whFiltersRow');
+  if (whFilterToggle && whFiltersRow) {
+    whFilterToggle.addEventListener('click', () => {
+      whFiltersRow.hidden = !whFiltersRow.hidden;
+      whFilterToggle.classList.toggle('suggested', !whFiltersRow.hidden);
     });
   }
+
+  document.querySelectorAll('.wh-purity-cb').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const p = cb.dataset.purity;
+      if (p === 'nsfw' && !WH.hasKey) { 
+        cb.checked = false; 
+        toast(t('online.nsfwNeedsKey')); 
+        return; 
+      }
+      WH.purity[p] = cb.checked;
+      
+      // Prevent unchecking everything
+      if (!WH.purity.sfw && !WH.purity.sketchy && !WH.purity.nsfw) {
+        cb.checked = true;
+        WH.purity[p] = true;
+        return;
+      }
+      
+      if (WH.searched) doWhSearch(true);
+    });
+  });
   const whMoreBtn = $('#whMore');
   if (whMoreBtn) whMoreBtn.addEventListener('click', () => { WH.page += 1; doWhSearch(false); });
 
@@ -1319,23 +1329,16 @@ function initLibraryDragDrop() {
 
 // ---- Online (Wallhaven) ----
 function updatePurityToggle() {
-  const group = $('#whPurityGroup');
-  if (!group) return;
-  
-  group.querySelectorAll('.purity-btn').forEach(btn => {
-    const p = btn.dataset.purity;
-    btn.classList.toggle('active', !!WH.purity[p]);
+  document.querySelectorAll('.wh-purity-cb').forEach(cb => {
+    const p = cb.dataset.purity;
+    cb.checked = !!WH.purity[p];
     
     if (p === 'nsfw') {
-      if (!WH.hasKey) {
-        btn.classList.remove('active');
-        WH.purity.nsfw = false;
-        btn.style.opacity = '0.5';
-        btn.style.cursor = 'default';
-      } else {
-        btn.style.opacity = '1';
-        btn.style.cursor = 'pointer';
-        btn.title = '18+';
+      cb.disabled = !WH.hasKey;
+      const lbl = $('#lblPurityNsfw');
+      if (lbl) {
+        lbl.style.opacity = WH.hasKey ? '1' : '0.5';
+        lbl.title = WH.hasKey ? '' : '18+ (нужен ключ)';
       }
     }
   });

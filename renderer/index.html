@@ -394,12 +394,14 @@
                   <option value="views" data-i18n="online.sortViews">Просмотры</option>
                 </select>
               </div>
-              <div class="wh-purity-group" id="whPurityGroup">
-                <button class="pill purity-btn active" data-purity="sfw" title="Safe For Work (безопасные)">SFW</button>
-                <button class="pill purity-btn active" data-purity="sketchy" title="На грани / Откровенные">Sketchy</button>
-                <button class="pill purity-btn" data-purity="nsfw" title="18+ (нужен ключ)">NSFW</button>
-              </div>
+              <button class="pill" id="whFilterToggle" title="Фильтры контента">⚙️</button>
               <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
+            </div>
+            <div class="lib-filters-row" id="whFiltersRow" hidden>
+              <span class="lib-filters-label" style="color: var(--text-dim); margin-right: 8px;">Допуск контента:</span>
+              <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sfw"> SFW</label>
+              <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sketchy"> Sketchy</label>
+              <label class="lib-filter-label" id="lblPurityNsfw" title="18+ (нужен ключ)"><input type="checkbox" class="wh-purity-cb" data-purity="nsfw"> NSFW</label>
             </div>
             <div class="lib-online-note" id="whNote"></div>
             <div class="lib-grid" id="whGrid"></div>
