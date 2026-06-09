@@ -1175,6 +1175,23 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
   return config;
 });
 
+// Refresh / sanity check: drop pool ENTRIES whose backing file/folder no longer exists on
+// disk (user deleted/moved/renamed it in Windows). Never touches files — only the config.
+// Returns the count so the renderer can decide whether to re-apply.
+ipcMain.handle('library-refresh', () => {
+  const dead = library.findMissingIds(config.library, (p) => {
+    try { return fs.existsSync(p); } catch { return false; }
+  });
+  let removed = 0;
+  for (const id of dead) { if (removeFromLibrary(id)) removed++; }
+  if (removed) {
+    saveConfig();
+    trayCtl.refresh();
+    applyForTheme(null, true); // a removed item may have been the current wallpaper
+  }
+  return { config, removed };
+});
+
 // Заполнить размеры файлов (байты) для сортировки «по размеру» — лениво, по запросу.
 // Считаем только для image-элементов без size; folder/недоступные → 0.
 ipcMain.handle('library-ensure-sizes', () => {

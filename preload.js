@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('api', {
   libraryAddFolder: () => ipcRenderer.invoke('library-add-folder'),
   libraryAddPaths: (paths) => ipcRenderer.invoke('library-add-paths', paths),
   libraryRemove: (id) => ipcRenderer.invoke('library-remove', id),
+  libraryRefresh: () => ipcRenderer.invoke('library-refresh'),
   libraryToggleFavorite: (id) => ipcRenderer.invoke('library-toggle-favorite', id),
   libraryAddTag: (id, tag) => ipcRenderer.invoke('library-add-tag', id, tag),
   libraryRemoveTag: (id, tag) => ipcRenderer.invoke('library-remove-tag', id, tag),

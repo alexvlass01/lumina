@@ -113,6 +113,18 @@ function flattenImages(library, scanDeep) {
   return out;
 }
 
+// Ids of pool items whose backing path no longer exists on disk. `existsFn(path)` is
+// injected (FS-backed in main, stubbed in tests) so this stays pure/testable. Powers the
+// library "refresh" sanity check — note it only flags POOL ENTRIES, never touches files.
+function findMissingIds(library, existsFn) {
+  const out = [];
+  if (typeof existsFn !== 'function') return out;
+  for (const it of Object.values(library || {})) {
+    if (it && it.id && it.path && !existsFn(it.path)) out.push(it.id);
+  }
+  return out;
+}
+
 // ---- tags (manual, on pool items) ----
 
 // Normalize a tag: trimmed, collapsed whitespace, lowercase (tags are categories).
@@ -205,5 +217,5 @@ function migrateConfig(cfg) {
 module.exports = {
   idFor, baseName, makeItem, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
-  resolveIds, flattenImages, listItems, migrateSlot, migrateConfig,
+  resolveIds, flattenImages, findMissingIds, listItems, migrateSlot, migrateConfig,
 };

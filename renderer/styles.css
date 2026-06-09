@@ -834,6 +834,20 @@ select option {
 }
 .lib-search:focus { border-color: var(--accent); }
 
+/* Toolbar icon button (e.g. library refresh) — matches the search/select chrome. */
+.lib-iconbtn {
+  flex: 0 0 auto;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0;
+  border: 1px solid var(--card-border); border-radius: 8px;
+  background: var(--card); color: var(--text); cursor: pointer;
+  transition: background .12s ease;
+}
+.lib-iconbtn:hover { background: var(--row-hover); }
+.lib-iconbtn svg { width: 16px; height: 16px; }
+.lib-iconbtn.spinning svg { animation: lib-spin .6s ease; }
+@keyframes lib-spin { to { transform: rotate(360deg); } }
+
 .lib-grid {
   display: grid; gap: 12px;
   grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));

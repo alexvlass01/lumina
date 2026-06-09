@@ -168,4 +168,16 @@ ok('flattenImages: folder items themselves excluded', !flat.some((x) => x.path =
 ok('flattenImages: no scanDeep -> pool images only',
   L.flattenImages(lib5, null).every((x) => x.inPool) && L.flattenImages(lib5, null).length === 1);
 
+// ---- findMissingIds: pool entries whose path no longer exists (refresh sanity check) ----
+const lib6 = {};
+const okId = L.addPath(lib6, 'image', 'C:/exists.jpg');
+const goneId = L.addPath(lib6, 'image', 'C:/gone.jpg');
+const goneDir = L.addPath(lib6, 'folder', 'C:/missing-dir');
+const existing = new Set(['C:/exists.jpg']);
+const missing = L.findMissingIds(lib6, (p) => existing.has(p));
+ok('findMissingIds: flags only the missing image + folder',
+  missing.length === 2 && missing.includes(goneId) && missing.includes(goneDir) && !missing.includes(okId));
+ok('findMissingIds: nothing missing -> empty', L.findMissingIds(lib6, () => true).length === 0);
+ok('findMissingIds: no existsFn -> empty (safe no-op)', L.findMissingIds(lib6).length === 0);
+
 console.log('\nAll ' + passed + ' library tests passed.');

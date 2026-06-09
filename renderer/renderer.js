@@ -66,6 +66,7 @@ if (!window.api) {
       for (const m of Object.values(mock.monitors)) for (const th of ['light', 'dark']) if (m[th] && m[th].itemIds) m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
       return mock;
     },
+    libraryRefresh: async () => ({ config: mock, removed: 0 }),
     libraryToggleFavorite: async (id) => { if (mock.library[id]) mock.library[id].favorite = !mock.library[id].favorite; return mock; },
     libraryAddTag: async (id, tag) => { const it = mock.library[id]; const t = String(tag || '').trim().toLowerCase(); if (it && t) { it.tags = it.tags || []; if (!it.tags.includes(t)) it.tags.push(t); } return mock; },
     libraryRemoveTag: async (id, tag) => { const it = mock.library[id]; const t = String(tag || '').trim().toLowerCase(); if (it && it.tags) it.tags = it.tags.filter((x) => x !== t); return mock; },
@@ -1374,6 +1375,20 @@ function initLibrary() {
   }
   const searchEl = $('#libSearch');
   if (searchEl) searchEl.addEventListener('input', () => { LIB.q = searchEl.value; renderLibrary(); });
+  const refreshBtn = $('#libRefresh');
+  if (refreshBtn) refreshBtn.addEventListener('click', async () => {
+    if (refreshBtn.classList.contains('spinning')) return;
+    refreshBtn.classList.add('spinning');
+    try {
+      const res = await window.api.libraryRefresh();
+      if (res && res.config) config = res.config;
+      renderLibrary();
+      renderPreviews();
+      renderHome();
+    } finally {
+      setTimeout(() => refreshBtn.classList.remove('spinning'), 600);
+    }
+  });
   const addP = $('#libAddPhotos');
   if (addP) addP.addEventListener('click', async () => {
     const res = await window.api.libraryAddImages();
