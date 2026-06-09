@@ -604,6 +604,13 @@ function libAllTags() {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+// Tag → number of pool items carrying it (popularity). Used by the assign-menu autocomplete.
+function libTagCounts() {
+  const counts = {};
+  Object.values(config.library || {}).forEach((it) => (it.tags || []).forEach((tg) => { counts[tg] = (counts[tg] || 0) + 1; }));
+  return counts;
+}
+
 // Сортировка массива на месте по LIB.sort (added/name/size/shuffle). `get` — аксессоры,
 // чтобы одна логика работала и для элементов пула, и для записей плоского «Все» ({path,item,id}).
 function sortItems(arr, get) {
@@ -1196,6 +1203,13 @@ function openAssignMenu(it, anchor) {
   tagInput.placeholder = t('library.addTagPh');
   tagInput.addEventListener('click', (e) => e.stopPropagation());
   tagBox.appendChild(tagInput);
+  // Autocomplete dropdown of existing tags (by popularity). mousedown→preventDefault keeps the
+  // input focused when a suggestion is clicked (so blur doesn't hide the list before the click).
+  const suggest = document.createElement('div');
+  suggest.className = 'lib-tag-suggest';
+  suggest.hidden = true;
+  suggest.addEventListener('mousedown', (e) => e.preventDefault());
+  tagBox.appendChild(suggest);
   pop.appendChild(tagBox);
 
   const curTags = () => { const f = config.library[it.id]; return (f && f.tags) || []; };
@@ -1212,22 +1226,57 @@ function openAssignMenu(it, anchor) {
         e.stopPropagation();
         config = await window.api.libraryRemoveTag(it.id, tg);
         renderChips();
+        renderSuggest();
         renderLibrary();
       });
       chip.appendChild(x);
       chips.appendChild(chip);
     });
   }
+
+  // Tag popularity snapshot — built ONCE when the menu opens, reused for every keystroke.
+  const tagFreq = libTagCounts();
+  async function applyTag(raw) {
+    const v = String(raw || '').trim();
+    if (!v) return;
+    config = await window.api.libraryAddTag(it.id, v);
+    tagInput.value = '';
+    renderChips();
+    renderSuggest();
+    renderLibrary();
+    tagInput.focus(); // stay in the field to keep picking tags
+  }
+  function renderSuggest() {
+    const q = tagInput.value.trim().toLowerCase();
+    const have = new Set(curTags());
+    const list = Object.keys(tagFreq)
+      .filter((tg) => !have.has(tg) && (!q || tg.includes(q)))
+      .sort((a, b) => (tagFreq[b] - tagFreq[a]) || a.localeCompare(b))
+      .slice(0, 40);
+    suggest.innerHTML = '';
+    if (!list.length) { suggest.hidden = true; return; }
+    list.forEach((tg) => {
+      const b = document.createElement('button');
+      b.className = 'lib-tag-sug';
+      const name = document.createElement('span');
+      name.textContent = tg;
+      const cnt = document.createElement('span');
+      cnt.className = 'lib-tag-cnt';
+      cnt.textContent = tagFreq[tg];
+      b.append(name, cnt);
+      b.addEventListener('click', (e) => { e.stopPropagation(); applyTag(tg); });
+      suggest.appendChild(b);
+    });
+    suggest.hidden = false;
+  }
+
   renderChips();
+  tagInput.addEventListener('focus', renderSuggest);
+  tagInput.addEventListener('input', renderSuggest);
+  tagInput.addEventListener('blur', () => setTimeout(() => { suggest.hidden = true; }, 100));
   tagInput.addEventListener('keydown', async (e) => {
-    if (e.key === 'Enter' && tagInput.value.trim()) {
-      e.stopPropagation();
-      config = await window.api.libraryAddTag(it.id, tagInput.value);
-      tagInput.value = '';
-      renderChips();
-      renderLibrary();
-      tagInput.focus();
-    }
+    if (e.key === 'Enter' && tagInput.value.trim()) { e.stopPropagation(); await applyTag(tagInput.value); }
+    else if (e.key === 'Escape') { suggest.hidden = true; }
   });
 
   const sep2 = document.createElement('div');
