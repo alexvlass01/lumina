@@ -716,11 +716,10 @@ function buildLibCard(it, isAssigned) {
   card.appendChild(fav);
 
   if (isAssigned) {
-    const badge = document.createElement('span');
-    badge.className = 'lib-badge';
-    badge.textContent = '✓';
-    badge.title = t('library.assigned');
-    card.appendChild(badge);
+    const mark = document.createElement('span');
+    mark.className = 'lib-assigned';
+    mark.title = t('library.assigned');
+    card.appendChild(mark);
   }
 
   const menu = document.createElement('button');
