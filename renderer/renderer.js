@@ -643,7 +643,12 @@ function renderLibRailTags() {
       const b = document.createElement('button');
       b.className = 'lib-railbtn';
       b.dataset.filter = `tag:${tg}`;
-      b.textContent = `# ${tg}`;
+      const ic = document.createElement('span');
+      ic.className = 'lib-rail-ic lib-rail-hash';
+      ic.textContent = '#';
+      const lbl = document.createElement('span');
+      lbl.textContent = tg;
+      b.append(ic, lbl);
       box.appendChild(b);
     });
   }

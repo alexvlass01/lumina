@@ -811,6 +811,7 @@ select option {
   position: sticky; top: 0;
 }
 .lib-railbtn {
+  display: flex; align-items: center; gap: 9px;
   text-align: left;
   border: none; background: transparent; color: var(--text);
   font-family: inherit; font-size: 13.5px; font-weight: 600;
@@ -818,6 +819,10 @@ select option {
 }
 .lib-railbtn:hover { background: var(--row-hover); }
 .lib-railbtn.active { background: var(--card); box-shadow: var(--shadow); color: var(--accent); }
+/* Rail icons: symbolic SVGs (inherit currentColor → tint to the accent when active). The tag
+   rows reuse the same 15px slot with a "#" glyph so the whole rail stays aligned. */
+.lib-rail-ic { width: 15px; height: 15px; flex: 0 0 auto; opacity: 0.9; }
+.lib-rail-hash { display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; opacity: 0.6; }
 
 .lib-main { flex: 1 1 auto; min-width: 0; }
 .lib-toolbar { display: flex; gap: 10px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
@@ -959,16 +964,19 @@ select option {
   font-size: 11px; padding: 1px 7px; border-radius: 9px; pointer-events: none;
 }
 
-/* Explorer-style status line (name of the hovered item). Solid page-coloured background so it
-   cleanly masks content scrolling underneath instead of leaving a faint translucent band. */
+/* Hovered-item name: a compact floating pill in the bottom-left, not a full-width strip. */
 .lib-statusbar {
-  position: sticky; bottom: 0;
-  margin-top: 12px; padding: 6px 4px;
+  position: sticky; bottom: 10px;
+  width: fit-content; max-width: 100%;
+  margin-top: 12px; padding: 5px 12px;
   font-size: 11.5px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  background: var(--bg);
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  box-shadow: var(--shadow);
 }
-.lib-statusbar:empty { opacity: 0; }
+.lib-statusbar:empty { display: none; }
 
 /* breadcrumbs (folder navigation) */
 .lib-breadcrumbs {

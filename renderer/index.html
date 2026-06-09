@@ -354,10 +354,22 @@
     <section class="view" id="viewLibrary" hidden>
       <div class="lib">
         <aside class="lib-rail">
-          <button class="lib-railbtn active" data-filter="all" data-i18n="library.all">Все</button>
-          <button class="lib-railbtn" data-filter="favorite" data-i18n="library.favorites">Избранное</button>
-          <button class="lib-railbtn" data-filter="folder" data-i18n="library.folders">Папки</button>
-          <button class="lib-railbtn lib-railonline" data-filter="online" data-i18n="online.rail">🌐 Онлайн</button>
+          <button class="lib-railbtn active" data-filter="all">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.2" y="2.2" width="4.6" height="4.6" rx="1"/><rect x="9.2" y="2.2" width="4.6" height="4.6" rx="1"/><rect x="2.2" y="9.2" width="4.6" height="4.6" rx="1"/><rect x="9.2" y="9.2" width="4.6" height="4.6" rx="1"/></svg>
+            <span data-i18n="library.all">Все</span>
+          </button>
+          <button class="lib-railbtn" data-filter="favorite">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M8 2l1.76 3.57 3.94.57-2.85 2.78.67 3.92L8 11.0 4.48 12.85l.67-3.92L2.3 6.14l3.94-.57z"/></svg>
+            <span data-i18n="library.favorites">Избранное</span>
+          </button>
+          <button class="lib-railbtn" data-filter="folder">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 4.3c0-.5.4-.9.9-.9h2.7l1.3 1.5h6.2c.5 0 .9.4.9.9v6.4c0 .5-.4.9-.9.9H2.9c-.5 0-.9-.4-.9-.9z"/></svg>
+            <span data-i18n="library.folders">Папки</span>
+          </button>
+          <button class="lib-railbtn lib-railonline" data-filter="online">
+            <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
+            <span data-i18n="online.rail">Онлайн</span>
+          </button>
           <div class="lib-railtags" id="libTags"></div>
         </aside>
         <div class="lib-main">
