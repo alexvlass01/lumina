@@ -1539,7 +1539,7 @@ function buildWhCard(item) {
     else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }
   });
   card.appendChild(add);
-  card.addEventListener('mouseenter', () => setLibStatus(label || 'Wallhaven'));
+  card.addEventListener('mouseenter', () => setLibStatus(label || t('online.source')));
   card.addEventListener('click', () => { if (!add.disabled) add.click(); });
   return card;
 }

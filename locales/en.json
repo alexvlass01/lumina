@@ -125,6 +125,7 @@
   },
   "online": {
     "rail": "🌐 Online",
+    "source": "Online",
     "searchPh": "Tags: nature, space…",
     "sortLatest": "Latest",
     "sortTop": "Top",
@@ -135,7 +136,7 @@
     "nsfw": "NSFW",
     "search": "Search",
     "more": "Show more",
-    "hint": "Type tags and hit Search to browse Wallhaven.",
+    "hint": "Type tags and hit Search to browse online wallpapers.",
     "loading": "Loading…",
     "noResults": "Nothing found",
     "error": "Error: {e}",
