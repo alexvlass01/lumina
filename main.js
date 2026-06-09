@@ -13,6 +13,7 @@ const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онл�
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
+const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -391,62 +392,10 @@ function setWindowsTheme(isDark) {
 let themeTimer = null;
 let lastScheduledTheme = null;
 
-function parseHM(s) {
-  const [h, m] = String(s || '').split(':').map(Number);
-  return (Number.isFinite(h) ? h : 0) * 60 + (Number.isFinite(m) ? m : 0);
-}
-
-// Sunrise/sunset in UTC hours for a date + coordinates (classic sunrise equation).
-function sunUT(date, lat, lng) {
-  const D2R = Math.PI / 180, R2D = 180 / Math.PI, zenith = 90.833;
-  const yearStart = Date.UTC(date.getUTCFullYear(), 0, 0);
-  const N = Math.floor((Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()) - yearStart) / 86400000);
-  function calc(rise) {
-    const lngHour = lng / 15;
-    const t = N + ((rise ? 6 : 18) - lngHour) / 24;
-    const M = 0.9856 * t - 3.289;
-    let L = M + 1.916 * Math.sin(M * D2R) + 0.020 * Math.sin(2 * M * D2R) + 282.634;
-    L = (L % 360 + 360) % 360;
-    let RA = R2D * Math.atan(0.91764 * Math.tan(L * D2R));
-    RA = (RA % 360 + 360) % 360;
-    RA += Math.floor(L / 90) * 90 - Math.floor(RA / 90) * 90;
-    RA /= 15;
-    const sinDec = 0.39782 * Math.sin(L * D2R);
-    const cosDec = Math.cos(Math.asin(sinDec));
-    const cosH = (Math.cos(zenith * D2R) - sinDec * Math.sin(lat * D2R)) / (cosDec * Math.cos(lat * D2R));
-    if (cosH > 1 || cosH < -1) return null; // polar day / night
-    let H = rise ? 360 - R2D * Math.acos(cosH) : R2D * Math.acos(cosH);
-    H /= 15;
-    const UT = (H + RA - 0.06571 * t - 6.622 - lngHour) % 24;
-    return (UT + 24) % 24;
-  }
-  return { sunrise: calc(true), sunset: calc(false) };
-}
-
-// Light/dark boundaries as minutes after LOCAL midnight, or null if unknown.
+// Schedule math (parse/sun/boundaries) lives in src/schedule.js — pure & unit-tested.
+// This wrapper just binds the app's theme schedule from the live config.
 function scheduleBoundaries(date) {
-  const sch = config.themeSchedule || {};
-  if (sch.mode === 'sun') {
-    const lat = parseFloat(sch.lat);
-    const lng = parseFloat(sch.lng);
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-    const { sunrise, sunset } = sunUT(date, lat, lng);
-    if (sunrise == null || sunset == null) return null;
-    const tz = date.getTimezoneOffset(); // local = UTC - tz
-    const toMin = (ut) => ((Math.round(ut * 60 - tz)) % 1440 + 1440) % 1440;
-    return { lightMin: toMin(sunrise), darkMin: toMin(sunset) };
-  }
-  return { lightMin: parseHM(sch.lightStart || '07:00'), darkMin: parseHM(sch.darkStart || '20:00') };
-}
-
-function boundariesSayDark(b, date) {
-  const now = date.getHours() * 60 + date.getMinutes();
-  const ls = b.lightMin, ds = b.darkMin;
-  let isLight;
-  if (ls === ds) isLight = true;
-  else if (ls < ds) isLight = now >= ls && now < ds;
-  else isLight = now >= ls || now < ds; // light period wraps midnight
-  return !isLight;
+  return schedule.boundaries(config.themeSchedule, date);
 }
 
 function clearThemeTimer() {
@@ -461,7 +410,7 @@ async function applyThemeSchedule() {
   const now = new Date();
   const b = scheduleBoundaries(now);
   if (!b) { themeTimer = setTimeout(applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
-  const wantDark = boundariesSayDark(b, now);
+  const wantDark = schedule.saysDark(b, now);
   const scheduledTheme = wantDark ? 'dark' : 'light';
 
   // Smart reset: crossing a schedule boundary (e.g. sunrise→sunset) clears a manual override.
@@ -474,10 +423,7 @@ async function applyThemeSchedule() {
 
   // If there's an active override, we skip applying the scheduled theme to Windows, but keep the timer running to detect the next boundary.
   if (config.themeOverride != null) {
-    const nowMin = now.getHours() * 60 + now.getMinutes();
-    const minsUntil = [b.lightMin, b.darkMin].map((x) => { let d = x - nowMin; if (d <= 0) d += 1440; return d; });
-    const mins = Math.max(1, Math.min(...minsUntil));
-    themeTimer = setTimeout(applyThemeSchedule, mins * 60000 + 3000);
+    themeTimer = setTimeout(applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
     return;
   }
 
@@ -489,10 +435,7 @@ async function applyThemeSchedule() {
     }
     setWindowsTheme(wantDark).catch((e) => console.error('Не удалось сменить тему Windows:', e));
   }
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const minsUntil = [b.lightMin, b.darkMin].map((x) => { let d = x - nowMin; if (d <= 0) d += 1440; return d; });
-  const mins = Math.max(1, Math.min(...minsUntil));
-  themeTimer = setTimeout(applyThemeSchedule, mins * 60000 + 3000);
+  themeTimer = setTimeout(applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
 }
 
 function setWallpaper(imagePath) {
@@ -545,17 +488,11 @@ function currentImageFor(monitorId, theme) {
   return playlist.pickCurrent(list, idx);
 }
 
-// Все файлы, на которые ссылается БИБЛИОТЕКА (+ легаси-глобалы) — для сборки мусора.
-// Пул контента самодостаточен: картинка остаётся, даже если не назначена ни на один
-// монитор (в этом смысл библиотеки), поэтому держим все image-пути из config.library.
+// Все файлы, на которые ссылается БИБЛИОТЕКА (+ легаси-глобалы) — keep-набор для GC.
+// Сама логика — в src/library.js (referencedFiles), под unit-тестами: это страховка от
+// повторения инцидента 2026-06-03 (неполный keep-набор → файлы пользователя в корзину).
 function referencedFiles() {
-  const set = new Set();
-  const add = (p) => { if (p) set.add(path.normalize(p).toLowerCase()); };
-  for (const it of Object.values(config.library || {})) {
-    if (it && it.type === 'image' && it.path) add(it.path);
-  }
-  add(config.lightWallpaper); add(config.darkWallpaper);
-  return set;
+  return library.referencedFiles(config);
 }
 
 // Подчищает осиротевшие файлы из wallpapers/ — но БЕЗОПАСНО: НЕ удаляет навсегда, а
