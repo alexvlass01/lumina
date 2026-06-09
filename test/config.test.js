@@ -106,5 +106,15 @@ const loadedOkOverride = C.load(p('override_ok.json'));
 ok('valid themeOverride/_lastAutoTheme/librarySort pass through',
   loadedOkOverride.themeOverride === 'dark' && loadedOkOverride._lastAutoTheme === 'light' && loadedOkOverride.librarySort === 'shuffle');
 
+// separateThemes: defaults ON; only an explicit false turns it off (old configs without
+// the field — i.e. every pre-1.2.5 user — must stay in the classic day/night mode)
+ok('separateThemes defaults to true', C.freshDefaults().separateThemes === true);
+fs.writeFileSync(p('sep_missing.json'), JSON.stringify({ autoSwitch: true }));
+ok('missing separateThemes → true (existing users keep day/night)', C.load(p('sep_missing.json')).separateThemes === true);
+fs.writeFileSync(p('sep_off.json'), JSON.stringify({ separateThemes: false }));
+ok('explicit separateThemes:false survives load', C.load(p('sep_off.json')).separateThemes === false);
+fs.writeFileSync(p('sep_junk.json'), JSON.stringify({ separateThemes: 0 }));
+ok('junk separateThemes coerces to true (safe default)', C.load(p('sep_junk.json')).separateThemes === true);
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

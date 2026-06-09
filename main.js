@@ -463,8 +463,16 @@ function setWallpaper(imagePath) {
   });
 }
 
+// Тема ОС (для UI: титулбар, трей, тема окна). НЕ для выбора обоев — см. wallpaperThemeName().
 function currentThemeName() {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
+}
+
+// Тема для ВЫБОРА СЛОТА ОБОЕВ — единственная точка этого решения. При выключенных
+// «раздельных темах» всегда 'light' (единый список), тема Windows игнорируется; данные
+// тёмного слота не трогаются. (План wallpaper_schedule добавит сюда режимы time/sun.)
+function wallpaperThemeName() {
+  return config.separateThemes === false ? 'light' : currentThemeName();
 }
 
 // id основного монитора (для режима «одни обои на все мониторы»)
@@ -534,7 +542,8 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
     console.log('[GameMode] Wallpaper change blocked due to active game / fullscreen app');
     return { ok: false, reason: 'gamemode-blocked' };
   }
-  const theme = themeName || currentThemeName();
+  // separateThemes off → каким бы ни был запрошенный/системный theme, слоты всегда 'light'
+  const theme = config.separateThemes === false ? 'light' : (themeName || currentThemeName());
   const monitors = monitorsCache.length ? monitorsCache : await getMonitors();
 
   // Preferred path: per-monitor via COM
@@ -607,7 +616,7 @@ async function tickSlideshow(advance, isManual = false) {
     return;
   }
 
-  const theme = currentThemeName();
+  const theme = wallpaperThemeName();
   if (advance) { advanceIndices(theme); saveConfig(); }
   applyForTheme(theme, isManual);
   const mins = Math.max(1, Math.floor(Number(config.slideshow.intervalMin) || 30));
@@ -696,7 +705,7 @@ function showWindow() {
 // Slideshow Helpers
 // ---------------------------------------------------------------------------
 function hasSlideshowItems() {
-  const theme = currentThemeName();
+  const theme = wallpaperThemeName();
   if (config.singleWallpaper) {
     return playlist.resolveSlot(slotFor(primaryMonitorId(), theme), config.library).length >= 2;
   }
@@ -709,7 +718,7 @@ function hasSlideshowItems() {
 }
 
 function triggerNextWallpaper() {
-  const theme = currentThemeName();
+  const theme = wallpaperThemeName();
   if (config.slideshow && config.slideshow.enabled) {
     tickSlideshow(true, true);
   } else {
@@ -923,6 +932,11 @@ ipcMain.handle('set-config', (e, patch) => {
   trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   if (patch && 'hotkeys' in patch) registerShortcut();
+  if (patch && 'separateThemes' in patch) {
+    // переключили парадигму слотов → сразу применить обои из актуального слота (GNOME: без «Сохранить»)
+    if (config.slideshow.enabled) tickSlideshow(false, true);
+    else applyForTheme(null, true);
+  }
   return config;
 });
 
@@ -1161,7 +1175,7 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
   saveConfig();
   trayCtl.refresh();
-  if (theme === currentThemeName()) applyForTheme(theme, true);
+  if (theme === wallpaperThemeName()) applyForTheme(theme, true);
   return config;
 });
 
@@ -1331,7 +1345,7 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
   if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
   config.slideshowIndex[monitorId][t] = index;
   saveConfig();
-  if (t === currentThemeName()) await applyForTheme(t, true);
+  if (t === wallpaperThemeName()) await applyForTheme(t, true);
   return config;
 });
 
@@ -1346,7 +1360,7 @@ ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
   if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
   config.slideshowIndex[monitorId][t] = idx;
   saveConfig();
-  if (t === currentThemeName()) await applyForTheme(t, true);
+  if (t === wallpaperThemeName()) await applyForTheme(t, true);
   return config;
 });
 
@@ -1515,8 +1529,12 @@ app.whenReady().then(async () => {
     }
     broadcastTheme();
     trayCtl.refreshIcon();
-    if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
-    else if (config.autoSwitch) applyForTheme();
+    // Обои реагируют на смену темы ОС только при включённых «раздельных темах»:
+    // в едином режиме слот всегда 'light', и флип темы Windows их не касается.
+    if (config.separateThemes !== false) {
+      if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
+      else if (config.autoSwitch) applyForTheme();
+    }
   });
 
   // enumerate monitors, then apply correct wallpaper on launch
@@ -1561,7 +1579,7 @@ app.whenReady().then(async () => {
           
           if (toApply.length > 0) {
             console.log(`[StealthTrigger] Desktop covered for:`, toApply, `Triggering ${reason}.`);
-            const theme = currentThemeName();
+            const theme = wallpaperThemeName();
             advanceIndices(theme, toApply);
             saveConfig();
             applyForTheme(theme, true, toApply);

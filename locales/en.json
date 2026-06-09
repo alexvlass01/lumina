@@ -79,6 +79,7 @@
   },
   "design": {
     "monitorNote": "Pick a monitor — the wallpapers below apply to it. Each monitor has its own day/night pair.",
+    "monitorNoteSingle": "Pick a monitor — the wallpapers below apply to it.",
     "wallpapersGroup": "Wallpapers",
     "lightTheme": "Day theme",
     "darkTheme": "Night theme",
@@ -91,6 +92,8 @@
     "styleSub": "How the image fits the desktop",
     "singleTitle": "One wallpaper for all monitors",
     "singleSub": "Use a single image across every monitor",
+    "separateTitle": "Separate wallpapers for light and dark themes",
+    "separateSub": "Each monitor keeps a day/night pair that follows the Windows theme. Turn off for a single shared wallpaper list",
     "selectFromLibrary": "Select from Library",
     "removeItem": "Remove",
     "dropPrompt": "Drop images or folder here"
@@ -114,6 +117,7 @@
     "favorite": "Favorite",
     "assign": "Assign…",
     "assignTo": "Assign to monitor",
+    "assignAction": "Assign",
     "assigned": "In use",
     "tags": "Tags",
     "addTagPh": "Add a tag…",

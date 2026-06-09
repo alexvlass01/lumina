@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, monitors: {}, library: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   window.api = {
@@ -481,6 +481,25 @@ function renderPreviews() {
   renderSlot('dark');
 }
 
+// Тема, из которой сейчас берутся ОБОИ (зерко main.wallpaperThemeName): при выключенных
+// «раздельных темах» всегда 'light', иначе — текущая тема Windows.
+function wallTheme() {
+  return (config && config.separateThemes === false) ? 'light' : currentTheme;
+}
+
+// Включает/выключает «единый» режим интерфейса: один широкий слот вместо пары день/ночь.
+function updateSeparateThemesUI() {
+  const single = !!(config && config.separateThemes === false);
+  document.body.classList.toggle('single-theme', single);
+  // Подпись под картой мониторов: в едином режиме без слов про «пару день/ночь».
+  // Меняем сам data-i18n, чтобы applyI18n() при смене языка брал актуальный ключ.
+  const note = document.querySelector('#monitorBar .mon-note');
+  if (note) {
+    note.dataset.i18n = single ? 'design.monitorNoteSingle' : 'design.monitorNote';
+    note.textContent = t(note.dataset.i18n);
+  }
+}
+
 function applyThemeToUI(theme) {
   currentTheme = theme;
   document.documentElement.classList.toggle('dark', theme === 'dark');
@@ -506,8 +525,11 @@ function applyThemeToUI(theme) {
     }
   }
 
+  // Подсвечиваем карточку слота, из которого СЕЙЧАС берутся обои (в едином режиме это
+  // всегда светлый/общий слот, независимо от темы Windows).
+  const activeSlot = wallTheme();
   document.querySelectorAll('.wallcard').forEach((c) => {
-    c.style.outline = c.dataset.theme === theme ? '2px solid var(--accent)' : 'none';
+    c.style.outline = c.dataset.theme === activeSlot ? '2px solid var(--accent)' : 'none';
     c.style.outlineOffset = '1px';
   });
 }
@@ -538,6 +560,8 @@ function updateSlideshowControls() {
 async function renderConfig() {
   renderPreviews();
   applyPreviewStyle();
+  setSwitch($('#swSeparate'), config.separateThemes !== false);
+  updateSeparateThemesUI();
   setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
   setSwitch($('#swStartMin'), config.startMinimized !== false);
@@ -1109,10 +1133,14 @@ function appendAssignRows(pop, onPick) {
     lbl.className = 'lib-popup-mon';
     lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
     row.appendChild(lbl);
-    [['light', '☀'], ['dark', '🌙']].forEach(([th, ic]) => {
+    // Единый режим (separateThemes off): у монитора один слот — одна кнопка «Назначить».
+    const themes = (config && config.separateThemes === false)
+      ? [['light', '', t('library.assignAction')]]
+      : [['light', '☀ ', t('design.lightTheme')], ['dark', '🌙 ', t('design.darkTheme')]];
+    themes.forEach(([th, ic, label]) => {
       const b = document.createElement('button');
       b.className = 'lib-popup-btn';
-      b.textContent = `${ic} ${t(th === 'dark' ? 'design.darkTheme' : 'design.lightTheme')}`;
+      b.textContent = `${ic}${label}`;
       b.addEventListener('click', (e) => { e.stopPropagation(); onPick(m.id, th); });
       row.appendChild(b);
     });
@@ -1670,7 +1698,7 @@ async function updateShortcutButtons() {
 // либо в плейлисте текущей темы ≥2 кадров / есть папка-источник).
 function hasNextWallpaper() {
   if (config.slideshow && config.slideshow.enabled) return true;
-  const th = currentTheme;
+  const th = wallTheme();
   for (const m of Object.values(config.monitors || {})) {
     const slot = m && m[th];
     if (slot && Array.isArray(slot.itemIds)) {
@@ -1710,7 +1738,7 @@ function renderHome() {
           }
           
           if (thumb) {
-            window.api.currentImage(m.id, currentTheme).then(async (wp) => {
+            window.api.currentImage(m.id, wallTheme()).then(async (wp) => {
               if (wp) {
                 // If it is already showing this wallpaper path, do nothing
                 if (thumb.dataset.bgPath === wp) {
@@ -1765,8 +1793,8 @@ function renderHome() {
           thumb.style.height = HOME_THUMB_H + 'px';
           thumb.style.width = Math.round(HOME_THUMB_H * ar) + 'px';
           thumb.classList.add('empty');
-          
-          window.api.currentImage(m.id, currentTheme).then(async (wp) => {
+
+          window.api.currentImage(m.id, wallTheme()).then(async (wp) => {
             if (wp) {
               thumb.dataset.bgPath = wp;
               const url = await window.api.fileUrl(wp);
@@ -1974,6 +2002,19 @@ async function init() {
     config = await window.api.setConfig({ autoSwitch: on });
     renderHome();
     toast(on ? t('toast.autoOn') : t('toast.autoOff'));
+  });
+
+  // separate day/night wallpapers (Lumina's signature) vs. one unified wallpaper list.
+  // Turning it off hides the dark slot in the UI but KEEPS its data; main re-applies
+  // wallpapers from the now-active slot immediately (set-config side effect).
+  $('#swSeparate').addEventListener('click', async () => {
+    const on = $('#swSeparate').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swSeparate'), on);
+    config = await window.api.setConfig({ separateThemes: on });
+    updateSeparateThemesUI();
+    applyThemeToUI(currentTheme); // re-aim the active-slot outline
+    renderPreviews();
+    renderHome();
   });
 
   // one wallpaper for all monitors (vs. a separate pair per monitor)

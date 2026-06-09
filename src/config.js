@@ -13,6 +13,9 @@ const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (only on COM failure / empty playlist)
   darkWallpaper: '',
   singleWallpaper: false, // одни обои на все мониторы (вместо своей пары на каждый)
+  separateThemes: true,   // раздельные обои день/ночь (фишка Lumina). false = один общий слот:
+                          // UI прячет ночной слот, applyForTheme всегда берёт 'light', тема ОС
+                          // игнорируется. Данные ночного слота при выключении НЕ стираются.
   monitors: {},           // { [deviceId]: { light: Slot, dark: Slot } }; Slot = { items: Item[] } (→ itemIds in Этап B)
   library: {},            // content pool { [id]: Item } — decoupled from placement (see src/library.js, future-todo #16)
   autoSwitch: true,
@@ -76,6 +79,7 @@ function normalize(cfg) {
   }
 
   cfg.gameModeBlock = !!cfg.gameModeBlock;
+  cfg.separateThemes = cfg.separateThemes !== false; // default ON (упавшее/чужое значение → true)
 
   // Manual theme override: only 'light' | 'dark' | null are meaningful — anything else
   // (corrupt config, older builds) collapses to null (= Auto) instead of wedging the cycle.

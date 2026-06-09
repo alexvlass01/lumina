@@ -202,6 +202,13 @@
 
       <h2 class="group-title" data-i18n="design.behaviorGroup">Поведение</h2>
       <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-title" data-i18n="design.separateTitle">Раздельные обои для светлой и тёмной темы</div>
+            <div class="row-sub" data-i18n="design.separateSub">У каждого монитора своя пара день/ночь. Выключите, чтобы вести один общий список обоев</div>
+          </div>
+          <button class="gtkswitch" id="swSeparate" role="switch" aria-checked="true"><span class="knob"></span></button>
+        </div>
         <div class="row" id="rowSingleWall" hidden>
           <div class="row-text">
             <div class="row-title" data-i18n="design.singleTitle">Одни обои на все мониторы</div>
@@ -209,7 +216,7 @@
           </div>
           <button class="gtkswitch" id="swSingle" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
-        <div class="row">
+        <div class="row" id="rowAutoSwitch">
           <div class="row-text">
             <div class="row-title" data-i18n="design.autoSwitchTitle">Автосмена при переключении темы</div>
             <div class="row-sub" data-i18n="design.autoSwitchSub">Менять обои автоматически, когда Windows переходит в светлый или тёмный режим</div>
