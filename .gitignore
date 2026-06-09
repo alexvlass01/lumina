@@ -27,6 +27,9 @@ ROADMAP.md
 # Local handoff log between sessions/agents (kept local, not published)
 STATUS.md
 
+# Local task/plan docs handed to the dev agent (kept local, not published)
+plans/
+
 # Bundled Wallhaven API key (official builds only) — NEVER publish.
 # Create wallhaven-key.json with {"apikey":"..."} for NSFW in official builds.
 wallhaven-key.json
