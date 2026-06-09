@@ -16,6 +16,7 @@
 // model (normalize → migrate, main.js/renderer → itemIds) atomically.
 
 const crypto = require('crypto');
+const path = require('path');
 const playlist = require('./playlist');
 
 // Stable id from a normalized absolute path (cheap; no file read). Import already
@@ -111,6 +112,22 @@ function flattenImages(library, scanDeep) {
     }
   }
   return out;
+}
+
+// The GC keep-set: every file the config still references (normalized lowercase paths).
+// The pool is self-sufficient — an image stays referenced even when assigned to no monitor
+// (that's the point of the library) — so ALL image paths are kept, plus the legacy globals.
+// ⚠️ SAFETY-CRITICAL: gcWallpapers() moves anything NOT in this set to .trash. An
+// under-inclusive set here is how the 2026-06-03 data-loss incident happened — when in
+// doubt, keep MORE, never less. Unit-tested in test/library.test.js.
+function referencedFiles(cfg) {
+  const set = new Set();
+  const add = (p) => { if (p) set.add(path.normalize(p).toLowerCase()); };
+  for (const it of Object.values((cfg && cfg.library) || {})) {
+    if (it && it.type === 'image' && it.path) add(it.path);
+  }
+  if (cfg) { add(cfg.lightWallpaper); add(cfg.darkWallpaper); }
+  return set;
 }
 
 // Ids of pool items whose backing path no longer exists on disk. `existsFn(path)` is
@@ -217,5 +234,5 @@ function migrateConfig(cfg) {
 module.exports = {
   idFor, baseName, makeItem, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
-  resolveIds, flattenImages, findMissingIds, listItems, migrateSlot, migrateConfig,
+  resolveIds, flattenImages, findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
 };

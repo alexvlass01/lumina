@@ -180,4 +180,21 @@ ok('findMissingIds: flags only the missing image + folder',
 ok('findMissingIds: nothing missing -> empty', L.findMissingIds(lib6, () => true).length === 0);
 ok('findMissingIds: no existsFn -> empty (safe no-op)', L.findMissingIds(lib6).length === 0);
 
+// ---- referencedFiles: the GC keep-set (SAFETY-CRITICAL — under-inclusion loses user files) ----
+const path = require('path');
+const norm = (p) => path.normalize(p).toLowerCase();
+const lib7 = {};
+L.addPath(lib7, 'image', 'C:/store/A.jpg');
+L.addPath(lib7, 'image', 'C:/store/b.png');
+L.addPath(lib7, 'folder', 'C:/pics/dir'); // folders are external sources, not GC-swept files
+const cfg7 = { library: lib7, lightWallpaper: 'C:/store/legacy-light.jpg', darkWallpaper: '' };
+const keep = L.referencedFiles(cfg7);
+ok('referencedFiles: keeps every pool image (normalized, case-insensitive)',
+  keep.has(norm('C:/store/A.jpg')) && keep.has(norm('C:/store/b.png')));
+ok('referencedFiles: keeps legacy globals, skips empty ones',
+  keep.has(norm('C:/store/legacy-light.jpg')) && keep.size === 3);
+ok('referencedFiles: folder paths are not file refs', !keep.has(norm('C:/pics/dir')));
+ok('referencedFiles: empty/missing config -> empty set',
+  L.referencedFiles(null).size === 0 && L.referencedFiles({}).size === 0);
+
 console.log('\nAll ' + passed + ' library tests passed.');

@@ -77,6 +77,12 @@ function normalize(cfg) {
 
   cfg.gameModeBlock = !!cfg.gameModeBlock;
 
+  // Manual theme override: only 'light' | 'dark' | null are meaningful — anything else
+  // (corrupt config, older builds) collapses to null (= Auto) instead of wedging the cycle.
+  if (cfg.themeOverride !== 'light' && cfg.themeOverride !== 'dark') cfg.themeOverride = null;
+  if (cfg._lastAutoTheme !== 'light' && cfg._lastAutoTheme !== 'dark') cfg._lastAutoTheme = null;
+  if (!['added', 'name', 'size', 'shuffle'].includes(cfg.librarySort)) cfg.librarySort = 'added';
+
   cfg.triggers = {
     onStartup: false, onWakeup: false, stealth: false,
     ...(cfg.triggers && typeof cfg.triggers === 'object' ? cfg.triggers : {}),

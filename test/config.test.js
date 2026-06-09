@@ -96,5 +96,15 @@ fs.writeFileSync(p('triggers_missing.json'), JSON.stringify({ autoSwitch: true }
 const loadedNoTriggers = C.load(p('triggers_missing.json'));
 ok('missing triggers → defaults (all false)', loadedNoTriggers.triggers.onStartup === false && loadedNoTriggers.triggers.onWakeup === false && loadedNoTriggers.triggers.stealth === false);
 
+// themeOverride / librarySort: invalid values collapse to safe defaults, valid pass through
+fs.writeFileSync(p('override_bad.json'), JSON.stringify({ themeOverride: 'banana', _lastAutoTheme: 42, librarySort: 'nope' }));
+const loadedBadOverride = C.load(p('override_bad.json'));
+ok('invalid themeOverride/_lastAutoTheme → null, bad librarySort → added',
+  loadedBadOverride.themeOverride === null && loadedBadOverride._lastAutoTheme === null && loadedBadOverride.librarySort === 'added');
+fs.writeFileSync(p('override_ok.json'), JSON.stringify({ themeOverride: 'dark', _lastAutoTheme: 'light', librarySort: 'shuffle' }));
+const loadedOkOverride = C.load(p('override_ok.json'));
+ok('valid themeOverride/_lastAutoTheme/librarySort pass through',
+  loadedOkOverride.themeOverride === 'dark' && loadedOkOverride._lastAutoTheme === 'light' && loadedOkOverride.librarySort === 'shuffle');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');
