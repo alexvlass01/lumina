@@ -193,6 +193,10 @@ body {
    render as a stray orange box). Mouse clicks don't leave a ring. */
 :focus:not(:focus-visible) { outline: none; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* The [hidden] attribute must always win, even over a component's display:flex/grid. Without this,
+   toggling el.hidden has no effect on flex/grid containers (e.g. the online content-filters row). */
+[hidden] { display: none !important; }
 .tb-right { display: flex; align-items: center; -webkit-app-region: no-drag; app-region: no-drag; }
 .tb-btn.active { background: var(--btn-bg); color: var(--accent); }
 
