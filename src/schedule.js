@@ -87,6 +87,19 @@ function resolveTheme(schedule, date, fallback = 'light', tzOffsetMin) {
   return saysDark(b, date) ? 'dark' : 'light';
 }
 
+// Decide how the main process initializes wallpapers after monitors are enumerated.
+// Unified mode must always apply its shared ('light') slot, even when a previously
+// selected independent schedule is still stored but hidden in the UI.
+function wallpaperStartupAction(config) {
+  const cfg = config || {};
+  if (cfg.slideshow && cfg.slideshow.enabled) return 'slideshow';
+  if (cfg.separateThemes === false) return 'apply';
+  const mode = cfg.wallpaperSchedule && cfg.wallpaperSchedule.mode;
+  if (mode === 'system') return 'apply';
+  if (mode === 'time' || mode === 'sun') return 'schedule';
+  return 'none';
+}
+
 // Minutes until the NEXT boundary (light or dark), minimum 1 — used to arm the flip timer.
 function minutesUntilNextBoundary(b, date) {
   const nowMin = date.getHours() * 60 + date.getMinutes();
@@ -94,4 +107,12 @@ function minutesUntilNextBoundary(b, date) {
   return Math.max(1, Math.min(...until));
 }
 
-module.exports = { parseHM, sunUT, boundaries, saysDark, resolveTheme, minutesUntilNextBoundary };
+module.exports = {
+  parseHM,
+  sunUT,
+  boundaries,
+  saysDark,
+  resolveTheme,
+  wallpaperStartupAction,
+  minutesUntilNextBoundary,
+};

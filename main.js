@@ -1638,9 +1638,10 @@ app.whenReady().then(async () => {
   // NB: GC намеренно НЕ запускаем на старте — слишком опасно (см. gcWallpapers).
   // Осиротевшие файлы подчищаются только при явном удалении из библиотеки/слота, и то в .trash.
   const wallpaperMode = config.wallpaperSchedule && config.wallpaperSchedule.mode;
-  if (config.slideshow.enabled) tickSlideshow(false); // применить текущее + запустить ротацию
-  else if (wallpaperMode === 'system') applyForTheme();
-  else if (wallpaperMode === 'time' || wallpaperMode === 'sun') await applyWallpaperSchedule(false, true);
+  const startupAction = schedule.wallpaperStartupAction(config);
+  if (startupAction === 'slideshow') tickSlideshow(false); // применить текущее + запустить ротацию
+  else if (startupAction === 'apply') applyForTheme();
+  else if (startupAction === 'schedule') await applyWallpaperSchedule(false, true);
   else broadcastWallpaperTheme();
   if (config.slideshow.enabled && (wallpaperMode === 'time' || wallpaperMode === 'sun')) {
     await applyWallpaperSchedule(false, false);

@@ -68,6 +68,18 @@ ok('resolveTheme: off/system modes keep fallback',
 ok('resolveTheme: sun without coordinates keeps fallback',
   S.resolveTheme({ mode: 'sun', lat: '', lng: '' }, at(12, 0), 'dark') === 'dark');
 
+// ---- wallpaper startup orchestration ----
+ok('wallpaper startup: slideshow takes priority',
+  S.wallpaperStartupAction({ separateThemes: false, slideshow: { enabled: true }, wallpaperSchedule: { mode: 'time' } }) === 'slideshow');
+ok('wallpaper startup: unified mode always applies its shared slot',
+  S.wallpaperStartupAction({ separateThemes: false, slideshow: { enabled: false }, wallpaperSchedule: { mode: 'time' } }) === 'apply'
+  && S.wallpaperStartupAction({ separateThemes: false, slideshow: { enabled: false }, wallpaperSchedule: { mode: 'sun' } }) === 'apply');
+ok('wallpaper startup: separate modes choose their scheduler behavior',
+  S.wallpaperStartupAction({ separateThemes: true, slideshow: { enabled: false }, wallpaperSchedule: { mode: 'system' } }) === 'apply'
+  && S.wallpaperStartupAction({ separateThemes: true, slideshow: { enabled: false }, wallpaperSchedule: { mode: 'time' } }) === 'schedule'
+  && S.wallpaperStartupAction({ separateThemes: true, slideshow: { enabled: false }, wallpaperSchedule: { mode: 'sun' } }) === 'schedule'
+  && S.wallpaperStartupAction({ separateThemes: true, slideshow: { enabled: false }, wallpaperSchedule: { mode: 'off' } }) === 'none');
+
 // ---- minutesUntilNextBoundary ----
 ok('minutesUntil: picks the nearer upcoming boundary', S.minutesUntilNextBoundary(b, at(10, 0)) === 600);
 ok('minutesUntil: one minute before a flip', S.minutesUntilNextBoundary(b, at(19, 59)) === 1);
