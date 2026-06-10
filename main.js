@@ -1344,24 +1344,33 @@ ipcMain.handle('folder-info', (e, dir) => {
 
 // Маленький тамбнейл для библиотечных превью (через Windows shell) → data-URL. Без него
 // карточки грузили бы полноразмерные (до 4K) файлы → тормоза декодирования + «лесенка»
-// при даунскейле. LRU-кэш по "путь|WxH" (хранит и промахи как '' — не пересоздаём впустую).
+// при даунскейле. Вместе с URL держим размер thumbnail: его пропорция совпадает с оригиналом
+// и нужна justified-сетке. LRU-кэш по "путь|WxH" хранит и промахи.
 const thumbCache = new Map();
 const THUMB_CAP = 800;
-ipcMain.handle('thumb', async (e, p, w, h) => {
-  if (!p || typeof p !== 'string') return '';
+async function thumbnailData(p, w, h) {
+  if (!p || typeof p !== 'string') return { url: '', width: 0, height: 0 };
   const W = w || 320; const H = h || 200;
   const key = `${p}|${W}x${H}`;
   const hit = thumbCache.get(key);
   if (hit !== undefined) { thumbCache.delete(key); thumbCache.set(key, hit); return hit; } // LRU bump
-  let url = '';
+  let data = { url: '', width: 0, height: 0 };
   try {
     const img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
-    if (img && !img.isEmpty()) url = img.toDataURL();
-  } catch { url = ''; }
-  thumbCache.set(key, url);
+    if (img && !img.isEmpty()) {
+      const size = img.getSize();
+      data = { url: img.toDataURL(), width: size.width || 0, height: size.height || 0 };
+    }
+  } catch {}
+  thumbCache.set(key, data);
   if (thumbCache.size > THUMB_CAP) { const k0 = thumbCache.keys().next().value; thumbCache.delete(k0); }
-  return url;
+  return data;
+}
+ipcMain.handle('thumb', async (e, p, w, h) => {
+  const data = await thumbnailData(p, w, h);
+  return data.url;
 });
+ipcMain.handle('thumb-info', (e, p, w, h) => thumbnailData(p, w, h));
 
 // Содержимое папки для навигации ВНУТРЬ библиотеки: подпапки + картинки (один уровень).
 ipcMain.handle('folder-entries', (e, dir) => {

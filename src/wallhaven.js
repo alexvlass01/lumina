@@ -43,12 +43,17 @@ function buildSearchUrl(opts = {}) {
 function mapItem(w) {
   if (!w || !w.path) return null;
   const thumbs = w.thumbs || {};
+  const match = String(w.resolution || '').match(/^(\d+)x(\d+)$/i);
+  const width = Number(w.dimension_x) || (match ? Number(match[1]) : 0);
+  const height = Number(w.dimension_y) || (match ? Number(match[2]) : 0);
   return {
     id: w.id,
     page: w.url || '',                       // wallhaven.cc page (attribution)
     full: w.path,                            // full-resolution image URL (download this)
     thumb: thumbs.small || thumbs.large || w.path,
     resolution: w.resolution || '',
+    width,
+    height,
     fileType: w.file_type || '',
     purity: w.purity || '',
     category: w.category || '',

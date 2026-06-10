@@ -111,6 +111,7 @@ if (!window.api) {
     setStartMinimized: async (v) => (mock.startMinimized = v),
     fileUrl: async (p) => p,
     thumb: async (p) => p,
+    thumbInfo: async (p) => ({ url: p, width: 16, height: 10 }),
     quitApp: () => {},
     createShortcuts: async (which) => {
       if (which === 'desktop' || which === 'both' || !which) mockSc.desktop = true;
@@ -636,7 +637,53 @@ const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [],
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
+let justifiedFrame = 0;
+const justifiedPending = new Set();
 const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
+
+function setLibCardAspect(card, aspect) {
+  if (!card) return;
+  const safe = window.JustifiedLayout.normalizeAspect(aspect, 0.65, 3);
+  if (card.dataset.aspect === String(safe)) return;
+  card.dataset.aspect = String(safe);
+  const grid = card.closest('.lib-grid');
+  if (grid) scheduleJustifiedLayout(grid);
+}
+
+function layoutLibGrid(grid) {
+  if (!grid || !grid.isConnected) return;
+  const width = grid.clientWidth;
+  if (width < 40) return;
+  const cards = Array.from(grid.children).filter((el) => el.classList.contains('lib-card'));
+  if (!cards.length) return;
+  const targetHeight = width >= 1000 ? 178 : width >= 700 ? 160 : 142;
+  const boxes = window.JustifiedLayout.layout(
+    cards.map((card) => Number(card.dataset.aspect) || 1.6),
+    width,
+    { gap: 12, targetHeight, minAspect: 0.65, maxAspect: 3 }
+  );
+  cards.forEach((card, i) => {
+    const box = boxes[i];
+    card.style.width = `${box.width.toFixed(2)}px`;
+    card.style.height = `${box.height.toFixed(2)}px`;
+  });
+}
+
+function scheduleJustifiedLayout(grid) {
+  if (grid) justifiedPending.add(grid);
+  if (justifiedFrame) return;
+  justifiedFrame = requestAnimationFrame(() => {
+    justifiedFrame = 0;
+    const grids = Array.from(justifiedPending);
+    justifiedPending.clear();
+    grids.forEach(layoutLibGrid);
+  });
+}
+
+function scheduleAllLibraryLayouts() {
+  scheduleJustifiedLayout($('#libGrid'));
+  scheduleJustifiedLayout($('#whGrid'));
+}
 
 // ids referenced by any monitor×theme slot (to mark assigned items)
 function assignedIds() {
@@ -729,6 +776,7 @@ function renderLibrary() {
     exitFolderState(); // leaving the local view drops any folder navigation
     renderBreadcrumbs();
     renderOnline();
+    scheduleJustifiedLayout($('#whGrid'));
     return;
   }
   if (online) online.hidden = true;
@@ -750,12 +798,14 @@ function renderLibrary() {
   if (empty) { empty.hidden = items.length > 0; if (!items.length) setLibEmptyText('library.empty'); }
   grid.innerHTML = '';
   items.forEach((it) => grid.appendChild(buildLibCard(it, assigned.has(it.id))));
+  scheduleJustifiedLayout(grid);
 }
 
 function buildLibCard(it, isAssigned) {
   const card = document.createElement('div');
   card.className = 'lib-card' + (it.type === 'folder' ? ' folder' : '') + (isAssigned ? ' assigned' : '');
   card.dataset.id = it.id;
+  setLibCardAspect(card, it.width && it.height ? it.width / it.height : 1.6);
 
   if (it.type === 'folder') {
     fillFolderCollage(card, it.path);
@@ -938,10 +988,17 @@ function resetLibObservers() {
 function loadThumbInto(card) {
   const p = card.dataset.thumbPath;
   if (!p) return;
-  window.api.thumb(p, +card.dataset.thumbW || 320, +card.dataset.thumbH || 200).then((u) => {
+  const w = +card.dataset.thumbW || 320;
+  const h = +card.dataset.thumbH || 200;
+  const request = window.api.thumbInfo
+    ? window.api.thumbInfo(p, w, h)
+    : window.api.thumb(p, w, h).then((url) => ({ url, width: 0, height: 0 }));
+  request.then((info) => {
+    const u = info && info.url;
     if (!u) { card.classList.add('missing'); return; }
     card.classList.remove('missing');
     card.style.backgroundImage = `url("${u}")`;
+    if (info.width > 0 && info.height > 0) setLibCardAspect(card, info.width / info.height);
   });
 }
 function lazyThumb(card, p, w, h) {
@@ -983,6 +1040,7 @@ async function renderFolderView(tok) {
   grid.innerHTML = '';
   folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
   images.forEach((p) => grid.appendChild(buildPathImageCard(p, assigned, pmap)));
+  scheduleJustifiedLayout(grid);
   const total = folders.length + images.length;
   if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
 }
@@ -992,6 +1050,7 @@ function buildSubfolderCard(f) {
   const card = document.createElement('div');
   card.className = 'lib-card folder';
   card.dataset.path = f.path;
+  setLibCardAspect(card, 1.6);
   fillFolderCollage(card, f.path);
   const menu = document.createElement('button');
   menu.className = 'lib-menu-btn';
@@ -1023,6 +1082,7 @@ function buildEphemeralImageCard(p) {
   const card = document.createElement('div');
   card.className = 'lib-card';
   card.title = baseName(p);
+  setLibCardAspect(card, 1.6);
   lazyThumb(card, p, 320, 200);
   const materialize = async () => {
     const res = await window.api.libraryMaterialize(p, 'image');
@@ -1100,6 +1160,7 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
       const en = entries[i];
       grid.appendChild(en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path));
     }
+    scheduleJustifiedLayout(grid);
     if (sentinel) sentinel.hidden = i >= entries.length;
   };
   drawNext();
@@ -1626,6 +1687,7 @@ async function doWhSearch(reset) {
   WH.lastPage = (res.meta && res.meta.lastPage) || 1;
   if (reset && grid) grid.innerHTML = '';
   (res.items || []).forEach((it) => grid.appendChild(buildWhCard(it)));
+  scheduleJustifiedLayout(grid);
   if (note) note.textContent = (grid && grid.children.length) ? '' : t('online.noResults');
   const more = $('#whMore'); if (more) more.hidden = WH.page >= WH.lastPage;
 }
@@ -1639,6 +1701,7 @@ function whAlreadyAdded(item) {
 function buildWhCard(item) {
   const card = document.createElement('div');
   card.className = 'lib-card';
+  setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
   if (item.thumb) card.style.backgroundImage = `url("${item.thumb}")`;
   const label = [item.resolution, item.category].filter(Boolean).join(' · ');
   card.title = label;
@@ -1674,6 +1737,8 @@ function buildWhCard(item) {
 function showPage(name) {
   const views = { home: 'viewHome', library: 'viewLibrary', design: 'viewDesign', prefs: 'viewPrefs' };
   const target = views[name] || 'viewHome';
+  const page = document.querySelector('.page');
+  if (page) page.classList.toggle('library-page', name === 'library');
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== target; });
   document.querySelectorAll('.navbtn').forEach((b) => {
     b.classList.toggle('active', b.dataset.page === name);
@@ -1685,6 +1750,7 @@ function showPage(name) {
     renderHome();
   } else if (name === 'library') {
     renderLibrary();
+    scheduleAllLibraryLayouts();
   } else if (name === 'design') {
     renderPreviews();   // reflect current config
     layoutMonitors();   // stages just became visible — refit thumbnails
@@ -2217,7 +2283,7 @@ async function init() {
   let resizeT = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeT);
-    resizeT = setTimeout(layoutMonitors, 60);
+    resizeT = setTimeout(() => { layoutMonitors(); scheduleAllLibraryLayouts(); }, 60);
   });
 
   initHotkeys();

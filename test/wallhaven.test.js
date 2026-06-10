@@ -47,7 +47,8 @@ ok('parseSearch: maps full + thumb + page', (() => {
   return it.full === 'https://w.wallhaven.cc/full/ab/wallhaven-abc123.jpg'
     && it.thumb === 'https://th.wallhaven.cc/small/ab/abc123.jpg'
     && it.page === 'https://wallhaven.cc/w/abc123'
-    && it.resolution === '1920x1080' && it.source === 'https://example.com/art';
+    && it.resolution === '1920x1080' && it.width === 1920 && it.height === 1080
+    && it.source === 'https://example.com/art';
 })());
 ok('parseSearch: meta parsed', parsed.meta.currentPage === 1 && parsed.meta.lastPage === 5 && parsed.meta.total === 120);
 ok('parseSearch: junk -> empty', (() => {

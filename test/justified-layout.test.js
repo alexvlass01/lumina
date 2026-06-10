@@ -1,0 +1,38 @@
+'use strict';
+
+const assert = require('assert');
+const J = require('../renderer/justified-layout');
+
+let passed = 0;
+const ok = (name, condition) => { assert.ok(condition, name); console.log('  ✓ ' + name); passed++; };
+const near = (a, b, epsilon = 0.01) => Math.abs(a - b) <= epsilon;
+
+ok('normalizeAspect: uses fallback and clamps extremes',
+  J.normalizeAspect(null) === 1.6
+  && J.normalizeAspect(0.1) === 0.5
+  && J.normalizeAspect(8) === 3);
+
+const full = J.layout([1.5, 1.5, 1.5, 1.5], 1000, { gap: 10, targetHeight: 200 });
+ok('complete row fills the available width',
+  near(full.slice(0, 3).reduce((sum, box) => sum + box.width, 0) + 20, 1000));
+ok('row break chooses the height closest to target',
+  near(full[0].height, full[2].height)
+  && Math.abs(full[0].height - 200) < Math.abs(161.67 - 200)
+  && near(full[3].height, 200));
+ok('layout preserves source aspect ratios', full.every((box) => near(box.width / box.height, 1.5)));
+
+const last = J.layout([1.5, 1.5], 1000, { gap: 10, targetHeight: 200 });
+ok('incomplete final row keeps target height instead of stretching',
+  last.every((box) => near(box.height, 200))
+  && last.reduce((sum, box) => sum + box.width, 0) + 10 < 1000);
+
+const mixed = J.layout([0.2, 1, 6], 620, { gap: 10, targetHeight: 150 });
+ok('extreme portraits and panoramas are capped without overflow',
+  mixed.length === 3
+  && near(mixed[0].width / mixed[0].height, 0.5)
+  && near(mixed[2].width / mixed[2].height, 3)
+  && mixed.reduce((sum, box) => sum + box.width, 0) + 20 <= 620.01);
+
+ok('empty input returns no boxes', J.layout([], 500).length === 0);
+
+console.log('\nAll ' + passed + ' justified-layout tests passed.');

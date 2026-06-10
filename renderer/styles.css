@@ -287,6 +287,7 @@ body.first-run .tb-right { display: none; }
   width: 100%;
   margin: 0 auto;
 }
+.page.library-page { max-width: none; }
 .page::-webkit-scrollbar { width: 10px; }
 .page::-webkit-scrollbar-thumb {
   background: var(--switch-off);
@@ -855,14 +856,18 @@ select option {
 @keyframes lib-spin { to { transform: rotate(360deg); } }
 
 .lib-grid {
-  display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
 }
 .lib-grid.drag-over { outline: 2px dashed var(--accent); outline-offset: 5px; border-radius: 12px; }
 
 .lib-card {
   position: relative;
-  aspect-ratio: 16 / 10;
+  flex: 0 0 auto;
+  width: 160px;
+  height: 100px;
   border-radius: 10px;
   border: 1px solid var(--card-border);
   background: var(--preview-bg) center / cover no-repeat;

@@ -48,6 +48,7 @@ contextBridge.exposeInMainWorld('api', {
   setStartMinimized: (v) => ipcRenderer.invoke('set-start-minimized', v),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   thumb: (p, w, h) => ipcRenderer.invoke('thumb', p, w, h),
+  thumbInfo: (p, w, h) => ipcRenderer.invoke('thumb-info', p, w, h),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
   shortcutsStatus: () => ipcRenderer.invoke('shortcuts-status'),
