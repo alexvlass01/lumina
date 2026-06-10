@@ -178,9 +178,9 @@
   "slideshow": {
     "group": "Slideshow",
     "title": "Slideshow",
-    "sub": "Cycle the wallpaper through your added photos and folders",
-    "intervalTitle": "Interval",
-    "intervalSub": "How many minutes between pictures",
+    "sub": "Cycle through added photos and folders using the triggers below",
+    "intervalTitle": "By interval",
+    "intervalSub": "Automatically switch after this many minutes",
     "orderTitle": "Order",
     "orderSub": "How the next picture is chosen"
   },

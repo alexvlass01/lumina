@@ -36,6 +36,10 @@ ok('nextIndex: shuffle never repeats current', (() => {
   return true;
 })());
 ok('nextIndex: shuffle deterministic with rnd', P.nextIndex(0, 3, true, () => 0.99) === 2); // floor(0.99*3)=2
+ok('usesInterval: legacy slideshow stays enabled unless explicitly disabled',
+  P.usesInterval({ enabled: true }) === true
+  && P.usesInterval({ enabled: true, intervalEnabled: false }) === false
+  && P.usesInterval({ enabled: false, intervalEnabled: true }) === false);
 
 // ---- resolveSlot (real temp folder) ----
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-pl-'));

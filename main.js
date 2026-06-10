@@ -655,6 +655,9 @@ function advanceIndices(theme, targetMonitors = null) {
 async function tickSlideshow(advance, isManual = false) {
   clearSlideshowTimer();
   if (!config.slideshow || !config.slideshow.enabled) return;
+  const intervalEnabled = playlist.usesInterval(config.slideshow);
+  // A timer may already be queued when the user disables the interval trigger.
+  if (advance && !isManual && !intervalEnabled) return;
 
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
     console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
@@ -665,6 +668,7 @@ async function tickSlideshow(advance, isManual = false) {
   const theme = wallpaperThemeName();
   if (advance) { advanceIndices(theme); saveConfig(); }
   await applyForTheme(theme, isManual);
+  if (!intervalEnabled) return;
   const mins = Math.max(1, Math.floor(Number(config.slideshow.intervalMin) || 30));
   slideshowTimer = setTimeout(() => tickSlideshow(true, false), mins * 60000);
 }
@@ -1407,6 +1411,7 @@ ipcMain.handle('library-materialize', (e, p, type) => {
 ipcMain.handle('set-slideshow', (e, patch) => {
   config.slideshow = { ...config.slideshow, ...(patch || {}) };
   config.slideshow.enabled = !!config.slideshow.enabled;
+  config.slideshow.intervalEnabled = config.slideshow.intervalEnabled !== false;
   if (!Number.isFinite(+config.slideshow.intervalMin) || +config.slideshow.intervalMin < 1) config.slideshow.intervalMin = 30;
   config.slideshow.intervalMin = Math.floor(+config.slideshow.intervalMin);
   if (config.slideshow.order !== 'shuffle') config.slideshow.order = 'sequential';
@@ -1661,12 +1666,14 @@ app.whenReady().then(async () => {
 
   // ── Wallpaper triggers ───────────────────────────────────────────────
   function triggerWithStealth(reason) {
+    if (!config.slideshow || !config.slideshow.enabled) return;
     if (config.triggers && config.triggers.stealth) {
       console.log(`[StealthTrigger] Waiting for maximized window for ${reason}...`);
       let attempts = 0;
       const maxAttempts = 40; // 40 * 3s = 120s
       
       const tryStealth = async () => {
+        if (!config.slideshow || !config.slideshow.enabled) return;
         attempts++;
         try {
           const monitors = monitorsCache.length ? monitorsCache : await getMonitors();
@@ -1713,13 +1720,14 @@ app.whenReady().then(async () => {
     } else {
       // Normal delay
       setTimeout(() => {
+        if (!config.slideshow || !config.slideshow.enabled) return;
         console.log(`[Trigger] Triggering next wallpaper for ${reason}`);
         triggerNextWallpaper();
       }, 5000);
     }
   }
 
-  if (config.triggers && config.triggers.onStartup) {
+  if (config.slideshow && config.slideshow.enabled && config.triggers && config.triggers.onStartup) {
     triggerWithStealth('startup');
   }
 
@@ -1728,7 +1736,7 @@ app.whenReady().then(async () => {
     if (config.wallpaperSchedule && (config.wallpaperSchedule.mode === 'time' || config.wallpaperSchedule.mode === 'sun')) {
       applyWallpaperSchedule(false, true);
     }
-    if (config.triggers && config.triggers.onWakeup) {
+    if (config.slideshow && config.slideshow.enabled && config.triggers && config.triggers.onWakeup) {
       triggerWithStealth('wakeup');
     }
   });

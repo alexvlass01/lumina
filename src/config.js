@@ -34,8 +34,8 @@ const DEFAULT_CONFIG = {
   themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' },
   themeOverride: null,    // manual override from the Home theme indicator: null (Auto) | 'light' | 'dark'
   _lastAutoTheme: null,   // theme that was active when the override was engaged (drives the Auto→light→dark→Auto cycle)
-  // Слайдшоу: плейлист крутится по интервалу. order: 'sequential' | 'shuffle'
-  slideshow: { enabled: false, intervalMin: 30, order: 'sequential' },
+  // Слайдшоу: кадр меняют выбранные триггеры. order: 'sequential' | 'shuffle'
+  slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' },
   slideshowIndex: {},     // { [deviceId]: { light: idx, dark: idx } } — текущий кадр
   hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
   gameModeBlock: false,
@@ -80,10 +80,11 @@ function normalize(cfg) {
   // shapes and is idempotent (re-running on a migrated config is a no-op).
   library.migrateConfig(cfg);
   cfg.slideshow = {
-    enabled: false, intervalMin: 30, order: 'sequential',
+    enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential',
     ...(cfg.slideshow && typeof cfg.slideshow === 'object' ? cfg.slideshow : {}),
   };
   cfg.slideshow.enabled = !!cfg.slideshow.enabled;
+  cfg.slideshow.intervalEnabled = cfg.slideshow.intervalEnabled !== false;
   if (!Number.isFinite(+cfg.slideshow.intervalMin) || +cfg.slideshow.intervalMin < 1) cfg.slideshow.intervalMin = 30;
   cfg.slideshow.intervalMin = Math.floor(+cfg.slideshow.intervalMin);
   if (cfg.slideshow.order !== 'shuffle') cfg.slideshow.order = 'sequential';

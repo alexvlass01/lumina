@@ -289,7 +289,7 @@
       </div>
 
       <h2 class="group-title" data-i18n="slideshow.group">Слайдшоу</h2>
-      <div class="boxed-list">
+      <div class="boxed-list" id="slideshowList">
         <div class="row">
           <div class="row-text">
             <div class="row-title" data-i18n="slideshow.title">Слайдшоу</div>
@@ -297,14 +297,7 @@
           </div>
           <button class="gtkswitch" id="swSlideshow" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
-        <div class="row">
-          <div class="row-text">
-            <div class="row-title" data-i18n="slideshow.intervalTitle">Интервал</div>
-            <div class="row-sub" data-i18n="slideshow.intervalSub">Через сколько минут менять картинку</div>
-          </div>
-          <input type="number" min="1" step="1" id="slideInterval" class="time-input num-input" value="30" />
-        </div>
-        <div class="row">
+        <div class="row slideshow-option" hidden>
           <div class="row-text">
             <div class="row-title" data-i18n="slideshow.orderTitle">Порядок</div>
             <div class="row-sub" data-i18n="slideshow.orderSub">Как выбирать следующую картинку</div>
@@ -316,18 +309,31 @@
             </select>
           </div>
         </div>
-      </div>
-
-      <h2 class="group-title" data-i18n="triggers.group">События смены обоев</h2>
-      <div class="boxed-list">
-        <div class="row">
+        <div class="row slideshow-option" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="slideshow.intervalTitle">Интервал</div>
+            <div class="row-sub" data-i18n="slideshow.intervalSub">Через сколько минут менять картинку</div>
+          </div>
+          <div class="row-controls">
+            <input type="number" min="1" step="1" id="slideInterval" class="time-input num-input" value="30" />
+            <button class="gtkswitch" id="swSlideInterval" role="switch" aria-checked="true"><span class="knob"></span></button>
+          </div>
+        </div>
+        <div class="row slideshow-option" hidden>
           <div class="row-text">
             <div class="row-title"><span data-i18n="triggers.startupTitle">При запуске Windows</span><span class="beta-badge">beta</span></div>
             <div class="row-sub" data-i18n="triggers.startupSub">Переключать обои при каждом старте системы</div>
           </div>
           <button class="gtkswitch" id="swTriggerStartup" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
-        <div class="row" id="rowTriggerStealth">
+        <div class="row slideshow-option" hidden>
+          <div class="row-text">
+            <div class="row-title"><span data-i18n="triggers.wakeupTitle">При выходе из спящего режима</span><span class="beta-badge">beta</span></div>
+            <div class="row-sub" data-i18n="triggers.wakeupSub">Переключать обои при пробуждении компьютера из сна</div>
+          </div>
+          <button class="gtkswitch" id="swTriggerWakeup" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row slideshow-option" id="rowTriggerStealth" hidden>
           <div class="row-text">
             <div class="row-title">
               <span data-i18n="triggers.stealthTitle">Невидимая смена</span>
@@ -336,13 +342,6 @@
             <div class="row-sub" data-i18n="triggers.stealthSub">Ждать до 2 минут развёрнутого на весь экран окна, чтобы сменить обои незаметно</div>
           </div>
           <button class="gtkswitch" id="swTriggerStealth" role="switch" aria-checked="false"><span class="knob"></span></button>
-        </div>
-        <div class="row">
-          <div class="row-text">
-            <div class="row-title"><span data-i18n="triggers.wakeupTitle">При выходе из спящего режима</span><span class="beta-badge">beta</span></div>
-            <div class="row-sub" data-i18n="triggers.wakeupSub">Переключать обои при пробуждении компьютера из сна</div>
-          </div>
-          <button class="gtkswitch" id="swTriggerWakeup" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
       </div>
 

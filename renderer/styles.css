@@ -667,9 +667,11 @@ body.single-theme .wallpaper-schedule-row { display: none !important; }
 }
 .row:first-child { border-top-left-radius: 13px; border-top-right-radius: 13px; }
 .row:last-child { border-bottom: none; border-bottom-left-radius: 13px; border-bottom-right-radius: 13px; }
+.boxed-list.collapsed > .row:first-child { border-bottom: none; border-radius: 13px; }
 .row-text { flex: 1 1 auto; }
 .row-title { font-weight: 600; font-size: 14px; }
 .row-sub { color: var(--text-dim); font-size: 12.5px; margin-top: 2px; line-height: 1.35; }
+.row-controls { display: flex; align-items: center; gap: 10px; flex: 0 0 auto; }
 .row.clickable {
   cursor: pointer;
   transition: background 0.15s ease;

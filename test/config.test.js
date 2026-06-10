@@ -18,7 +18,7 @@ const p = (name) => path.join(tmp, name);
 
 // missing file -> defaults
 const d = C.load(p('nope.json'));
-ok('load missing file -> defaults', d.autoSwitch === true && d.wallpaperSchedule.mode === 'system' && d.slideshow.intervalMin === 30 && typeof d.monitors === 'object');
+ok('load missing file -> defaults', d.autoSwitch === true && d.wallpaperSchedule.mode === 'system' && d.slideshow.intervalEnabled === true && d.slideshow.intervalMin === 30 && typeof d.monitors === 'object');
 
 // freshDefaults must be independent (no shared nested objects)
 const a = C.freshDefaults();
@@ -38,7 +38,12 @@ ok('legacy string slot migrated to library itemIds',
   && L.getItem(mig.library, mig.monitors.M1.light.itemIds[0]).path === 'C:/a.jpg'
   && mig.monitors.M1.dark.itemIds.length === 0);
 ok('slideshow values sanitized',
-  mig.slideshow.intervalMin === 30 && mig.slideshow.order === 'sequential' && mig.slideshow.enabled === true);
+  mig.slideshow.intervalEnabled === true && mig.slideshow.intervalMin === 30
+  && mig.slideshow.order === 'sequential' && mig.slideshow.enabled === true);
+fs.writeFileSync(p('interval_off.json'), JSON.stringify({ slideshow: { enabled: true, intervalEnabled: false, intervalMin: 15 } }));
+const intervalOff = C.load(p('interval_off.json'));
+ok('explicitly disabled slideshow interval survives load',
+  intervalOff.slideshow.enabled === true && intervalOff.slideshow.intervalEnabled === false && intervalOff.slideshow.intervalMin === 15);
 
 // save + reload round-trip (atomic write)
 const cfg = C.freshDefaults();

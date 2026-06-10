@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, triggers: { onStartup: false, onWakeup: false, stealth: false } };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   window.api = {
@@ -218,6 +218,7 @@ function toast(msg) {
 let monitorList = [];
 let selectedMonitorId = null;
 let monitorAspect = 16 / 9;
+let previewContextVersion = 0;
 
 function selectedMonitor() {
   return monitorList.find((m) => m.id === selectedMonitorId) || null;
@@ -230,11 +231,13 @@ function applySelectedAspect() {
 }
 
 function setMonitors(list) {
+  const previousMonitorId = selectedMonitorId;
   monitorList = Array.isArray(list) && list.length ? list : [];
   if (!monitorList.find((m) => m.id === selectedMonitorId)) {
     const primary = monitorList.find((m) => m.primary) || monitorList[0];
     selectedMonitorId = primary ? primary.id : null;
   }
+  if (selectedMonitorId !== previousMonitorId) resetPreviewsForMonitor(selectedMonitorId);
   applySelectedAspect();
   buildMonitorMap();
   updateSingleWallRow();
@@ -258,7 +261,9 @@ function updateMonLabel() {
 }
 
 function selectMonitor(m) {
+  const changed = selectedMonitorId !== m.id;
   selectedMonitorId = m.id;
+  if (changed) resetPreviewsForMonitor(m.id);
   applySelectedAspect();
   document.querySelectorAll('.monchip').forEach((c) => {
     c.classList.toggle('sel', c.dataset.id === selectedMonitorId);
@@ -368,8 +373,19 @@ function slotItems(theme) {
   return ids.map((id) => lib[id]).filter(Boolean);
 }
 
-async function setPreview(which, filePath) {
+async function setPreview(which, filePath, monitorId = selectedMonitorId) {
   const el = which === 'dark' ? $('#previewDark') : $('#previewLight');
+  const contextId = monitorId || '';
+
+  // A different monitor is a different visual context. Never cross-fade its old
+  // wallpaper into the new monitor's geometry.
+  if (el.dataset.monitorId !== contextId) {
+    el.dataset.monitorId = contextId;
+    el.style.backgroundImage = 'none';
+    el.innerHTML = '';
+    el.classList.remove('empty');
+    el.removeAttribute('data-bg-path');
+  }
 
   // If the path is already set, do not reload or rebuild to prevent flickering
   if (el.dataset.bgPath === filePath) {
@@ -425,11 +441,31 @@ async function setPreview(which, filePath) {
   applyPreviewStyle();
 }
 
+function resetPreviewsForMonitor(monitorId) {
+  previewContextVersion++;
+  ['#previewLight', '#previewDark'].forEach((selector) => {
+    const el = $(selector);
+    if (!el) return;
+    const loadId = (Number.parseInt(el.dataset.loadId, 10) || 0) + 1;
+    el.dataset.loadId = String(loadId);
+    el.dataset.monitorId = monitorId || '';
+    el.removeAttribute('data-bg-path');
+    el.style.backgroundImage = 'none';
+    el.innerHTML = '';
+    el.classList.remove('empty');
+  });
+}
+
 // big preview = resolved current image (main scans folders); strip = playlist items
 function renderSlot(which) {
   const theme = which === 'dark' ? 'dark' : 'light';
+  const monitorId = selectedMonitorId;
+  const contextVersion = previewContextVersion;
   renderStrip(theme);
-  window.api.currentImage(selectedMonitorId, theme).then((cur) => setPreview(theme, cur));
+  window.api.currentImage(monitorId, theme).then((cur) => {
+    if (contextVersion !== previewContextVersion || monitorId !== selectedMonitorId) return;
+    setPreview(theme, cur, monitorId);
+  });
 }
 
 function renderStrip(theme) {
@@ -580,10 +616,19 @@ function renderThemeSchedule() {
 }
 
 function updateSlideshowControls() {
-  const ss = (config && config.slideshow) || { enabled: false, intervalMin: 30, order: 'sequential' };
+  const ss = (config && config.slideshow) || { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' };
+  const trig = (config && config.triggers) || {};
   setSwitch($('#swSlideshow'), !!ss.enabled);
+  setSwitch($('#swSlideInterval'), ss.intervalEnabled !== false);
   if ($('#slideInterval')) $('#slideInterval').value = ss.intervalMin || 30;
+  if ($('#slideInterval')) $('#slideInterval').hidden = ss.intervalEnabled === false;
   if ($('#selSlideOrder')) $('#selSlideOrder').value = ss.order || 'sequential';
+  setSwitch($('#swTriggerStartup'), !!trig.onStartup);
+  setSwitch($('#swTriggerWakeup'), !!trig.onWakeup);
+  setSwitch($('#swTriggerStealth'), !!trig.stealth);
+  document.querySelectorAll('.slideshow-option').forEach((row) => { row.hidden = !ss.enabled; });
+  const list = $('#slideshowList');
+  if (list) list.classList.toggle('collapsed', !ss.enabled);
 }
 
 async function renderConfig() {
@@ -601,13 +646,6 @@ async function renderConfig() {
   updateSlideshowControls();
   renderWallpaperSchedule();
   renderThemeSchedule();
-
-  // Triggers (on startup, on wake)
-  const trig = (config.triggers) || {};
-  setSwitch($('#swTriggerStartup'), !!trig.onStartup);
-  setSwitch($('#swTriggerWakeup'), !!trig.onWakeup);
-  setSwitch($('#swTriggerStealth'), !!trig.stealth);
-  $('#rowTriggerStealth').style.display = trig.onStartup ? 'flex' : 'none';
 
   // Hotkeys
   const hk = config.hotkeys && config.hotkeys.nextWallpaper;
@@ -2179,26 +2217,31 @@ async function init() {
   $('#selSlideOrder').addEventListener('change', async () => {
     config = await window.api.setSlideshow({ order: $('#selSlideOrder').value });
   });
+  $('#swSlideInterval').addEventListener('click', async () => {
+    const on = $('#swSlideInterval').getAttribute('aria-checked') !== 'true';
+    setSwitch($('#swSlideInterval'), on);
+    config = await window.api.setSlideshow({ intervalEnabled: on });
+    updateSlideshowControls();
+  });
 
-  // wallpaper triggers (on startup, on wake from sleep)
+  // Slideshow event triggers (startup, wake from sleep, optional stealth delay)
   $('#swTriggerStartup').addEventListener('click', async () => {
     const on = $('#swTriggerStartup').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTriggerStartup'), on);
-    $('#rowTriggerStealth').style.display = on ? 'flex' : 'none';
     config = await window.api.setConfig({ triggers: { ...config.triggers, onStartup: on } });
-    renderConfig();
+    updateSlideshowControls();
   });
   $('#swTriggerWakeup').addEventListener('click', async () => {
     const on = $('#swTriggerWakeup').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTriggerWakeup'), on);
     config = await window.api.setConfig({ triggers: { ...config.triggers, onWakeup: on } });
-    renderConfig();
+    updateSlideshowControls();
   });
   $('#swTriggerStealth').addEventListener('click', async () => {
     const on = $('#swTriggerStealth').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTriggerStealth'), on);
     config = await window.api.setConfig({ triggers: { ...config.triggers, stealth: on } });
-    renderConfig();
+    updateSlideshowControls();
   });
 
   async function saveSharedCoordinates(lat, lng) {

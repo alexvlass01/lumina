@@ -139,7 +139,12 @@ function nextIndex(cur, len, shuffle, rnd = Math.random) {
   return n;
 }
 
+// Existing configs predate the interval toggle, so only an explicit false disables it.
+function usesInterval(slideshow) {
+  return !!(slideshow && slideshow.enabled && slideshow.intervalEnabled !== false);
+}
+
 module.exports = {
   IMG_EXTS, normalizeSlot, scanFolder, scanFolderEntries, scanFolderImagesDeep,
-  resolveSlot, resolvedIndexOf, pickCurrent, nextIndex,
+  resolveSlot, resolvedIndexOf, pickCurrent, nextIndex, usesInterval,
 };
