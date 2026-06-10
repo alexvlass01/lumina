@@ -8,8 +8,8 @@
 //    second independent schedule (e.g. wallpapers by time/sun, decoupled from the Windows
 //    theme — see plans/wallpaper_schedule) can reuse this module instead of copying it.
 //
-// A schedule object looks like config.themeSchedule:
-//   { mode: 'off'|'time'|'sun', lightStart: 'HH:MM', darkStart: 'HH:MM', lat: '', lng: '' }
+// A schedule object looks like config.themeSchedule / config.wallpaperSchedule:
+//   { mode: 'off'|'system'|'time'|'sun', lightStart: 'HH:MM', darkStart: 'HH:MM', lat: '', lng: '' }
 // Boundaries are minutes after LOCAL midnight: { lightMin, darkMin }, or null when unknown
 // (missing coordinates / polar day or night).
 
@@ -76,6 +76,17 @@ function saysDark(b, date) {
   return !isLight;
 }
 
+// Resolve a schedule to 'light'/'dark'. Non-scheduled modes and schedules whose
+// boundaries cannot be calculated (e.g. sun mode without coordinates) keep fallback.
+function resolveTheme(schedule, date, fallback = 'light', tzOffsetMin) {
+  const sch = schedule || {};
+  const safeFallback = fallback === 'dark' ? 'dark' : 'light';
+  if (sch.mode !== 'time' && sch.mode !== 'sun') return safeFallback;
+  const b = boundaries(sch, date, tzOffsetMin);
+  if (!b) return safeFallback;
+  return saysDark(b, date) ? 'dark' : 'light';
+}
+
 // Minutes until the NEXT boundary (light or dark), minimum 1 — used to arm the flip timer.
 function minutesUntilNextBoundary(b, date) {
   const nowMin = date.getHours() * 60 + date.getMinutes();
@@ -83,4 +94,4 @@ function minutesUntilNextBoundary(b, date) {
   return Math.max(1, Math.min(...until));
 }
 
-module.exports = { parseHM, sunUT, boundaries, saysDark, minutesUntilNextBoundary };
+module.exports = { parseHM, sunUT, boundaries, saysDark, resolveTheme, minutesUntilNextBoundary };

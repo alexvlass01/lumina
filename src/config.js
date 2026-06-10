@@ -18,7 +18,11 @@ const DEFAULT_CONFIG = {
                           // игнорируется. Данные ночного слота при выключении НЕ стираются.
   monitors: {},           // { [deviceId]: { light: Slot, dark: Slot } }; Slot = { items: Item[] } (→ itemIds in Этап B)
   library: {},            // content pool { [id]: Item } — decoupled from placement (see src/library.js, future-todo #16)
+  // Legacy compatibility mirror. New code uses wallpaperSchedule.mode; this stays true
+  // only for mode='system' so older installed builds do not react to Windows while a
+  // newer dev config is using an independent time/sun wallpaper schedule.
   autoSwitch: true,
+  wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' },
   style: 'fill',          // fill | fit | stretch | center | tile | span
   autostart: false,
   startMinimized: true,   // при автозапуске стартовать сразу в трее (флаг --hidden)
@@ -51,6 +55,26 @@ function normalize(cfg) {
     mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '',
     ...(cfg.themeSchedule && typeof cfg.themeSchedule === 'object' ? cfg.themeSchedule : {}),
   };
+  if (!['off', 'time', 'sun'].includes(cfg.themeSchedule.mode)) cfg.themeSchedule.mode = 'off';
+  for (const key of ['lightStart', 'darkStart', 'lat', 'lng']) {
+    if (typeof cfg.themeSchedule[key] !== 'string') cfg.themeSchedule[key] = key === 'lightStart' ? '07:00' : key === 'darkStart' ? '20:00' : '';
+  }
+
+  // Migrate the old autoSwitch boolean without changing existing user behavior:
+  // true -> follow Windows, false -> stay on the current slot until changed manually.
+  const rawWallpaperSchedule = cfg.wallpaperSchedule && typeof cfg.wallpaperSchedule === 'object'
+    ? cfg.wallpaperSchedule
+    : null;
+  cfg.wallpaperSchedule = {
+    mode: cfg.autoSwitch === false ? 'off' : 'system',
+    lightStart: '07:00',
+    darkStart: '20:00',
+    ...(rawWallpaperSchedule || {}),
+  };
+  if (!['off', 'system', 'time', 'sun'].includes(cfg.wallpaperSchedule.mode)) cfg.wallpaperSchedule.mode = 'system';
+  if (typeof cfg.wallpaperSchedule.lightStart !== 'string') cfg.wallpaperSchedule.lightStart = '07:00';
+  if (typeof cfg.wallpaperSchedule.darkStart !== 'string') cfg.wallpaperSchedule.darkStart = '20:00';
+  cfg.autoSwitch = cfg.wallpaperSchedule.mode === 'system';
   // Content-pool model (see src/library.js, future-todo #16): populate cfg.library and
   // rewrite each monitor slot { string | items[] } → { itemIds[] }. Handles legacy
   // shapes and is idempotent (re-running on a migrated config is a no-op).
@@ -106,7 +130,11 @@ function load(configPath) {
   let cfg;
   if (raw != null) {
     try {
-      cfg = { ...freshDefaults(), ...JSON.parse(raw.replace(/^﻿/, '')) }; // strip BOM if present
+      const parsed = JSON.parse(raw.replace(/^﻿/, '')); // strip BOM if present
+      cfg = { ...freshDefaults(), ...parsed };
+      // The defaults are merged before normalize(). Preserve whether the new field
+      // existed so legacy autoSwitch:false can migrate to mode='off'.
+      if (!Object.prototype.hasOwnProperty.call(parsed, 'wallpaperSchedule')) cfg.wallpaperSchedule = null;
     } catch (err) {
       try { fs.copyFileSync(configPath, `${configPath}.corrupt-${Date.now()}.bak`); } catch {}
       console.error('config.json повреждён, откат к дефолтам (бэкап сохранён):', err);

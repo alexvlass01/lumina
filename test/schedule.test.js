@@ -58,6 +58,16 @@ ok('saysDark: light period wrapping midnight',
   && S.saysDark(bWrap, at(12, 0)) === true);
 ok('saysDark: equal boundaries -> always light', S.saysDark({ lightMin: 420, darkMin: 420 }, at(3, 0)) === false);
 
+// ---- resolveTheme (shared by independent Windows-theme and wallpaper schedules) ----
+ok('resolveTheme: time schedule selects light/dark slots',
+  S.resolveTheme({ mode: 'time', lightStart: '07:00', darkStart: '20:00' }, at(12, 0), 'dark') === 'light'
+  && S.resolveTheme({ mode: 'time', lightStart: '07:00', darkStart: '20:00' }, at(23, 0), 'light') === 'dark');
+ok('resolveTheme: off/system modes keep fallback',
+  S.resolveTheme({ mode: 'off' }, at(12, 0), 'dark') === 'dark'
+  && S.resolveTheme({ mode: 'system' }, at(12, 0), 'light') === 'light');
+ok('resolveTheme: sun without coordinates keeps fallback',
+  S.resolveTheme({ mode: 'sun', lat: '', lng: '' }, at(12, 0), 'dark') === 'dark');
+
 // ---- minutesUntilNextBoundary ----
 ok('minutesUntil: picks the nearer upcoming boundary', S.minutesUntilNextBoundary(b, at(10, 0)) === 600);
 ok('minutesUntil: one minute before a flip', S.minutesUntilNextBoundary(b, at(19, 59)) === 1);

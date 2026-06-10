@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalMin: 30, order: 'sequential' }, slideshowIndex: {} };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   window.api = {
@@ -22,6 +22,17 @@ if (!window.api) {
       { id: 'MON-2', x: 1920, y: -440, w: 1200, h: 1920, primary: false },
     ],
     getTheme: async () => 'light',
+    getWallpaperTheme: async () => {
+      if (mock.separateThemes === false) return 'light';
+      const sch = mock.wallpaperSchedule || {};
+      if (sch.mode !== 'time') return 'light';
+      const hm = (s) => { const [h, m] = String(s || '').split(':').map(Number); return (h || 0) * 60 + (m || 0); };
+      const now = new Date();
+      const n = now.getHours() * 60 + now.getMinutes();
+      const light = hm(sch.lightStart || '07:00'), dark = hm(sch.darkStart || '20:00');
+      const isLight = light < dark ? n >= light && n < dark : n >= light || n < dark;
+      return isLight ? 'light' : 'dark';
+    },
     addSlotImages: async (id, which) => {
       const theme = which === 'dark' ? 'dark' : 'light';
       if (!mock.monitors[id]) mock.monitors[id] = { light: { itemIds: [] }, dark: { itemIds: [] } };
@@ -110,8 +121,10 @@ if (!window.api) {
     checkForUpdates: async () => ({ started: false, supported: false }),
     installUpdate: () => {},
     openReleases: () => {},
+    detectLocation: async () => ({ ok: true, lat: 50.45, lng: 30.52, city: 'Kyiv' }),
     getUpdateState: async () => ({ state: 'idle', supported: false }),
     onTheme: () => {},
+    onWallpaperTheme: () => {},
     onConfig: () => {},
     onMonitors: () => {},
     onUpdate: () => {},
@@ -122,6 +135,7 @@ const $ = (sel) => document.querySelector(sel);
 
 let config = null;
 let currentTheme = 'light';
+let currentWallpaperTheme = 'light';
 
 // ---------------------------------------------------------------------------
 // i18n — dictionaries come from the main process (single source of truth).
@@ -481,10 +495,9 @@ function renderPreviews() {
   renderSlot('dark');
 }
 
-// Тема, из которой сейчас берутся ОБОИ (зерко main.wallpaperThemeName): при выключенных
-// «раздельных темах» всегда 'light', иначе — текущая тема Windows.
+// Theme currently used for wallpapers. It may be independent from the Windows/UI theme.
 function wallTheme() {
-  return (config && config.separateThemes === false) ? 'light' : currentTheme;
+  return (config && config.separateThemes === false) ? 'light' : currentWallpaperTheme;
 }
 
 // Включает/выключает «единый» режим интерфейса: один широкий слот вместо пары день/ночь.
@@ -538,16 +551,31 @@ function setSwitch(el, on) {
   el.setAttribute('aria-checked', on ? 'true' : 'false');
 }
 
+function renderSharedCoordinates() {
+  const sch = (config && config.themeSchedule) || {};
+  for (const id of ['#latInput', '#wallpaperLatInput']) if ($(id)) $(id).value = sch.lat || '';
+  for (const id of ['#lngInput', '#wallpaperLngInput']) if ($(id)) $(id).value = sch.lng || '';
+}
+
+function renderWallpaperSchedule() {
+  const sch = (config && config.wallpaperSchedule) || { mode: 'system', lightStart: '07:00', darkStart: '20:00' };
+  if ($('#selWallpaperMode')) $('#selWallpaperMode').value = sch.mode || 'system';
+  if ($('#wallpaperLightStart')) $('#wallpaperLightStart').value = sch.lightStart || '07:00';
+  if ($('#wallpaperDarkStart')) $('#wallpaperDarkStart').value = sch.darkStart || '20:00';
+  if ($('#wallpaperTimes')) $('#wallpaperTimes').hidden = (sch.mode !== 'time');
+  if ($('#wallpaperSun')) $('#wallpaperSun').hidden = (sch.mode !== 'sun');
+  renderSharedCoordinates();
+}
+
 function renderThemeSchedule() {
   const sch = (config && config.themeSchedule) || { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' };
   const sel = $('#selThemeMode');
   if (sel) sel.value = sch.mode || 'off';
   if ($('#lightStart')) $('#lightStart').value = sch.lightStart || '07:00';
   if ($('#darkStart')) $('#darkStart').value = sch.darkStart || '20:00';
-  if ($('#latInput')) $('#latInput').value = sch.lat || '';
-  if ($('#lngInput')) $('#lngInput').value = sch.lng || '';
   if ($('#themeTimes')) $('#themeTimes').hidden = (sch.mode !== 'time');
   if ($('#themeSun')) $('#themeSun').hidden = (sch.mode !== 'sun');
+  renderSharedCoordinates();
 }
 
 function updateSlideshowControls() {
@@ -562,7 +590,6 @@ async function renderConfig() {
   applyPreviewStyle();
   setSwitch($('#swSeparate'), config.separateThemes !== false);
   updateSeparateThemesUI();
-  setSwitch($('#swAuto'), config.autoSwitch);
   setSwitch($('#swStartup'), config.autostart);
   setSwitch($('#swStartMin'), config.startMinimized !== false);
   setSwitch($('#swSingle'), !!config.singleWallpaper);
@@ -571,6 +598,7 @@ async function renderConfig() {
   $('#selStyle').value = config.style || 'fill';
   updateSingleWallRow();
   updateSlideshowControls();
+  renderWallpaperSchedule();
   renderThemeSchedule();
 
   // Triggers (on startup, on wake)
@@ -1668,7 +1696,7 @@ function enterFirstRun() {
   document.body.classList.add('first-run');
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== 'viewWelcome'; });
   $('#welcomeLang').value = config.language || 'system';
-  setSwitch($('#welcomeAuto'), config.autoSwitch);
+  setSwitch($('#welcomeAuto'), !!(config.wallpaperSchedule && config.wallpaperSchedule.mode !== 'off'));
   setSwitch($('#welcomeStartup'), config.autostart);
   setSwitch($('#welcomeTheme'), !!(config.themeSchedule && config.themeSchedule.mode !== 'off'));
   updateShortcutButtons();
@@ -1863,6 +1891,7 @@ function renderUpdate(st) {
 async function init() {
   config = await window.api.getConfig();
   currentTheme = await window.api.getTheme();
+  currentWallpaperTheme = await window.api.getWallpaperTheme();
   await loadI18n();
   applyI18n();
   applyThemeToUI(currentTheme);
@@ -1947,7 +1976,10 @@ async function init() {
   $('#welcomeAuto').addEventListener('click', async () => {
     const on = $('#welcomeAuto').getAttribute('aria-checked') !== 'true';
     setSwitch($('#welcomeAuto'), on);
-    config = await window.api.setConfig({ autoSwitch: on });
+    config = await window.api.setConfig({
+      wallpaperSchedule: { ...(config.wallpaperSchedule || {}), mode: on ? 'system' : 'off' }
+    });
+    currentWallpaperTheme = await window.api.getWallpaperTheme();
   });
   $('#welcomeStartup').addEventListener('click', async () => {
     const on = $('#welcomeStartup').getAttribute('aria-checked') !== 'true';
@@ -1995,14 +2027,23 @@ async function init() {
     }
   });
 
-  // switches
-  $('#swAuto').addEventListener('click', async () => {
-    const on = $('#swAuto').getAttribute('aria-checked') !== 'true';
-    setSwitch($('#swAuto'), on);
-    config = await window.api.setConfig({ autoSwitch: on });
+  // Independent wallpaper day/night trigger.
+  async function saveWallpaperSchedule(announce) {
+    const sch = {
+      mode: $('#selWallpaperMode').value,
+      lightStart: $('#wallpaperLightStart').value || '07:00',
+      darkStart: $('#wallpaperDarkStart').value || '20:00',
+    };
+    config = await window.api.setConfig({ wallpaperSchedule: sch });
+    currentWallpaperTheme = await window.api.getWallpaperTheme();
+    renderWallpaperSchedule();
+    applyThemeToUI(currentTheme);
     renderHome();
-    toast(on ? t('toast.autoOn') : t('toast.autoOff'));
-  });
+    if (announce) toast(t('toast.wallpaperScheduleUpdated'));
+  }
+  $('#selWallpaperMode').addEventListener('change', () => saveWallpaperSchedule(true));
+  $('#wallpaperLightStart').addEventListener('change', () => saveWallpaperSchedule(false));
+  $('#wallpaperDarkStart').addEventListener('change', () => saveWallpaperSchedule(false));
 
   // separate day/night wallpapers (Lumina's signature) vs. one unified wallpaper list.
   // Turning it off hides the dark slot in the UI but KEEPS its data; main re-applies
@@ -2011,6 +2052,7 @@ async function init() {
     const on = $('#swSeparate').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swSeparate'), on);
     config = await window.api.setConfig({ separateThemes: on });
+    currentWallpaperTheme = await window.api.getWallpaperTheme();
     updateSeparateThemesUI();
     applyThemeToUI(currentTheme); // re-aim the active-slot outline
     renderPreviews();
@@ -2093,14 +2135,19 @@ async function init() {
     renderConfig();
   });
 
+  async function saveSharedCoordinates(lat, lng) {
+    const sch = { ...(config.themeSchedule || {}), lat, lng };
+    config = await window.api.setConfig({ themeSchedule: sch });
+    renderSharedCoordinates();
+  }
+
   // theme schedule (Lumina switches the Windows theme itself)
   async function saveThemeSchedule(announce) {
     const sch = {
+      ...(config.themeSchedule || {}),
       mode: $('#selThemeMode').value,
       lightStart: $('#lightStart').value || '07:00',
       darkStart: $('#darkStart').value || '20:00',
-      lat: $('#latInput').value.trim(),
-      lng: $('#lngInput').value.trim(),
     };
     config = await window.api.setConfig({ themeSchedule: sch });
     $('#themeTimes').hidden = (sch.mode !== 'time');
@@ -2110,32 +2157,30 @@ async function init() {
   $('#selThemeMode').addEventListener('change', () => saveThemeSchedule(true));
   $('#lightStart').addEventListener('change', () => saveThemeSchedule(false));
   $('#darkStart').addEventListener('change', () => saveThemeSchedule(false));
-  $('#latInput').addEventListener('change', () => saveThemeSchedule(false));
-  $('#lngInput').addEventListener('change', () => saveThemeSchedule(false));
+  for (const [latSel, lngSel] of [['#latInput', '#lngInput'], ['#wallpaperLatInput', '#wallpaperLngInput']]) {
+    $(latSel).addEventListener('change', () => saveSharedCoordinates($(latSel).value.trim(), $(lngSel).value.trim()));
+    $(lngSel).addEventListener('change', () => saveSharedCoordinates($(latSel).value.trim(), $(lngSel).value.trim()));
+  }
 
-  $('#btnDetectCoords').addEventListener('click', async () => {
-    const btn = $('#btnDetectCoords');
-    const status = $('#lblCoordsStatus');
+  async function detectCoordinates(buttonSel, statusSel) {
+    const btn = $(buttonSel);
+    const status = $(statusSel);
     btn.disabled = true;
     status.textContent = t('theme.autoCoordsChecking') || '...';
     const res = await window.api.detectLocation();
     btn.disabled = false;
     if (res.ok) {
-      $('#latInput').value = res.lat;
-      $('#lngInput').value = res.lng;
-      status.textContent = t('theme.autoCoordsSuccess', { city: res.city, lat: parseFloat(res.lat).toFixed(2), lng: parseFloat(res.lng).toFixed(2) });
-      const sch = {
-        ...(config.themeSchedule || {}),
-        lat: res.lat,
-        lng: res.lng
-      };
-      config = await window.api.setConfig({ themeSchedule: sch });
-      toast(t('toast.styleUpdated'));
+      await saveSharedCoordinates(String(res.lat), String(res.lng));
+      const success = t('theme.autoCoordsSuccess', { city: res.city, lat: parseFloat(res.lat).toFixed(2), lng: parseFloat(res.lng).toFixed(2) });
+      for (const id of ['#lblCoordsStatus', '#lblWallpaperCoordsStatus']) if ($(id)) $(id).textContent = success;
+      toast(t('toast.locationUpdated'));
     } else {
       status.textContent = t('theme.autoCoordsError', { msg: res.reason });
       toast(t('toast.error', { msg: res.reason }));
     }
-  });
+  }
+  $('#btnDetectCoords').addEventListener('click', () => detectCoordinates('#btnDetectCoords', '#lblCoordsStatus'));
+  $('#btnDetectWallpaperCoords').addEventListener('click', () => detectCoordinates('#btnDetectWallpaperCoords', '#lblWallpaperCoordsStatus'));
 
   // live updates from main process
   window.api.onTheme((theme) => {
@@ -2144,11 +2189,22 @@ async function init() {
     toast(theme === 'dark' ? t('toast.themeDark') : t('toast.themeLight'));
   });
 
+  window.api.onWallpaperTheme((theme) => {
+    currentWallpaperTheme = theme;
+    applyThemeToUI(currentTheme);
+    renderHome();
+  });
+
   window.api.onConfig((cfg) => {
     config = cfg;
     renderConfig();
     renderHome();
     if (!$('#viewLibrary').hidden) renderLibrary();
+    window.api.getWallpaperTheme().then((theme) => {
+      currentWallpaperTheme = theme;
+      applyThemeToUI(currentTheme);
+      renderHome();
+    });
   });
 
   window.api.onMonitors((list) => {

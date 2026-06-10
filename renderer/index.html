@@ -216,12 +216,59 @@
           </div>
           <button class="gtkswitch" id="swSingle" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
-        <div class="row" id="rowAutoSwitch">
+        <div class="row wallpaper-schedule-row" id="rowWallpaperSchedule">
           <div class="row-text">
-            <div class="row-title" data-i18n="design.autoSwitchTitle">Автосмена при переключении темы</div>
-            <div class="row-sub" data-i18n="design.autoSwitchSub">Менять обои автоматически, когда Windows переходит в светлый или тёмный режим</div>
+            <div class="row-title" data-i18n="design.wallpaperScheduleTitle">Day/night wallpaper trigger</div>
+            <div class="row-sub" data-i18n="design.wallpaperScheduleSub">Choose what selects the day or night wallpaper slot</div>
           </div>
-          <button class="gtkswitch" id="swAuto" role="switch" aria-checked="false"><span class="knob"></span></button>
+          <div class="select-wrap">
+            <select id="selWallpaperMode">
+              <option value="off" data-i18n="theme.modeOff">Off</option>
+              <option value="system" data-i18n="design.wallpaperModeSystem">Follow Windows</option>
+              <option value="time" data-i18n="theme.modeTime">By time</option>
+              <option value="sun" data-i18n="theme.modeSun">By sun</option>
+            </select>
+          </div>
+        </div>
+        <div id="wallpaperTimes" class="wallpaper-schedule-row" hidden>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="design.wallpaperLightStart">Day wallpapers from</div></div>
+            <input type="time" id="wallpaperLightStart" class="time-input" value="07:00" />
+          </div>
+          <div class="row">
+            <div class="row-text"><div class="row-title" data-i18n="design.wallpaperDarkStart">Night wallpapers from</div></div>
+            <input type="time" id="wallpaperDarkStart" class="time-input" value="20:00" />
+          </div>
+        </div>
+        <div id="wallpaperSun" class="wallpaper-schedule-row" hidden>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.autoCoordsTitle">Detect by IP</div>
+              <div class="row-sub" id="lblWallpaperCoordsStatus" data-i18n="theme.autoCoordsSub">Automatically set coordinates based on your location</div>
+            </div>
+            <button class="pill" id="btnDetectWallpaperCoords">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="currentColor">
+                <path d="M8 0C4.963 0 2.5 2.463 2.5 5.5c0 3.93 5.033 10.05 5.247 10.309a.333.333 0 00.506 0c.214-.259 5.247-6.379 5.247-10.309C13.5 2.463 11.037 0 8 0zm0 8.25a2.75 2.75 0 110-5.5 2.75 2.75 0 010 5.5z"/>
+              </svg>
+              <span data-i18n="theme.autoCoordsBtn">Detect</span>
+            </button>
+          </div>
+          <div class="row">
+            <div class="row-text">
+              <div class="row-title" data-i18n="theme.coordinates">Coordinates</div>
+              <div class="row-sub" data-i18n="design.sharedCoordinatesSub">Shared with the Windows theme schedule</div>
+            </div>
+            <div class="coords-group">
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lat">Latitude</span>
+                <input type="number" step="0.0001" id="wallpaperLatInput" class="time-input num-input" placeholder="50.45" />
+              </div>
+              <div class="coord-field">
+                <span class="coord-label" data-i18n="theme.lng">Longitude</span>
+                <input type="number" step="0.0001" id="wallpaperLngInput" class="time-input num-input" placeholder="30.52" />
+              </div>
+            </div>
+          </div>
         </div>
         <div class="row">
           <div class="row-text">
@@ -304,7 +351,7 @@
         <div class="row">
           <div class="row-text">
             <div class="row-title" data-i18n="theme.modeTitle">Переключать тему по расписанию</div>
-            <div class="row-sub" data-i18n="theme.modeSub">Lumina сама включит светлую/тёмную тему в заданное время</div>
+              <div class="row-sub" data-i18n="theme.modeSub">This controls Windows only; wallpaper timing is configured above</div>
           </div>
           <div class="select-wrap">
             <select id="selThemeMode">

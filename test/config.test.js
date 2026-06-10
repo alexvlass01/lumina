@@ -18,7 +18,7 @@ const p = (name) => path.join(tmp, name);
 
 // missing file -> defaults
 const d = C.load(p('nope.json'));
-ok('load missing file -> defaults', d.autoSwitch === true && d.slideshow.intervalMin === 30 && typeof d.monitors === 'object');
+ok('load missing file -> defaults', d.autoSwitch === true && d.wallpaperSchedule.mode === 'system' && d.slideshow.intervalMin === 30 && typeof d.monitors === 'object');
 
 // freshDefaults must be independent (no shared nested objects)
 const a = C.freshDefaults();
@@ -115,6 +115,28 @@ fs.writeFileSync(p('sep_off.json'), JSON.stringify({ separateThemes: false }));
 ok('explicit separateThemes:false survives load', C.load(p('sep_off.json')).separateThemes === false);
 fs.writeFileSync(p('sep_junk.json'), JSON.stringify({ separateThemes: 0 }));
 ok('junk separateThemes coerces to true (safe default)', C.load(p('sep_junk.json')).separateThemes === true);
+
+// wallpaperSchedule: migrate the legacy autoSwitch flag and keep the mirror compatible
+// with old installed builds that may read the same config after a dev run.
+fs.writeFileSync(p('wall_legacy_on.json'), JSON.stringify({ autoSwitch: true }));
+const wallLegacyOn = C.load(p('wall_legacy_on.json'));
+ok('legacy autoSwitch:true -> wallpaper system mode', wallLegacyOn.wallpaperSchedule.mode === 'system' && wallLegacyOn.autoSwitch === true);
+fs.writeFileSync(p('wall_legacy_off.json'), JSON.stringify({ autoSwitch: false }));
+const wallLegacyOff = C.load(p('wall_legacy_off.json'));
+ok('legacy autoSwitch:false -> wallpaper off mode', wallLegacyOff.wallpaperSchedule.mode === 'off' && wallLegacyOff.autoSwitch === false);
+fs.writeFileSync(p('wall_time.json'), JSON.stringify({ autoSwitch: true, wallpaperSchedule: { mode: 'time', lightStart: '06:30', darkStart: '22:15' } }));
+const wallTime = C.load(p('wall_time.json'));
+ok('wallpaper time schedule survives and disables legacy system-follow mirror',
+  wallTime.wallpaperSchedule.mode === 'time'
+  && wallTime.wallpaperSchedule.lightStart === '06:30'
+  && wallTime.wallpaperSchedule.darkStart === '22:15'
+  && wallTime.autoSwitch === false);
+fs.writeFileSync(p('wall_bad.json'), JSON.stringify({ wallpaperSchedule: { mode: 'banana', lightStart: 7, darkStart: null } }));
+const wallBad = C.load(p('wall_bad.json'));
+ok('invalid wallpaper schedule falls back safely',
+  wallBad.wallpaperSchedule.mode === 'system'
+  && wallBad.wallpaperSchedule.lightStart === '07:00'
+  && wallBad.wallpaperSchedule.darkStart === '20:00');
 
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

@@ -393,8 +393,8 @@ let themeTimer = null;
 let lastScheduledTheme = null;
 
 // Schedule math (parse/sun/boundaries) lives in src/schedule.js — pure & unit-tested.
-// This wrapper just binds the app's theme schedule from the live config.
-function scheduleBoundaries(date) {
+// This wrapper binds the Windows-theme schedule from the live config.
+function themeScheduleBoundaries(date) {
   return schedule.boundaries(config.themeSchedule, date);
 }
 
@@ -408,7 +408,7 @@ async function applyThemeSchedule() {
   const sch = config.themeSchedule || {};
   if (sch.mode !== 'time' && sch.mode !== 'sun') return; // 'off' — Lumina does not drive the theme
   const now = new Date();
-  const b = scheduleBoundaries(now);
+  const b = themeScheduleBoundaries(now);
   if (!b) { themeTimer = setTimeout(applyThemeSchedule, 60 * 60000); return; } // no coords / polar — retry in 1h
   const wantDark = schedule.saysDark(b, now);
   const scheduledTheme = wantDark ? 'dark' : 'light';
@@ -468,11 +468,57 @@ function currentThemeName() {
   return nativeTheme.shouldUseDarkColors ? 'dark' : 'light';
 }
 
-// Тема для ВЫБОРА СЛОТА ОБОЕВ — единственная точка этого решения. При выключенных
-// «раздельных темах» всегда 'light' (единый список), тема Windows игнорируется; данные
-// тёмного слота не трогаются. (План wallpaper_schedule добавит сюда режимы time/sun.)
-function wallpaperThemeName() {
-  return config.separateThemes === false ? 'light' : currentThemeName();
+// Shared coordinates live in themeSchedule for backward compatibility, while the
+// wallpaper schedule owns its independent mode and clock times.
+function wallpaperScheduleConfig() {
+  const location = config.themeSchedule || {};
+  return {
+    ...(config.wallpaperSchedule || {}),
+    lat: location.lat || '',
+    lng: location.lng || '',
+  };
+}
+
+// The single source of truth for choosing the wallpaper slot. Unified mode always
+// uses 'light'; system/off keep the current Windows slot; time/sun use a virtual
+// day/night state independent from Windows.
+function wallpaperThemeName(date = new Date()) {
+  if (config.separateThemes === false) return 'light';
+  return schedule.resolveTheme(wallpaperScheduleConfig(), date, currentThemeName());
+}
+
+let wallpaperTimer = null;
+function clearWallpaperTimer() {
+  if (wallpaperTimer) { clearTimeout(wallpaperTimer); wallpaperTimer = null; }
+}
+
+// Apply the independent wallpaper schedule now and arm its next boundary. `applyNow`
+// is false when another scheduler (the slideshow) already applied the current frame.
+async function applyWallpaperSchedule(isManual = false, applyNow = true) {
+  clearWallpaperTimer();
+  const sch = wallpaperScheduleConfig();
+  if (config.separateThemes === false || (sch.mode !== 'time' && sch.mode !== 'sun')) return;
+
+  const now = new Date();
+  const b = schedule.boundaries(sch, now);
+  if (!b) {
+    wallpaperTimer = setTimeout(() => applyWallpaperSchedule(false, true), 60 * 60000);
+    return;
+  }
+
+  const theme = schedule.saysDark(b, now) ? 'dark' : 'light';
+  broadcastWallpaperTheme(theme);
+  if (applyNow) {
+    const result = await applyForTheme(theme, isManual);
+    if (result && result.reason === 'gamemode-blocked') {
+      wallpaperTimer = setTimeout(() => applyWallpaperSchedule(false, true), 60000);
+      return;
+    }
+  }
+  wallpaperTimer = setTimeout(
+    () => applyWallpaperSchedule(false, true),
+    schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000
+  );
 }
 
 // id основного монитора (для режима «одни обои на все мониторы»)
@@ -538,12 +584,12 @@ function wallpaperFor(monitorId, theme) {
 }
 
 async function applyForTheme(themeName, isManual = false, targetMonitors = null) {
+  const theme = config.separateThemes === false ? 'light' : (themeName || wallpaperThemeName());
+  broadcastWallpaperTheme(theme);
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
     console.log('[GameMode] Wallpaper change blocked due to active game / fullscreen app');
     return { ok: false, reason: 'gamemode-blocked' };
   }
-  // separateThemes off → каким бы ни был запрошенный/системный theme, слоты всегда 'light'
-  const theme = config.separateThemes === false ? 'light' : (themeName || currentThemeName());
   const monitors = monitorsCache.length ? monitorsCache : await getMonitors();
 
   // Preferred path: per-monitor via COM
@@ -618,7 +664,7 @@ async function tickSlideshow(advance, isManual = false) {
 
   const theme = wallpaperThemeName();
   if (advance) { advanceIndices(theme); saveConfig(); }
-  applyForTheme(theme, isManual);
+  await applyForTheme(theme, isManual);
   const mins = Math.max(1, Math.floor(Number(config.slideshow.intervalMin) || 30));
   slideshowTimer = setTimeout(() => tickSlideshow(true, false), mins * 60000);
 }
@@ -904,6 +950,12 @@ function broadcastTheme() {
   }
 }
 
+function broadcastWallpaperTheme(theme = wallpaperThemeName()) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('wallpaper-theme-changed', theme);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // IPC
 // ---------------------------------------------------------------------------
@@ -926,16 +978,60 @@ ipcMain.handle('get-monitors', () => getMonitors());
 
 ipcMain.handle('get-theme', () => currentThemeName());
 
-ipcMain.handle('set-config', (e, patch) => {
-  config = { ...config, ...patch };
+ipcMain.handle('get-wallpaper-theme', () => wallpaperThemeName());
+
+ipcMain.handle('set-config', async (e, patch) => {
+  const next = { ...config, ...(patch || {}) };
+  if (patch && patch.themeSchedule && typeof patch.themeSchedule === 'object') {
+    next.themeSchedule = { ...config.themeSchedule, ...patch.themeSchedule };
+  }
+  if (patch && patch.wallpaperSchedule && typeof patch.wallpaperSchedule === 'object') {
+    next.wallpaperSchedule = { ...config.wallpaperSchedule, ...patch.wallpaperSchedule };
+  }
+  config = next;
+  if (patch && 'wallpaperSchedule' in patch) {
+    const sch = config.wallpaperSchedule && typeof config.wallpaperSchedule === 'object'
+      ? config.wallpaperSchedule
+      : {};
+    config.wallpaperSchedule = {
+      mode: 'system',
+      lightStart: '07:00',
+      darkStart: '20:00',
+      ...sch,
+    };
+    if (!['off', 'system', 'time', 'sun'].includes(config.wallpaperSchedule.mode)) {
+      config.wallpaperSchedule.mode = 'system';
+    }
+    if (typeof config.wallpaperSchedule.lightStart !== 'string') config.wallpaperSchedule.lightStart = '07:00';
+    if (typeof config.wallpaperSchedule.darkStart !== 'string') config.wallpaperSchedule.darkStart = '20:00';
+    config.autoSwitch = config.wallpaperSchedule.mode === 'system';
+  }
   saveConfig();
   trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   if (patch && 'hotkeys' in patch) registerShortcut();
   if (patch && 'separateThemes' in patch) {
     // переключили парадигму слотов → сразу применить обои из актуального слота (GNOME: без «Сохранить»)
-    if (config.slideshow.enabled) tickSlideshow(false, true);
-    else applyForTheme(null, true);
+    clearWallpaperTimer();
+    if (config.slideshow.enabled) await tickSlideshow(false, true);
+    else await applyForTheme(null, true);
+    if (config.separateThemes !== false) await applyWallpaperSchedule(true, false);
+  } else if (patch && 'wallpaperSchedule' in patch) {
+    const mode = config.wallpaperSchedule.mode;
+    if (mode === 'time' || mode === 'sun') {
+      await applyWallpaperSchedule(true, true);
+    } else {
+      clearWallpaperTimer();
+      if (mode === 'system') {
+        if (config.slideshow.enabled) await tickSlideshow(false, true);
+        else await applyForTheme(currentThemeName(), true);
+      } else {
+        broadcastWallpaperTheme(wallpaperThemeName());
+      }
+    }
+  } else if (patch && 'themeSchedule' in patch && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'sun') {
+    // Coordinates are shared by both schedules; changing them re-evaluates sun mode.
+    await applyWallpaperSchedule(true, true);
   }
   return config;
 });
@@ -1529,11 +1625,11 @@ app.whenReady().then(async () => {
     }
     broadcastTheme();
     trayCtl.refreshIcon();
-    // Обои реагируют на смену темы ОС только при включённых «раздельных темах»:
-    // в едином режиме слот всегда 'light', и флип темы Windows их не касается.
-    if (config.separateThemes !== false) {
+    // Wallpaper mode='system' follows Windows. Independent time/sun schedules ignore
+    // nativeTheme events completely; unified mode always stays on the shared light slot.
+    if (config.separateThemes !== false && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'system') {
       if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
-      else if (config.autoSwitch) applyForTheme();
+      else applyForTheme();
     }
   });
 
@@ -1541,8 +1637,14 @@ app.whenReady().then(async () => {
   await getMonitors();
   // NB: GC намеренно НЕ запускаем на старте — слишком опасно (см. gcWallpapers).
   // Осиротевшие файлы подчищаются только при явном удалении из библиотеки/слота, и то в .trash.
+  const wallpaperMode = config.wallpaperSchedule && config.wallpaperSchedule.mode;
   if (config.slideshow.enabled) tickSlideshow(false); // применить текущее + запустить ротацию
-  else if (config.autoSwitch) applyForTheme();
+  else if (wallpaperMode === 'system') applyForTheme();
+  else if (wallpaperMode === 'time' || wallpaperMode === 'sun') await applyWallpaperSchedule(false, true);
+  else broadcastWallpaperTheme();
+  if (config.slideshow.enabled && (wallpaperMode === 'time' || wallpaperMode === 'sun')) {
+    await applyWallpaperSchedule(false, false);
+  }
 
   // start theme schedule (if enabled): set the right theme now + schedule flips
   applyThemeSchedule();
@@ -1613,6 +1715,9 @@ app.whenReady().then(async () => {
 
   // Switch wallpaper when the computer wakes from sleep/hibernate
   powerMonitor.on('resume', () => {
+    if (config.wallpaperSchedule && (config.wallpaperSchedule.mode === 'time' || config.wallpaperSchedule.mode === 'sun')) {
+      applyWallpaperSchedule(false, true);
+    }
     if (config.triggers && config.triggers.onWakeup) {
       triggerWithStealth('wakeup');
     }

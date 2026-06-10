@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('api', {
   getI18n: () => ipcRenderer.invoke('get-i18n'),
   getMonitors: () => ipcRenderer.invoke('get-monitors'),
   getTheme: () => ipcRenderer.invoke('get-theme'),
+  getWallpaperTheme: () => ipcRenderer.invoke('get-wallpaper-theme'),
   addSlotImages: (monitorId, which) => ipcRenderer.invoke('add-slot-images', monitorId, which),
   addSlotFolder: (monitorId, which) => ipcRenderer.invoke('add-slot-folder', monitorId, which),
   addSlotPaths: (monitorId, which, filePaths) => ipcRenderer.invoke('add-slot-paths', monitorId, which, filePaths),
@@ -59,6 +60,7 @@ contextBridge.exposeInMainWorld('api', {
   getUpdateState: () => ipcRenderer.invoke('get-update-state'),
 
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
+  onWallpaperTheme: (cb) => ipcRenderer.on('wallpaper-theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
   onMonitors: (cb) => ipcRenderer.on('monitors-changed', (_e, d) => cb(d)),
   onUpdate: (cb) => ipcRenderer.on('update-status', (_e, st) => cb(st)),

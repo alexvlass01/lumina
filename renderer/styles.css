@@ -499,7 +499,7 @@ html.dark .smart-panel.update .smart-panel-title { color: #33d17a; }
 body.single-theme .cards { grid-template-columns: 1fr; }
 body.single-theme .wallcard[data-theme="dark"] { display: none; }
 body.single-theme .wallcard[data-theme="light"] .wallcard-head { display: none; }
-body.single-theme #rowAutoSwitch { display: none; }
+body.single-theme .wallpaper-schedule-row { display: none !important; }
 .wallcard {
   background: var(--card);
   border: 1px solid var(--card-border);
