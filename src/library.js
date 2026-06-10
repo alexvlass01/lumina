@@ -34,7 +34,7 @@ function baseName(p) {
 
 // Build a pool item with metadata defaults. type: 'image' | 'folder'.
 function makeItem(type, p, extra = {}) {
-  return {
+  const item = {
     id: idFor(p),
     type: type === 'folder' ? 'folder' : 'image',
     path: p,
@@ -43,6 +43,33 @@ function makeItem(type, p, extra = {}) {
     tags: Array.isArray(extra.tags) ? extra.tags.slice() : [],
     author: typeof extra.author === 'string' ? extra.author : '',
   };
+  const aspect = aspectOf(extra);
+  if (aspect) item.aspect = aspect;
+  return item;
+}
+
+// Stable image proportion metadata. New items may provide either `aspect` directly
+// or source dimensions; old configs simply return 0 and are backfilled lazily.
+function aspectOf(item) {
+  if (!item || typeof item !== 'object') return 0;
+  const direct = Number(item.aspect);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  const width = Number(item.width);
+  const height = Number(item.height);
+  return Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0
+    ? width / height
+    : 0;
+}
+
+// Additive metadata update only: it never creates/removes pool entries or touches files.
+// The path check prevents a stale renderer response from updating a replaced item.
+function setAspect(library, id, p, aspect) {
+  const it = getItem(library, id);
+  const value = Number(aspect);
+  if (!it || it.type !== 'image' || it.path !== p || !Number.isFinite(value) || value <= 0) return false;
+  if (Math.abs(aspectOf(it) - value) < 0.0001) return false;
+  it.aspect = value;
+  return true;
 }
 
 // Add an item to the pool (dedup by id). Returns the id, or null if invalid.
@@ -232,7 +259,7 @@ function migrateConfig(cfg) {
 }
 
 module.exports = {
-  idFor, baseName, makeItem, addItem, addPath, getItem, removeItem,
+  idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
 };

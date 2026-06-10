@@ -22,6 +22,11 @@ ok('makeItem: defaults', it.type === 'image' && it.favorite === false
   && Number.isFinite(it.addedAt) && it.id === L.idFor('C:/a.jpg'));
 ok('makeItem: folder type coerced', L.makeItem('folder', 'C:/d').type === 'folder');
 ok('makeItem: unknown type -> image', L.makeItem('weird', 'C:/x').type === 'image');
+ok('aspectOf: accepts direct aspect or dimensions and rejects junk',
+  L.aspectOf({ aspect: 1.5 }) === 1.5
+  && L.aspectOf({ width: 1920, height: 1080 }) === 1920 / 1080
+  && L.aspectOf({ aspect: -1, width: 0, height: 10 }) === 0);
+ok('makeItem: preserves valid aspect metadata', L.makeItem('image', 'C:/wide.jpg', { width: 1600, height: 900 }).aspect === 1600 / 900);
 
 // ---- addItem / dedup / getItem / removeItem ----
 const lib = {};
@@ -37,6 +42,11 @@ L.addPath(lib, 'image', 'C:/a.jpg');
 ok('addItem: existing metadata preserved on re-add', lib[id1].favorite === true);
 
 ok('getItem: hit / miss', L.getItem(lib, id1).path === 'C:/a.jpg' && L.getItem(lib, 'nope') === null);
+ok('setAspect: updates matching image only',
+  L.setAspect(lib, id1, 'C:/a.jpg', 1.75) === true
+  && L.aspectOf(lib[id1]) === 1.75
+  && L.setAspect(lib, id1, 'C:/other.jpg', 1.2) === false
+  && L.setAspect(lib, 'missing', 'C:/a.jpg', 1.2) === false);
 const idFolder = L.addPath(lib, 'folder', 'C:/pics');
 ok('removeItem: removes', L.removeItem(lib, idFolder) === true && L.getItem(lib, idFolder) === null);
 ok('removeItem: missing -> false', L.removeItem(lib, 'nope') === false);

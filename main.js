@@ -1316,7 +1316,8 @@ ipcMain.handle('wallhaven-add', async (e, item, query) => {
   if (!item || !item.full) return { config, error: 'badItem' };
   try {
     const stored = await downloadWallpaperFromUrl(item.full);
-    const id = library.addPath(config.library, 'image', stored);
+    const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
+    const id = library.addPath(config.library, 'image', stored, { aspect });
     const it = config.library[id];
     if (it) {
       it.source = item.page || item.source || '';
@@ -1375,6 +1376,33 @@ ipcMain.handle('thumb', async (e, p, w, h) => {
   return data.url;
 });
 ipcMain.handle('thumb-info', (e, p, w, h) => thumbnailData(p, w, h));
+
+// Resolve proportions before renderer inserts the next justified-grid chunk. A small
+// worker pool avoids hammering Windows shell with dozens of simultaneous thumbnail jobs.
+// Pool-item aspects are persisted as additive metadata; folder-expanded images stay
+// ephemeral and are cached only by thumbnailData/renderer.
+ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
+  const input = Array.isArray(entries) ? entries.slice(0, 100) : [];
+  const result = new Array(input.length);
+  let cursor = 0;
+  let changed = false;
+  const worker = async () => {
+    while (cursor < input.length) {
+      const index = cursor++;
+      const entry = input[index] || {};
+      const p = typeof entry.path === 'string' ? entry.path : '';
+      const data = await thumbnailData(p, w, h);
+      const aspect = data.width > 0 && data.height > 0 ? data.width / data.height : 0;
+      result[index] = { path: p, aspect };
+      if (aspect && entry.id && library.setAspect(config.library, entry.id, p, aspect)) changed = true;
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(6, input.length) }, () => worker()));
+  // Internal metadata backfill must not broadcast config and restart the visible
+  // library render that requested it.
+  if (changed) configMod.save(config, CONFIG_PATH);
+  return result;
+});
 
 // Содержимое папки для навигации ВНУТРЬ библиотеки: подпапки + картинки (один уровень).
 ipcMain.handle('folder-entries', (e, dir) => {

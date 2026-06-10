@@ -112,6 +112,7 @@ if (!window.api) {
     fileUrl: async (p) => p,
     thumb: async (p) => p,
     thumbInfo: async (p) => ({ url: p, width: 16, height: 10 }),
+    thumbAspects: async (entries) => entries.map((entry) => ({ path: entry.path, aspect: 1.6 })),
     quitApp: () => {},
     createShortcuts: async (which) => {
       if (which === 'desktop' || which === 'both' || !which) mockSc.desktop = true;
@@ -671,7 +672,7 @@ async function renderConfig() {
 // ---------------------------------------------------------------------------
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
-const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null };
+const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null, aspectCache: new Map() };
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
@@ -682,10 +683,24 @@ const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw
 function setLibCardAspect(card, aspect) {
   if (!card) return;
   const safe = window.JustifiedLayout.normalizeAspect(aspect, 0.65, 3);
-  if (card.dataset.aspect === String(safe)) return;
+  const previous = Number(card.dataset.aspect);
+  if (Number.isFinite(previous) && Math.abs(previous - safe) < 0.005) return;
   card.dataset.aspect = String(safe);
   const grid = card.closest('.lib-grid');
   if (grid) scheduleJustifiedLayout(grid);
+}
+
+function knownLibAspect(item, p) {
+  const direct = item && Number(item.aspect);
+  if (Number.isFinite(direct) && direct > 0) return direct;
+  if (item && item.width > 0 && item.height > 0) return item.width / item.height;
+  return LIB.aspectCache.get(normPathKey(p || (item && item.path))) || 0;
+}
+
+function primeLibCardAspect(card, item, p) {
+  const aspect = knownLibAspect(item, p);
+  card.dataset.aspectKnown = aspect > 0 ? 'true' : 'false';
+  setLibCardAspect(card, aspect || 1.6);
 }
 
 function layoutLibGrid(grid) {
@@ -843,7 +858,7 @@ function buildLibCard(it, isAssigned) {
   const card = document.createElement('div');
   card.className = 'lib-card' + (it.type === 'folder' ? ' folder' : '') + (isAssigned ? ' assigned' : '');
   card.dataset.id = it.id;
-  setLibCardAspect(card, it.width && it.height ? it.width / it.height : 1.6);
+  primeLibCardAspect(card, it, it.path);
 
   if (it.type === 'folder') {
     fillFolderCollage(card, it.path);
@@ -1036,7 +1051,12 @@ function loadThumbInto(card) {
     if (!u) { card.classList.add('missing'); return; }
     card.classList.remove('missing');
     card.style.backgroundImage = `url("${u}")`;
-    if (info.width > 0 && info.height > 0) setLibCardAspect(card, info.width / info.height);
+    if (info.width > 0 && info.height > 0) {
+      const aspect = info.width / info.height;
+      LIB.aspectCache.set(normPathKey(p), aspect);
+      if (card.dataset.aspectKnown !== 'true') setLibCardAspect(card, aspect);
+      card.dataset.aspectKnown = 'true';
+    }
   });
 }
 function lazyThumb(card, p, w, h) {
@@ -1120,7 +1140,7 @@ function buildEphemeralImageCard(p) {
   const card = document.createElement('div');
   card.className = 'lib-card';
   card.title = baseName(p);
-  setLibCardAspect(card, 1.6);
+  primeLibCardAspect(card, null, p);
   lazyThumb(card, p, 320, 200);
   const materialize = async () => {
     const res = await window.api.libraryMaterialize(p, 'image');
@@ -1191,25 +1211,54 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
   const CHUNK = 60;
   const sentinel = $('#libSentinel');
   let i = 0;
+  let drawPromise = null;
   const drawNext = () => {
-    if (tok !== allViewToken) return;
-    const end = Math.min(i + CHUNK, entries.length);
-    for (; i < end; i++) {
-      const en = entries[i];
-      grid.appendChild(en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path));
-    }
-    scheduleJustifiedLayout(grid);
-    if (sentinel) sentinel.hidden = i >= entries.length;
+    if (drawPromise) return drawPromise;
+    if (tok !== allViewToken) return Promise.resolve();
+    drawPromise = (async () => {
+      const end = Math.min(i + CHUNK, entries.length);
+      const chunk = entries.slice(i, end);
+      try {
+        const missing = chunk.filter((en) => !knownLibAspect(en.item, en.path));
+        if (missing.length && window.api.thumbAspects) {
+          const aspects = await window.api.thumbAspects(
+            missing.map((en) => ({ id: en.item && en.item.id, path: en.path })),
+            320,
+            200
+          );
+          if (tok !== allViewToken) return;
+          for (const info of (aspects || [])) {
+            if (info && info.path && info.aspect > 0) LIB.aspectCache.set(normPathKey(info.path), info.aspect);
+          }
+          for (const en of missing) {
+            const aspect = LIB.aspectCache.get(normPathKey(en.path));
+            if (aspect && en.item) en.item.aspect = aspect;
+          }
+        }
+      } catch (err) {
+        console.error('library: aspect prefetch failed', err);
+      }
+      if (tok !== allViewToken) return;
+      for (; i < end; i++) {
+        const en = entries[i];
+        grid.appendChild(en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path));
+      }
+      scheduleJustifiedLayout(grid);
+      if (sentinel) sentinel.hidden = i >= entries.length;
+    })().finally(() => { drawPromise = null; });
+    return drawPromise;
   };
-  drawNext();
   if (libObserver) { libObserver.disconnect(); libObserver = null; }
   if (sentinel && 'IntersectionObserver' in window) {
-    libObserver = new IntersectionObserver((ents) => {
-      if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) drawNext();
-    }, { root: null, rootMargin: '400px' });
-    libObserver.observe(sentinel);
+    drawNext().then(() => {
+      if (tok !== allViewToken || i >= entries.length) return;
+      libObserver = new IntersectionObserver((ents) => {
+        if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) drawNext();
+      }, { root: null, rootMargin: '400px' });
+      libObserver.observe(sentinel);
+    });
   } else {
-    while (i < entries.length) drawNext(); // no observer → render all
+    (async () => { while (i < entries.length && tok === allViewToken) await drawNext(); })();
   }
 }
 

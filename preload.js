@@ -49,6 +49,7 @@ contextBridge.exposeInMainWorld('api', {
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   thumb: (p, w, h) => ipcRenderer.invoke('thumb', p, w, h),
   thumbInfo: (p, w, h) => ipcRenderer.invoke('thumb-info', p, w, h),
+  thumbAspects: (entries, w, h) => ipcRenderer.invoke('thumb-aspects', entries, w, h),
   quitApp: () => ipcRenderer.invoke('quit-app'),
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
   shortcutsStatus: () => ipcRenderer.invoke('shortcuts-status'),
