@@ -105,6 +105,7 @@
     "dropPrompt": "Drop images or folder here"
   },
   "library": {
+    "places": "Places",
     "all": "All",
     "favorites": "Favorites",
     "folders": "Folders",
@@ -132,7 +133,8 @@
     "removedToast": "Removed from library",
     "selected": "Selected: {n}",
     "massAssign": "Assign...",
-    "massDelete": "Remove from library"
+    "massDelete": "Remove from library",
+    "itemsCount": "Items: {n}"
   },
   "online": {
     "rail": "Online",

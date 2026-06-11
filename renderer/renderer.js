@@ -713,7 +713,7 @@ function layoutLibGrid(grid) {
   const boxes = window.JustifiedLayout.layout(
     cards.map((card) => Number(card.dataset.aspect) || 1.6),
     width,
-    { gap: 12, targetHeight, minAspect: 0.65, maxAspect: 3 }
+    { gap: 10, targetHeight, minAspect: 0.65, maxAspect: 3 }
   );
   cards.forEach((card, i) => {
     const box = boxes[i];
@@ -819,8 +819,25 @@ function renderLibRailTags() {
   });
 }
 
+function setLibViewHeader(count = null) {
+  const title = $('#libViewTitle');
+  const countEl = $('#libViewCount');
+  let label = t('library.all');
+  if (LIB.folderPath && LIB.crumbs.length) label = LIB.crumbs[LIB.crumbs.length - 1].name;
+  else if (LIB.filter === 'favorite') label = t('library.favorites');
+  else if (LIB.filter === 'folder') label = t('library.folders');
+  else if (LIB.filter === 'online') label = t('online.rail');
+  else if (LIB.filter.startsWith('tag:')) label = `#${LIB.filter.slice(4)}`;
+  if (title) title.textContent = label;
+  if (!countEl) return;
+  const hasCount = Number.isFinite(count) && count >= 0;
+  countEl.hidden = !hasCount;
+  if (hasCount) countEl.textContent = t('library.itemsCount', { n: count });
+}
+
 function renderLibrary() {
   renderLibRailTags();
+  setLibViewHeader();
   const local = $('#libLocal');
   const online = $('#libOnline');
   if (LIB.filter === 'online') {
@@ -849,6 +866,7 @@ function renderLibrary() {
   const assigned = assignedIds();
   const empty = $('#libEmpty');
   if (empty) { empty.hidden = items.length > 0; if (!items.length) setLibEmptyText('library.empty'); }
+  setLibViewHeader(items.length);
   grid.innerHTML = '';
   items.forEach((it) => grid.appendChild(buildLibCard(it, assigned.has(it.id))));
   scheduleJustifiedLayout(grid);
@@ -858,6 +876,7 @@ function buildLibCard(it, isAssigned) {
   const card = document.createElement('div');
   card.className = 'lib-card' + (it.type === 'folder' ? ' folder' : '') + (isAssigned ? ' assigned' : '');
   card.dataset.id = it.id;
+  makeLibCardFocusable(card);
   primeLibCardAspect(card, it, it.path);
 
   if (it.type === 'folder') {
@@ -937,7 +956,7 @@ function buildLibCard(it, isAssigned) {
 function fillFolderCollage(card, dirPath) {
   const collage = document.createElement('div');
   collage.className = 'lib-folder-collage';
-  collage.innerHTML = '<span class="lib-ic">📁</span>';
+  collage.innerHTML = '<svg class="lib-ic" viewBox="0 0 64 64" aria-hidden="true"><path class="lib-folder-back" d="M6 18c0-3 2.4-5.5 5.5-5.5h15l6 7H53c3 0 5.5 2.5 5.5 5.5v24c0 3-2.5 5.5-5.5 5.5H11.5C8.4 54.5 6 52 6 49z"/><path class="lib-folder-front" d="M6 25h52.5v24c0 3-2.5 5.5-5.5 5.5H11.5C8.4 54.5 6 52 6 49z"/></svg>';
   card.appendChild(collage);
   const cap = document.createElement('span');
   cap.className = 'lib-card-name';
@@ -945,14 +964,14 @@ function fillFolderCollage(card, dirPath) {
   card.appendChild(cap);
   const cnt = document.createElement('span');
   cnt.className = 'lib-count';
-  cnt.textContent = '📁';
+  cnt.textContent = '0';
   card.appendChild(cnt);
   card.title = dirPath;
   window.api.folderInfo(dirPath).then((info) => {
     const previews = (info && info.previews) || [];
     const sub = (info && info.subfolders) || 0;
     const n = (info && info.count) || 0;
-    cnt.textContent = sub > 0 ? `📁 ${n} · ▸${sub}` : `📁 ${n}`;
+    cnt.textContent = sub > 0 ? `${n} · +${sub}` : String(n);
     if (!previews.length) return;
     collage.innerHTML = '';
     previews.slice(0, 4).forEach((p) => {
@@ -1100,6 +1119,7 @@ async function renderFolderView(tok) {
   images.forEach((p) => grid.appendChild(buildPathImageCard(p, assigned, pmap)));
   scheduleJustifiedLayout(grid);
   const total = folders.length + images.length;
+  setLibViewHeader(total);
   if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
 }
 
@@ -1108,6 +1128,7 @@ function buildSubfolderCard(f) {
   const card = document.createElement('div');
   card.className = 'lib-card folder';
   card.dataset.path = f.path;
+  makeLibCardFocusable(card);
   setLibCardAspect(card, 1.6);
   fillFolderCollage(card, f.path);
   const menu = document.createElement('button');
@@ -1140,6 +1161,7 @@ function buildEphemeralImageCard(p) {
   const card = document.createElement('div');
   card.className = 'lib-card';
   card.title = baseName(p);
+  makeLibCardFocusable(card);
   primeLibCardAspect(card, null, p);
   lazyThumb(card, p, 320, 200);
   const materialize = async () => {
@@ -1201,6 +1223,7 @@ async function renderAllView(tok) {
     id: (x) => x.id,
   });
   if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }
+  setLibViewHeader(entries.length);
   grid.innerHTML = '';
   renderEntriesLazily(grid, entries, assignedIds(), tok);
 }
@@ -1266,6 +1289,15 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
 function setLibStatus(text) {
   const el = $('#libStatus');
   if (el) el.textContent = text || '';
+}
+
+function makeLibCardFocusable(card) {
+  card.tabIndex = 0;
+  card.addEventListener('keydown', (e) => {
+    if (e.target !== card || (e.key !== 'Enter' && e.key !== ' ')) return;
+    e.preventDefault();
+    card.click();
+  });
 }
 
 // ---- Multi-selection helpers ----
@@ -1575,6 +1607,9 @@ function initLibrary() {
   if (rail) rail.addEventListener('click', (e) => {
     const btn = e.target.closest('.lib-railbtn');
     if (!btn) return;
+    closeLibPopup();
+    clearSelection();
+    syncSelectionUI();
     LIB.filter = btn.dataset.filter;
     exitFolderState(); // switching rail leaves any open folder
     renderLibrary();
@@ -1755,6 +1790,8 @@ async function renderOnline() {
     const grid = $('#whGrid'); if (grid) grid.innerHTML = '';
     const more = $('#whMore'); if (more) more.hidden = true;
   }
+  const grid = $('#whGrid');
+  setLibViewHeader(WH.searched && grid ? grid.children.length : null);
 }
 
 async function doWhSearch(reset) {
@@ -1775,6 +1812,7 @@ async function doWhSearch(reset) {
   if (reset && grid) grid.innerHTML = '';
   (res.items || []).forEach((it) => grid.appendChild(buildWhCard(it)));
   scheduleJustifiedLayout(grid);
+  setLibViewHeader(grid ? grid.children.length : 0);
   if (note) note.textContent = (grid && grid.children.length) ? '' : t('online.noResults');
   const more = $('#whMore'); if (more) more.hidden = WH.page >= WH.lastPage;
 }
@@ -1788,6 +1826,7 @@ function whAlreadyAdded(item) {
 function buildWhCard(item) {
   const card = document.createElement('div');
   card.className = 'lib-card';
+  makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
   if (item.thumb) card.style.backgroundImage = `url("${item.thumb}")`;
   const label = [item.resolution, item.category].filter(Boolean).join(' · ');
