@@ -479,7 +479,10 @@ html.dark .smart-panel.update .smart-panel-title { color: #33d17a; }
   transition: outline-color 0.12s ease;
 }
 .monchip:hover { outline-color: var(--card-border); }
-.monchip.sel { outline-color: var(--accent); }
+/* Mouse focus is globally stripped with `outline: none`; restore the complete
+   selection ring here instead of only its color so the clicked monitor stays marked. */
+.monchip.sel { outline: 2px solid var(--accent); }
+.monchip:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
 .monchip .mnum {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
