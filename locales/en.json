@@ -105,7 +105,6 @@
     "dropPrompt": "Drop images or folder here"
   },
   "library": {
-    "places": "Places",
     "all": "All",
     "favorites": "Favorites",
     "folders": "Folders",
