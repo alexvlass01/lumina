@@ -316,7 +316,9 @@ function updateSingleWallRow() {
 // ---------------------------------------------------------------------------
 // How each wallpaper "style" maps to a CSS preview.
 const STYLE_CSS = {
-  fill:    { size: 'cover',     repeat: 'no-repeat', position: 'center' },
+  // Windows DWPOS_FILL keeps vertical overflow near the upper third rather than CSS' 50% center.
+  // Matching that anchor keeps square/portrait wallpaper previews aligned with the real desktop.
+  fill:    { size: 'cover',     repeat: 'no-repeat', position: 'center 33.333%' },
   fit:     { size: 'contain',   repeat: 'no-repeat', position: 'center' },
   stretch: { size: '100% 100%', repeat: 'no-repeat', position: 'center' },
   center:  { size: 'auto',      repeat: 'no-repeat', position: 'center' },
@@ -2451,6 +2453,7 @@ async function init() {
   $('#selStyle').addEventListener('change', async (e) => {
     config = await window.api.setConfig({ style: e.target.value });
     applyPreviewStyle();
+    renderHome();
     const res = await window.api.applyNow();
     if (res.ok) toast(t('toast.styleUpdated'));
   });
