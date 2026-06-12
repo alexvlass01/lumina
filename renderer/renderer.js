@@ -217,6 +217,7 @@ let selectedMonitorId = null;
 let homeSelectedMonitorId = null;
 let homePage = 0;
 let homeRenderVersion = 0;
+const homeWallpaperCache = new Map();
 let monitorAspect = 16 / 9;
 let previewContextVersion = 0;
 
@@ -2040,28 +2041,37 @@ function sizeHomeDisplays(monitors) {
 
 async function homeWallpaperUrl(monitor) {
   if (!monitor) return '';
+  const cacheKey = `${monitor.id}|${wallTheme()}`;
   const path = await window.api.currentImage(monitor.id, wallTheme());
-  return path ? window.api.fileUrl(path) : '';
+  const url = path ? await window.api.fileUrl(path) : '';
+  homeWallpaperCache.set(cacheKey, url);
+  return url;
+}
+
+function applyHomeDisplayWallpaper(wallpaper, url) {
+  const empty = wallpaper.parentElement.querySelector('.home-display-empty');
+  if (!url) {
+    wallpaper.style.backgroundImage = '';
+    wallpaper.classList.add('empty');
+    if (empty) empty.hidden = false;
+    return;
+  }
+  const css = STYLE_CSS[config.style] || STYLE_CSS.fill;
+  wallpaper.style.backgroundImage = `url("${url}")`;
+  wallpaper.style.backgroundSize = css.size;
+  wallpaper.style.backgroundRepeat = css.repeat;
+  wallpaper.style.backgroundPosition = css.position;
+  wallpaper.classList.remove('empty');
+  if (empty) empty.hidden = true;
 }
 
 async function loadHomeDisplayWallpaper(monitor, wallpaper, version) {
   try {
     const url = await homeWallpaperUrl(monitor);
     if (version !== homeRenderVersion || !wallpaper.isConnected) return;
-    if (!url) {
-      wallpaper.classList.add('empty');
-      return;
-    }
-    const css = STYLE_CSS[config.style] || STYLE_CSS.fill;
-    wallpaper.style.backgroundImage = `url("${url}")`;
-    wallpaper.style.backgroundSize = css.size;
-    wallpaper.style.backgroundRepeat = css.repeat;
-    wallpaper.style.backgroundPosition = css.position;
-    wallpaper.classList.remove('empty');
-    const empty = wallpaper.parentElement.querySelector('.home-display-empty');
-    if (empty) empty.hidden = true;
+    applyHomeDisplayWallpaper(wallpaper, url);
   } catch {
-    if (version === homeRenderVersion && wallpaper.isConnected) wallpaper.classList.add('empty');
+    if (version === homeRenderVersion && wallpaper.isConnected) applyHomeDisplayWallpaper(wallpaper, '');
   }
 }
 
@@ -2079,10 +2089,15 @@ async function updateHomeBackdrop(version) {
 
 function renderHomePager(pages) {
   const pager = $('#homePager');
+  const scene = $('#homeScene');
   pager.setAttribute('aria-label', t('home.monitorPages'));
   const lastPage = Math.max(0, pages.length - 1);
   homePage = Math.max(0, Math.min(homePage, lastPage));
   pager.innerHTML = '';
+  const hasPager = pages.length > 1;
+  pager.hidden = !hasPager;
+  scene.classList.toggle('has-pager', hasPager);
+  if (!hasPager) return;
 
   const left = document.createElement('div');
   left.className = 'home-pager-side';
@@ -2166,23 +2181,24 @@ function renderHome() {
       const empty = document.createElement('span');
       empty.className = 'home-display-empty';
       empty.textContent = t('home.noWallpaper');
+      const cacheKey = `${monitor.id}|${wallTheme()}`;
+      const hasCachedWallpaper = homeWallpaperCache.has(cacheKey);
+      const cachedWallpaper = homeWallpaperCache.get(cacheKey) || '';
+      empty.hidden = !hasCachedWallpaper || !!cachedWallpaper;
       const label = document.createElement('span');
       label.className = 'home-display-label';
       label.textContent = t('monitor.label', { n }) + (monitor.primary ? ` · ${t('monitor.primary')}` : '');
       screen.append(wallpaper, empty, label);
+      if (cachedWallpaper) applyHomeDisplayWallpaper(wallpaper, cachedWallpaper);
 
-      const neck = document.createElement('span');
-      neck.className = 'home-display-neck';
-      const foot = document.createElement('span');
-      foot.className = 'home-display-foot';
-      button.append(screen, neck, foot);
+      button.appendChild(screen);
       wrap.appendChild(button);
       loadHomeDisplayWallpaper(monitor, wallpaper, version);
     });
   }
 
-  sizeHomeDisplays(visibleMonitors);
   renderHomePager(pages);
+  sizeHomeDisplays(visibleMonitors);
   updateHomeInfo();
   updateHomeBackdrop(version);
 }
