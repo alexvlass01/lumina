@@ -185,10 +185,6 @@ function refreshTexts() {
     const el = $(id);
     if (el) el.removeAttribute('data-bg-path');
   });
-  document.querySelectorAll('.home-thumb').forEach((el) => {
-    el.removeAttribute('data-bg-path');
-  });
-
   applyI18n();
   applyThemeToUI(currentTheme); // hero subtitle
   buildMonitorMap();            // chip titles + label
@@ -218,6 +214,9 @@ function toast(msg) {
 // ---------------------------------------------------------------------------
 let monitorList = [];
 let selectedMonitorId = null;
+let homeSelectedMonitorId = null;
+let homePage = 0;
+let homeRenderVersion = 0;
 let monitorAspect = 16 / 9;
 let previewContextVersion = 0;
 
@@ -238,6 +237,7 @@ function setMonitors(list) {
     const primary = monitorList.find((m) => m.primary) || monitorList[0];
     selectedMonitorId = primary ? primary.id : null;
   }
+  if (!monitorList.find((m) => m.id === homeSelectedMonitorId)) homeSelectedMonitorId = null;
   if (selectedMonitorId !== previousMonitorId) resetPreviewsForMonitor(selectedMonitorId);
   applySelectedAspect();
   buildMonitorMap();
@@ -1864,7 +1864,10 @@ function showPage(name) {
   const views = { home: 'viewHome', library: 'viewLibrary', design: 'viewDesign', prefs: 'viewPrefs' };
   const target = views[name] || 'viewHome';
   const page = document.querySelector('.page');
-  if (page) page.classList.toggle('library-page', name === 'library');
+  if (page) {
+    page.classList.toggle('library-page', name === 'library');
+    page.classList.toggle('home-page', name === 'home');
+  }
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== target; });
   document.querySelectorAll('.navbtn').forEach((b) => {
     b.classList.toggle('active', b.dataset.page === name);
@@ -1914,137 +1917,274 @@ async function updateShortcutButtons() {
 }
 
 // Home dashboard: current wallpaper per monitor (active theme) + status.
-// Кнопка «Сменить обои» на Главной: видна, когда есть что листать (слайдшоу включено,
+// Кнопка «Сменить обои» на Главной активна, когда есть что листать (слайдшоу включено,
 // либо в плейлисте текущей темы ≥2 кадров / есть папка-источник).
-function hasNextWallpaper() {
+function hasNextWallpaper(monitorId = null) {
   if (config.slideshow && config.slideshow.enabled) return true;
   const th = wallTheme();
-  for (const m of Object.values(config.monitors || {})) {
+  const monitorConfigs = monitorId
+    ? [config.monitors && config.monitors[monitorId]]
+    : Object.values(config.monitors || {});
+  for (const m of monitorConfigs) {
     const slot = m && m[th];
-    if (slot && Array.isArray(slot.itemIds)) {
-      if (slot.itemIds.length >= 2) return true;
-      for (const id of slot.itemIds) {
-        const it = (config.library || {})[id];
-        if (it && it.type === 'folder') return true;
-      }
+    if (!slot || !Array.isArray(slot.itemIds)) continue;
+    if (slot.itemIds.length >= 2) return true;
+    for (const id of slot.itemIds) {
+      const it = (config.library || {})[id];
+      if (it && it.type === 'folder') return true;
     }
   }
   return false;
 }
-function updateNextWallBtn() {
-  const b = $('#btnNextWall');
-  if (b) b.hidden = !hasNextWallpaper();
+
+function homeMonitorNumber(monitor) {
+  return monitorList.findIndex((m) => m.id === monitor.id) + 1;
 }
 
-const HOME_THUMB_H = 180;
+function homePageSize() {
+  const stage = $('#homeMonitors');
+  const width = stage ? stage.clientWidth : window.innerWidth;
+  if (width >= 510) return 3;
+  if (width >= 320) return 2;
+  return 1;
+}
+
+function homeMonitorPages() {
+  const perPage = homePageSize();
+  const ordered = [...monitorList].sort((a, b) => (a.x - b.x) || (a.y - b.y));
+  const primaryIndex = ordered.findIndex((m) => m.primary);
+  if (primaryIndex >= 0) {
+    const [primary] = ordered.splice(primaryIndex, 1);
+    ordered.splice(Math.min(perPage >= 3 ? 1 : 0, ordered.length), 0, primary);
+  }
+  const pages = [];
+  for (let i = 0; i < ordered.length; i += perPage) pages.push(ordered.slice(i, i + perPage));
+  return pages.length ? pages : [[]];
+}
+
+function homePageLabel(monitors) {
+  const numbers = monitors.map(homeMonitorNumber).filter((n) => n > 0).sort((a, b) => a - b);
+  if (!numbers.length) return '';
+  if (numbers.length === 1) return t('home.monitorSingle', { n: numbers[0] });
+  const contiguous = numbers.every((number, index) => index === 0 || number === numbers[index - 1] + 1);
+  const range = contiguous ? `${numbers[0]}–${numbers[numbers.length - 1]}` : numbers.join(', ');
+  return t('home.monitorRange', { range });
+}
+
+function homeAutomationCopy() {
+  const slideshow = config.slideshow || {};
+  if (slideshow.enabled) {
+    if (slideshow.intervalEnabled !== false) {
+      return {
+        title: t('home.automaticChange'),
+        detail: t('home.everyMinutes', { n: Math.max(1, Math.floor(Number(slideshow.intervalMin) || 30)) }),
+      };
+    }
+    return { title: t('home.automaticChange'), detail: t('home.eventTriggers') };
+  }
+
+  const schedule = config.wallpaperSchedule || {};
+  if (config.separateThemes !== false && schedule.mode && schedule.mode !== 'off') {
+    const detailKeys = { system: 'home.followWindows', time: 'home.byTime', sun: 'home.bySun' };
+    return { title: t('home.automaticTheme'), detail: t(detailKeys[schedule.mode] || 'home.followWindows') };
+  }
+  return { title: t('home.manualChange'), detail: t('home.manualControl') };
+}
+
+function updateHomeInfo() {
+  const selected = monitorList.find((m) => m.id === homeSelectedMonitorId) || null;
+  const title = $('#homeInfoTitle');
+  const meta = $('#homeInfoMeta');
+  const nextLabel = $('#homeNextLabel');
+  const nextButton = $('#btnNextWall');
+  const automation = homeAutomationCopy();
+
+  if (selected) {
+    const n = homeMonitorNumber(selected);
+    title.textContent = t('monitor.label', { n });
+    meta.textContent = fmtResolution(selected) + (selected.primary ? ` · ${t('monitor.primary')}` : '');
+    nextLabel.textContent = config.singleWallpaper ? t('home.switchAll') : t('home.switchThis');
+  } else {
+    title.textContent = t('home.allMonitors');
+    meta.textContent = t('home.generalMode');
+    nextLabel.textContent = t('home.switchAll');
+  }
+
+  $('#homeAutoTitle').textContent = automation.title;
+  $('#homeAutoDetail').textContent = automation.detail;
+  const targetMonitorId = selected && !config.singleWallpaper ? selected.id : null;
+  nextButton.disabled = !hasNextWallpaper(targetMonitorId);
+  nextButton.title = nextButton.disabled ? t('home.noNextWallpaper') : t('home.nextWallpaperHint');
+}
+
+function sizeHomeDisplays(monitors) {
+  const stage = $('#homeMonitors');
+  const buttons = [...stage.querySelectorAll('.home-display')];
+  if (!buttons.length) return;
+  const gap = buttons.length > 1 ? 18 * (buttons.length - 1) : 0;
+  const availableWidth = Math.max(180, stage.clientWidth - gap - 4);
+  const availableHeight = Math.max(120, stage.clientHeight - 32);
+  const primaryHeight = Math.min(220, availableHeight * 0.88);
+  const dimensions = monitors.map((m) => {
+    const aspect = Math.max(0.48, Math.min(2.45, m.h ? m.w / m.h : 16 / 9));
+    const height = primaryHeight * (m.primary ? 1 : 0.74);
+    return { height, width: height * aspect };
+  });
+  const totalWidth = dimensions.reduce((sum, d) => sum + d.width, 0);
+  const scale = Math.min(1, availableWidth / Math.max(1, totalWidth));
+  buttons.forEach((button, index) => {
+    button.style.setProperty('--display-w', `${Math.max(42, Math.round(dimensions[index].width * scale))}px`);
+    button.style.setProperty('--display-h', `${Math.max(58, Math.round(dimensions[index].height * scale))}px`);
+  });
+}
+
+async function homeWallpaperUrl(monitor) {
+  if (!monitor) return '';
+  const path = await window.api.currentImage(monitor.id, wallTheme());
+  return path ? window.api.fileUrl(path) : '';
+}
+
+async function loadHomeDisplayWallpaper(monitor, wallpaper, version) {
+  try {
+    const url = await homeWallpaperUrl(monitor);
+    if (version !== homeRenderVersion || !wallpaper.isConnected) return;
+    if (!url) {
+      wallpaper.classList.add('empty');
+      return;
+    }
+    const css = STYLE_CSS[config.style] || STYLE_CSS.fill;
+    wallpaper.style.backgroundImage = `url("${url}")`;
+    wallpaper.style.backgroundSize = css.size;
+    wallpaper.style.backgroundRepeat = css.repeat;
+    wallpaper.style.backgroundPosition = css.position;
+    wallpaper.classList.remove('empty');
+    const empty = wallpaper.parentElement.querySelector('.home-display-empty');
+    if (empty) empty.hidden = true;
+  } catch {
+    if (version === homeRenderVersion && wallpaper.isConnected) wallpaper.classList.add('empty');
+  }
+}
+
+async function updateHomeBackdrop(version) {
+  const selected = monitorList.find((m) => m.id === homeSelectedMonitorId);
+  const primary = monitorList.find((m) => m.primary) || monitorList[0];
+  try {
+    const url = await homeWallpaperUrl(selected || primary);
+    if (version !== homeRenderVersion) return;
+    $('#homeBackdrop').style.backgroundImage = url ? `url("${url}")` : '';
+  } catch {
+    if (version === homeRenderVersion) $('#homeBackdrop').style.backgroundImage = '';
+  }
+}
+
+function renderHomePager(pages) {
+  const pager = $('#homePager');
+  pager.setAttribute('aria-label', t('home.monitorPages'));
+  const lastPage = Math.max(0, pages.length - 1);
+  homePage = Math.max(0, Math.min(homePage, lastPage));
+  pager.innerHTML = '';
+
+  const left = document.createElement('div');
+  left.className = 'home-pager-side';
+  if (homePage > 0) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `‹ ${homePageLabel(pages[homePage - 1])}`;
+    button.addEventListener('click', () => { homePage--; homeSelectedMonitorId = null; renderHome(); });
+    left.appendChild(button);
+  } else {
+    const current = document.createElement('span');
+    current.className = 'current';
+    current.textContent = homePageLabel(pages[homePage]);
+    left.appendChild(current);
+  }
+
+  const dots = document.createElement('div');
+  dots.className = 'home-page-dots';
+  pages.forEach((_, index) => {
+    const dot = document.createElement('button');
+    dot.type = 'button';
+    dot.className = 'home-page-dot' + (index === homePage ? ' active' : '');
+    dot.title = t('home.pageLabel', { n: index + 1 });
+    dot.setAttribute('aria-label', dot.title);
+    dot.addEventListener('click', () => { homePage = index; homeSelectedMonitorId = null; renderHome(); });
+    dots.appendChild(dot);
+  });
+
+  const right = document.createElement('div');
+  right.className = 'home-pager-side';
+  if (homePage < lastPage) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = `${homePageLabel(pages[homePage + 1])} ›`;
+    button.addEventListener('click', () => { homePage++; homeSelectedMonitorId = null; renderHome(); });
+    right.appendChild(button);
+  } else if (homePage > 0) {
+    const current = document.createElement('span');
+    current.className = 'current';
+    current.textContent = homePageLabel(pages[homePage]);
+    right.appendChild(current);
+  }
+
+  pager.append(left, dots, right);
+}
+
 function renderHome() {
   if (!config) return;
-  updateNextWallBtn();
+  const version = ++homeRenderVersion;
   const wrap = $('#homeMonitors');
-  if (wrap) {
-    if (!monitorList.length) {
-      wrap.innerHTML = `<div class="home-empty">${t('home.noMonitors')}</div>`;
-    } else {
-      const existingCells = wrap.querySelectorAll('.home-mon');
-      if (existingCells.length === monitorList.length) {
-        // Update elements in-place to prevent disappearing / flickering
-        monitorList.forEach((m, i) => {
-          const cell = existingCells[i];
-          const thumb = cell.querySelector('.home-thumb');
-          const lbl = cell.querySelector('.home-mon-label');
-          
-          if (lbl) {
-            lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
-          }
-          
-          if (thumb) {
-            window.api.currentImage(m.id, wallTheme()).then(async (wp) => {
-              if (wp) {
-                // If it is already showing this wallpaper path, do nothing
-                if (thumb.dataset.bgPath === wp) {
-                  return;
-                }
-                thumb.dataset.bgPath = wp;
+  const pages = homeMonitorPages();
+  const selectedPage = homeSelectedMonitorId
+    ? pages.findIndex((page) => page.some((monitor) => monitor.id === homeSelectedMonitorId))
+    : -1;
+  homePage = selectedPage >= 0 ? selectedPage : Math.max(0, Math.min(homePage, pages.length - 1));
+  const visibleMonitors = pages[homePage];
+  wrap.innerHTML = '';
 
-                const url = await window.api.fileUrl(wp);
-                const newBgUrl = `${url}?v=${Date.now()}`;
-                const newBg = `url("${newBgUrl}")`;
-                
-                const oldBg = thumb.style.backgroundImage;
+  if (!visibleMonitors.length) {
+    wrap.innerHTML = `<div class="home-empty">${t('home.noMonitors')}</div>`;
+  } else {
+    visibleMonitors.forEach((monitor) => {
+      const n = homeMonitorNumber(monitor);
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'home-display'
+        + (monitor.w < monitor.h ? ' portrait' : '')
+        + (monitor.id === homeSelectedMonitorId ? ' selected' : '');
+      button.title = t('home.monitorDetails', { n });
+      button.setAttribute('aria-pressed', monitor.id === homeSelectedMonitorId ? 'true' : 'false');
+      button.addEventListener('click', (event) => {
+        event.stopPropagation();
+        homeSelectedMonitorId = monitor.id;
+        renderHome();
+      });
 
-                // Preload the image so it swaps instantly without a blank flash
-                const img = new Image();
-                img.onload = () => {
-                  if (oldBg && oldBg !== 'none' && oldBg !== newBg) {
-                    thumb.style.backgroundImage = `${newBg}, ${oldBg}`;
-                    setTimeout(() => {
-                      thumb.style.backgroundImage = newBg;
-                    }, 150);
-                  } else {
-                    thumb.style.backgroundImage = newBg;
-                  }
-                  thumb.classList.remove('empty');
-                  thumb.textContent = '';
-                };
-                img.src = newBgUrl;
-              } else {
-                thumb.dataset.bgPath = '';
-                thumb.style.backgroundImage = '';
-                thumb.classList.add('empty');
-                thumb.textContent = t('home.noWallpaper');
-              }
-            });
-          }
-        });
-      } else {
-        // Fallback: Full rebuild only if monitor count changed
-        wrap.innerHTML = '';
-        monitorList.forEach((m, i) => {
-          const ar = m.h ? m.w / m.h : 16 / 9;
-          const cell = document.createElement('div');
-          cell.className = 'home-mon';
-          cell.title = t('home.editMonitor') || "Настроить обои";
-          cell.addEventListener('click', () => {
-            selectMonitor(m);
-            showPage('design');
-          });
-          const thumb = document.createElement('div');
-          thumb.className = 'home-thumb';
-          thumb.style.height = HOME_THUMB_H + 'px';
-          thumb.style.width = Math.round(HOME_THUMB_H * ar) + 'px';
-          thumb.classList.add('empty');
+      const screen = document.createElement('span');
+      screen.className = 'home-display-screen';
+      const wallpaper = document.createElement('span');
+      wallpaper.className = 'home-display-wallpaper empty';
+      const empty = document.createElement('span');
+      empty.className = 'home-display-empty';
+      empty.textContent = t('home.noWallpaper');
+      const label = document.createElement('span');
+      label.className = 'home-display-label';
+      label.textContent = t('monitor.label', { n }) + (monitor.primary ? ` · ${t('monitor.primary')}` : '');
+      screen.append(wallpaper, empty, label);
 
-          window.api.currentImage(m.id, wallTheme()).then(async (wp) => {
-            if (wp) {
-              thumb.dataset.bgPath = wp;
-              const url = await window.api.fileUrl(wp);
-              const newBgUrl = `${url}?v=${Date.now()}`;
-              
-              // Preload before display
-              const img = new Image();
-              img.onload = () => {
-                thumb.style.backgroundImage = `url("${newBgUrl}")`;
-                thumb.classList.remove('empty');
-                thumb.textContent = '';
-              };
-              img.src = newBgUrl;
-            } else {
-              thumb.dataset.bgPath = '';
-              thumb.textContent = t('home.noWallpaper');
-            }
-          });
-          
-          const lbl = document.createElement('div');
-          lbl.className = 'home-mon-label';
-          lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
-          
-          cell.appendChild(thumb);
-          cell.appendChild(lbl);
-          wrap.appendChild(cell);
-        });
-      }
-    }
+      const neck = document.createElement('span');
+      neck.className = 'home-display-neck';
+      const foot = document.createElement('span');
+      foot.className = 'home-display-foot';
+      button.append(screen, neck, foot);
+      wrap.appendChild(button);
+      loadHomeDisplayWallpaper(monitor, wallpaper, version);
+    });
   }
+
+  sizeHomeDisplays(visibleMonitors);
+  renderHomePager(pages);
+  updateHomeInfo();
+  updateHomeBackdrop(version);
 }
 
 // ---------------------------------------------------------------------------
@@ -2111,8 +2251,19 @@ async function init() {
   const btnNextWall = $('#btnNextWall');
   if (btnNextWall) btnNextWall.addEventListener('click', async () => {
     btnNextWall.disabled = true;
-    try { await window.api.nextWallpaper(); toast(t('toast.nextWallpaper')); }
-    finally { setTimeout(() => { renderHome(); renderPreviews(); btnNextWall.disabled = false; }, 350); }
+    try {
+      await window.api.nextWallpaper(config.singleWallpaper ? null : homeSelectedMonitorId);
+      toast(t('toast.nextWallpaper'));
+    } finally {
+      setTimeout(() => { renderHome(); renderPreviews(); }, 350);
+    }
+  });
+
+  $('#homeScene').addEventListener('click', (event) => {
+    if (!homeSelectedMonitorId) return;
+    if (event.target !== event.currentTarget && event.target !== $('#homeMonitors')) return;
+    homeSelectedMonitorId = null;
+    renderHome();
   });
 
   // ---- settings: quit the app ----
@@ -2414,7 +2565,11 @@ async function init() {
   let resizeT = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeT);
-    resizeT = setTimeout(() => { layoutMonitors(); scheduleAllLibraryLayouts(); }, 60);
+    resizeT = setTimeout(() => {
+      layoutMonitors();
+      scheduleAllLibraryLayouts();
+      if (!$('#viewHome').hidden) renderHome();
+    }, 60);
   });
 
   initHotkeys();

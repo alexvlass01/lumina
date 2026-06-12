@@ -767,14 +767,15 @@ function hasSlideshowItems() {
   return false;
 }
 
-function triggerNextWallpaper() {
+async function triggerNextWallpaper(targetMonitors = null) {
+  if (config.singleWallpaper) targetMonitors = null;
   const theme = wallpaperThemeName();
-  if (config.slideshow && config.slideshow.enabled) {
-    tickSlideshow(true, true);
+  if (config.slideshow && config.slideshow.enabled && !targetMonitors) {
+    return tickSlideshow(true, true);
   } else {
-    advanceIndices(theme);
+    advanceIndices(theme, targetMonitors);
     saveConfig();
-    applyForTheme(theme, true);
+    return applyForTheme(theme, true, targetMonitors);
   }
 }
 
@@ -1474,7 +1475,10 @@ ipcMain.handle('cycle-theme-override', async () => {
 
 // Ручная смена обоев на следующий кадр (кнопка на Главной / хоткей). Крутит слайдшоу,
 // если включено, иначе просто сдвигает индекс плейлиста и применяет.
-ipcMain.handle('next-wallpaper', () => { triggerNextWallpaper(); return config; });
+ipcMain.handle('next-wallpaper', async (e, monitorId) => {
+  await triggerNextWallpaper(monitorId ? [monitorId] : null);
+  return config;
+});
 
 // Jump to a specific playlist item for a monitor+theme and apply immediately.
 ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {

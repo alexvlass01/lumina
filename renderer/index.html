@@ -114,21 +114,43 @@
     <!-- ===================== HOME ===================== -->
     <section class="view" id="viewHome">
       <div class="home-layout">
-        <div class="home-main-card">
-          <div class="home-main-header">
-            <h2 class="group-title" data-i18n="home.currentDesktop" style="margin-bottom: 0;">Сейчас на рабочем столе</h2>
-            <div style="flex-grow: 1;"></div>
-            <div class="home-theme-text-only" id="themeIndicator">
-              <span id="heroIcon">☀️</span>
-              <span id="heroSub" data-i18n="home.detecting" style="font-weight: 600; color: var(--text-dim); font-size: 13.5px;">Определяю…</span>
-            </div>
-          </div>
-          
-          <div class="home-monitors" id="homeMonitors"></div>
-          <div class="home-card-actions">
-            <button class="pill home-next-wall" id="btnNextWall" hidden data-i18n-title="home.nextWallpaperHint">
-              <span class="hnw-ic">⏭</span><span data-i18n="home.nextWallpaper">Сменить обои</span>
-            </button>
+        <div class="home-desktop-card" id="homeDesktopCard">
+          <div class="home-scene" id="homeScene">
+            <div class="home-scene-backdrop" id="homeBackdrop"></div>
+            <div class="home-scene-shade"></div>
+
+            <h2 class="home-scene-title" data-i18n="home.currentDesktop">Сейчас на рабочем столе</h2>
+
+            <div class="home-display-area" id="homeMonitors"></div>
+
+            <aside class="home-info-panel">
+              <div class="home-info-heading">
+                <strong id="homeInfoTitle">Все мониторы</strong>
+                <span id="homeInfoMeta">Общий режим</span>
+              </div>
+
+              <button class="home-theme-row" id="themeIndicator" type="button">
+                <span class="home-info-icon" id="heroIcon">☀️</span>
+                <span class="home-info-copy">
+                  <small data-i18n="home.currentTheme">Текущая тема</small>
+                  <strong id="heroSub" data-i18n="home.detecting">Определяю…</strong>
+                </span>
+              </button>
+
+              <div class="home-automation-row">
+                <span class="home-info-icon">↻</span>
+                <span class="home-info-copy">
+                  <small id="homeAutoTitle">Автоматическая смена</small>
+                  <strong id="homeAutoDetail">По настройкам приложения</strong>
+                </span>
+              </div>
+
+              <button class="pill suggested home-next-wall" id="btnNextWall" type="button" data-i18n-title="home.nextWallpaperHint">
+                <span class="hnw-ic">↻</span><span id="homeNextLabel" data-i18n="home.switchAll">Сменить на всех экранах</span>
+              </button>
+            </aside>
+
+            <nav class="home-pager" id="homePager"></nav>
           </div>
         </div>
 
