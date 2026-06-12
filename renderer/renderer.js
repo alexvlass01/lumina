@@ -217,6 +217,7 @@ let selectedMonitorId = null;
 let homeSelectedMonitorId = null;
 let homePage = 0;
 let homeRenderVersion = 0;
+let homeBackdropVersion = 0;
 const homeWallpaperCache = new Map();
 let monitorAspect = 16 / 9;
 let previewContextVersion = 0;
@@ -2024,16 +2025,32 @@ function sizeHomeDisplays(monitors) {
   const stage = $('#homeMonitors');
   const buttons = [...stage.querySelectorAll('.home-display')];
   if (!buttons.length) return;
-  const gap = buttons.length > 1 ? 18 * (buttons.length - 1) : 0;
+  const gapSize = Number.parseFloat(getComputedStyle(stage).columnGap) || 0;
+  const gap = buttons.length > 1 ? gapSize * (buttons.length - 1) : 0;
   const availableWidth = Math.max(180, stage.clientWidth - gap - 4);
-  const availableHeight = Math.max(120, stage.clientHeight - 32);
-  const primaryHeight = Math.min(220, availableHeight * 0.88);
+  const availableHeight = Math.max(120, stage.clientHeight - 16);
+  const primaryHeight = Math.min(220, availableHeight * 0.92);
   const dimensions = monitors.map((m) => {
     const aspect = Math.max(0.48, Math.min(2.45, m.h ? m.w / m.h : 16 / 9));
     const height = primaryHeight * (m.primary ? 1 : 0.74);
-    return { height, width: height * aspect };
+    return { primary: !!m.primary, aspect, height, width: height * aspect };
   });
-  const totalWidth = dimensions.reduce((sum, d) => sum + d.width, 0);
+
+  let totalWidth = dimensions.reduce((sum, d) => sum + d.width, 0);
+  if (totalWidth < availableWidth) {
+    const secondary = dimensions.filter((d) => !d.primary);
+    const aspectSum = secondary.reduce((sum, d) => sum + d.aspect, 0);
+    const maxSecondaryHeight = primaryHeight * 0.92;
+    const sharedGrowth = aspectSum > 0
+      ? Math.min(maxSecondaryHeight - primaryHeight * 0.74, (availableWidth - totalWidth) / aspectSum)
+      : 0;
+    secondary.forEach((d) => {
+      d.height += Math.max(0, sharedGrowth);
+      d.width = d.height * d.aspect;
+    });
+    totalWidth = dimensions.reduce((sum, d) => sum + d.width, 0);
+  }
+
   const scale = Math.min(1, availableWidth / Math.max(1, totalWidth));
   buttons.forEach((button, index) => {
     button.style.setProperty('--display-w', `${Math.max(42, Math.round(dimensions[index].width * scale))}px`);
@@ -2077,16 +2094,28 @@ async function loadHomeDisplayWallpaper(monitor, wallpaper, version) {
   }
 }
 
-async function updateHomeBackdrop(version) {
+async function updateHomeBackdrop() {
+  const version = ++homeBackdropVersion;
   const selected = monitorList.find((m) => m.id === homeSelectedMonitorId);
   const primary = monitorList.find((m) => m.primary) || monitorList[0];
   try {
     const url = await homeWallpaperUrl(selected || primary);
-    if (version !== homeRenderVersion) return;
+    if (version !== homeBackdropVersion) return;
     $('#homeBackdrop').style.backgroundImage = url ? `url("${url}")` : '';
   } catch {
-    if (version === homeRenderVersion) $('#homeBackdrop').style.backgroundImage = '';
+    if (version === homeBackdropVersion) $('#homeBackdrop').style.backgroundImage = '';
   }
+}
+
+function selectHomeMonitor(monitorId) {
+  homeSelectedMonitorId = monitorId;
+  document.querySelectorAll('.home-display').forEach((button) => {
+    const selected = button.dataset.monitorId === monitorId;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', selected ? 'true' : 'false');
+  });
+  updateHomeInfo();
+  updateHomeBackdrop();
 }
 
 function renderHomePager(pages) {
@@ -2168,12 +2197,12 @@ function renderHome() {
       button.className = 'home-display'
         + (monitor.w < monitor.h ? ' portrait' : '')
         + (monitor.id === homeSelectedMonitorId ? ' selected' : '');
+      button.dataset.monitorId = monitor.id;
       button.title = t('home.monitorDetails', { n });
       button.setAttribute('aria-pressed', monitor.id === homeSelectedMonitorId ? 'true' : 'false');
       button.addEventListener('click', (event) => {
         event.stopPropagation();
-        homeSelectedMonitorId = monitor.id;
-        renderHome();
+        selectHomeMonitor(monitor.id);
       });
 
       const screen = document.createElement('span');
@@ -2202,7 +2231,7 @@ function renderHome() {
   renderHomePager(pages);
   sizeHomeDisplays(visibleMonitors);
   updateHomeInfo();
-  updateHomeBackdrop(version);
+  updateHomeBackdrop();
 }
 
 // ---------------------------------------------------------------------------
@@ -2280,8 +2309,7 @@ async function init() {
   $('#homeScene').addEventListener('click', (event) => {
     if (!homeSelectedMonitorId) return;
     if (event.target !== event.currentTarget && event.target !== $('#homeMonitors')) return;
-    homeSelectedMonitorId = null;
-    renderHome();
+    selectHomeMonitor(null);
   });
 
   // ---- settings: quit the app ----
