@@ -19,6 +19,16 @@ const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: �
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
 
+// `npm run dev:cloud` is a separate local app identity, not just a staging switch.
+// It gets its own config/library/session and can run alongside the installed Lumina.
+// Plain `npm start` and every packaged build keep the normal Lumina identity.
+const CLOUD_DEV_MODE = !app.isPackaged && (process.env.LUMINA_CLOUD || '').trim() === 'staging';
+const APP_DISPLAY_NAME = CLOUD_DEV_MODE ? 'Lumina Dev' : 'Lumina';
+if (CLOUD_DEV_MODE) {
+  app.setName(APP_DISPLAY_NAME);
+  app.setPath('userData', path.join(app.getPath('appData'), 'lumina-dev'));
+}
+
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
 // then quits immediately). No-op for the portable build / when not installed.
@@ -698,7 +708,7 @@ function createWindow() {
     minWidth: 780,
     minHeight: 560,
     show: false,
-    title: 'Lumina',
+    title: APP_DISPLAY_NAME,
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarOverlayColors(),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#242424' : '#fafafa',
@@ -821,6 +831,7 @@ function registerShortcut() {
 const trayCtl = createTrayController({
   Tray, Menu, nativeImage,
   assetsDir: path.join(__dirname, 'assets'),
+  appName: APP_DISPLAY_NAME,
   t: tMain,
   getState: () => ({
     theme: currentThemeName(),
@@ -971,6 +982,7 @@ function broadcastWallpaperTheme(theme = wallpaperThemeName()) {
 ipcMain.handle('get-config', () => config);
 
 ipcMain.handle('get-version', () => app.getVersion());
+ipcMain.handle('get-app-identity', () => ({ name: APP_DISPLAY_NAME, dev: CLOUD_DEV_MODE }));
 
 // Lumina Cloud capability (C2). Resolved once: staging is reachable ONLY from an
 // unpackaged dev build with an explicit opt-in (LUMINA_CLOUD=staging); installed
@@ -1075,8 +1087,10 @@ function runLoopbackSignin(challenge) {
 }
 
 function loopbackHtml(okCode) {
-  const msg = okCode ? 'Готово! Можете закрыть эту вкладку и вернуться в Lumina.' : 'Код авторизации не получен. Вернитесь в Lumina и попробуйте снова.';
-  return `<!doctype html><meta charset="utf-8"><title>Lumina</title><body style="font-family:Segoe UI,system-ui,sans-serif;background:#fafafa;color:#2e3436;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="margin:0 0 8px">Lumina</h2><p>${msg}</p></div></body>`;
+  const msg = okCode
+    ? `Готово! Можете закрыть эту вкладку и вернуться в ${APP_DISPLAY_NAME}.`
+    : `Код авторизации не получен. Вернитесь в ${APP_DISPLAY_NAME} и попробуйте снова.`;
+  return `<!doctype html><meta charset="utf-8"><title>${APP_DISPLAY_NAME}</title><body style="font-family:Segoe UI,system-ui,sans-serif;background:#fafafa;color:#2e3436;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="margin:0 0 8px">${APP_DISPLAY_NAME}</h2><p>${msg}</p></div></body>`;
 }
 
 // Catalog page (renderer never calls the API directly — everything goes through here).
@@ -1134,7 +1148,7 @@ ipcMain.handle('cloud-signin', async () => {
   try {
     const { verifier, challenge } = cloudOauth.generatePkce();
     const code = await runLoopbackSignin(challenge);
-    const ex = await client.exchangeAuth({ code, pkce_verifier: verifier, client_label: `Lumina on ${os.hostname()}` });
+    const ex = await client.exchangeAuth({ code, pkce_verifier: verifier, client_label: `${APP_DISPLAY_NAME} on ${os.hostname()}` });
     if (!ex.ok) return { ok: false, error: ex.error.code };
     _cloudToken = ex.data.session_token;
     saveStoredToken(_cloudToken);

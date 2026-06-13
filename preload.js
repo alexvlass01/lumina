@@ -7,6 +7,7 @@ contextBridge.exposeInMainWorld('api', {
   getConfig: () => ipcRenderer.invoke('get-config'),
   setConfig: (patch) => ipcRenderer.invoke('set-config', patch),
   getVersion: () => ipcRenderer.invoke('get-version'),
+  getAppIdentity: () => ipcRenderer.invoke('get-app-identity'),
   getI18n: () => ipcRenderer.invoke('get-i18n'),
   getMonitors: () => ipcRenderer.invoke('get-monitors'),
   getTheme: () => ipcRenderer.invoke('get-theme'),

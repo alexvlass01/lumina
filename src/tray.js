@@ -45,7 +45,7 @@ function createTrayController(deps) {
 
   const create = () => {
     tray = new Tray(nativeImage.createFromPath(path.join(assetsDir, 'tray.png')));
-    tray.setToolTip('Lumina');
+    tray.setToolTip(deps.appName || 'Lumina');
     refresh();
     refreshIcon();
     tray.on('click', deps.onOpen);
