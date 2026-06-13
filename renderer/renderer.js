@@ -11,7 +11,6 @@ if (!window.api) {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
     getVersion: async () => '1.0.0',
-    getAppIdentity: async () => ({ name: 'Lumina', dev: false }),
     getI18n: async () => {
       const load = async (code) => { try { return await (await fetch('../locales/' + code + '.json')).json(); } catch { return {}; } };
       const sys = 'ru';
@@ -2696,12 +2695,6 @@ function renderUpdate(st) {
 // Init
 // ---------------------------------------------------------------------------
 async function init() {
-  const identity = await window.api.getAppIdentity();
-  const appName = identity && identity.name ? identity.name : 'Lumina';
-  document.title = appName;
-  const title = $('.tb-title');
-  if (title) title.textContent = appName;
-  document.documentElement.classList.toggle('dev-mode', !!(identity && identity.dev));
   config = await window.api.getConfig();
   currentTheme = await window.api.getTheme();
   currentWallpaperTheme = await window.api.getWallpaperTheme();
