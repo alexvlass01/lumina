@@ -555,6 +555,77 @@ body.first-run .tb-right { display: none; }
   .home-pager { grid-column: 1; grid-row: 4; }
 }
 
+/* ---------- Home scene — LIGHT theme (B4) ----------
+   Базовый вид сцены (выше) рассчитан на тёмную тему: белый текст поверх тёмной
+   вуали. В светлой теме приложения тот же блок выглядел чужеродным тёмным куском.
+   Здесь — самостоятельное СВЕТЛОЕ состояние сцены (тёмную тему не трогаем).
+   Идея: лёгкая матовая СВЕТЛАЯ вуаль приводит любые обои (очень светлые, очень
+   тёмные, пёстрые) к предсказуемо светлой поверхности, поверх которой читается
+   тёмный текст; панели/пагинатор — «белое матовое стекло». Подписи мониторов
+   (тёмная капсула поверх самих обоев) намеренно НЕ трогаем — они универсальны. */
+html:not(.dark) .home-scene { color: var(--text); }
+
+/* Запасной фон (когда обои ещё не выбраны/не загрузились) — воздушный светлый */
+html:not(.dark) .home-scene-backdrop {
+  background: radial-gradient(circle at 30% 18%, #eef3fa, #dbe3ef 58%, #c6d0de);
+}
+
+/* Светлая вуаль: тянет тёмные обои к светлому, оставляя их как мягкую подложку.
+   Базовый слой плотнее снизу (под мониторами/панелью), мягкие боковые блики. */
+html:not(.dark) .home-scene-shade {
+  background:
+    linear-gradient(180deg, rgba(250, 251, 253, 0.58), rgba(243, 246, 250, 0.74)),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.24), rgba(255, 255, 255, 0) 52%, rgba(255, 255, 255, 0.28));
+}
+
+/* Заголовок лежит прямо на вуали → светлый ореол держит его читаемым над
+   потемневшими участками пёстрых обоев. */
+html:not(.dark) .home-scene-title {
+  text-shadow: 0 1px 2px rgba(255, 255, 255, 0.85), 0 0 16px rgba(255, 255, 255, 0.6);
+}
+
+/* Правая панель и пагинатор — белое матовое стекло с тонкой тёмной обводкой */
+html:not(.dark) .home-info-panel {
+  border-color: rgba(0, 0, 0, 0.08);
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 12px 30px rgba(31, 41, 55, 0.14);
+}
+html:not(.dark) .home-pager {
+  border-color: rgba(0, 0, 0, 0.07);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+html:not(.dark) .home-info-heading span { color: var(--text-dim); }
+
+/* Внутренние карточки панели */
+html:not(.dark) .home-theme-row,
+html:not(.dark) .home-automation-row {
+  color: var(--text);
+  border-color: rgba(0, 0, 0, 0.07);
+  background: rgba(255, 255, 255, 0.5);
+}
+html:not(.dark) .home-theme-row:hover { background: rgba(255, 255, 255, 0.78); }
+html:not(.dark) .home-theme-row:focus-visible { outline-color: var(--accent); }
+
+html:not(.dark) .home-info-icon { background: rgba(0, 0, 0, 0.06); }
+html:not(.dark) .home-info-copy small { color: var(--text-dim); }
+
+/* Пагинатор: приглушённый тёмный текст, акцентная активная точка */
+html:not(.dark) .home-pager-side { color: var(--text-dim); }
+html:not(.dark) .home-pager-side .current { color: var(--text); }
+html:not(.dark) .home-pager-side button:hover { color: var(--text); background: rgba(0, 0, 0, 0.06); }
+html:not(.dark) .home-page-dot { background: rgba(0, 0, 0, 0.25); }
+html:not(.dark) .home-page-dot.active { background: var(--accent); }
+
+/* Клавиатурный фокус миниатюр — акцент вместо белого */
+html:not(.dark) .home-display:focus-visible { outline-color: var(--accent); }
+
+/* Пустое состояние «нет мониторов» */
+html:not(.dark) .home-empty {
+  color: var(--text-dim);
+  border-color: rgba(0, 0, 0, 0.18);
+}
+
 /* ---------- Smart Panel ---------- */
 .smart-panel {
   display: flex;
