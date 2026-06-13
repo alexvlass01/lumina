@@ -174,7 +174,16 @@
     "error": "Ошибка: {e}",
     "add": "Добавить в библиотеку",
     "added": "Добавлено в библиотеку",
-    "nsfwNeedsKey": "Для NSFW нужен API-ключ (Настройки)"
+    "nsfwNeedsKey": "Для NSFW нужен API-ключ (Настройки)",
+    "sourceLumina": "Lumina",
+    "sourceInternet": "Интернет",
+    "comingSoonTitle": "Облако Lumina скоро",
+    "comingSoonBody": "Здесь появятся подобранные обои из сервиса Lumina. В этой сборке функция пока недоступна — она включится автоматически, когда сервис заработает.",
+    "cloudReadyTitle": "Каталог Lumina",
+    "cloudReadyBody": "Подключено к сервису Lumina. Каталог обоев появится здесь.",
+    "cloudBadgeSoon": "Скоро",
+    "cloudBadgeStaging": "Staging",
+    "cloudBadgeLive": "Lumina"
   },
   "theme": {
     "group": "Тема Windows",

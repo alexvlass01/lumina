@@ -143,5 +143,29 @@ ok('invalid wallpaper schedule falls back safely',
   && wallBad.wallpaperSchedule.lightStart === '07:00'
   && wallBad.wallpaperSchedule.darkStart === '20:00');
 
+// onlineSources (Cloud C2): default external-only; booleanized; never both-off
+ok('fresh defaults: onlineSources internet on, lumina off',
+  fresh.onlineSources && fresh.onlineSources.internet === true && fresh.onlineSources.lumina === false);
+fs.writeFileSync(p('sources_missing.json'), JSON.stringify({ autoSwitch: true }));
+ok('missing onlineSources → external only', (() => {
+  const s = C.load(p('sources_missing.json')).onlineSources;
+  return s.internet === true && s.lumina === false;
+})());
+fs.writeFileSync(p('sources_both.json'), JSON.stringify({ onlineSources: { lumina: 1, internet: 'yes' } }));
+ok('onlineSources coerced to booleans', (() => {
+  const s = C.load(p('sources_both.json')).onlineSources;
+  return s.lumina === true && s.internet === true;
+})());
+fs.writeFileSync(p('sources_none.json'), JSON.stringify({ onlineSources: { lumina: false, internet: false } }));
+ok('both sources off → internet forced on (no empty Online page)', (() => {
+  const s = C.load(p('sources_none.json')).onlineSources;
+  return s.internet === true && s.lumina === false;
+})());
+fs.writeFileSync(p('sources_lumina.json'), JSON.stringify({ onlineSources: { lumina: true, internet: false } }));
+ok('lumina-only selection survives', (() => {
+  const s = C.load(p('sources_lumina.json')).onlineSources;
+  return s.lumina === true && s.internet === false;
+})());
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

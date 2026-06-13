@@ -14,6 +14,7 @@ const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // жи�
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
+const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -967,6 +968,23 @@ function broadcastWallpaperTheme(theme = wallpaperThemeName()) {
 ipcMain.handle('get-config', () => config);
 
 ipcMain.handle('get-version', () => app.getVersion());
+
+// Lumina Cloud capability (C2). Resolved once: staging is reachable ONLY from an
+// unpackaged dev build with an explicit opt-in (LUMINA_CLOUD=staging); installed
+// GitHub builds are always 'unavailable' (visible UI, no network). The renderer
+// receives only the safe subset — never the API URL or any token. The private
+// apiBase is kept here for the future catalog client (C3+).
+let _cloudCapability = null;
+function cloudCapability() {
+  if (!_cloudCapability) {
+    _cloudCapability = cloudCapabilityMod.resolveCapability({
+      isPackaged: app.isPackaged,
+      stagingOptIn: process.env.LUMINA_CLOUD === 'staging',
+    });
+  }
+  return _cloudCapability;
+}
+ipcMain.handle('get-cloud-capability', () => cloudCapabilityMod.publicCapability(cloudCapability()));
 
 ipcMain.handle('get-i18n', () => {
   const code = effectiveLang();

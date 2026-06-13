@@ -174,7 +174,16 @@
     "error": "Error: {e}",
     "add": "Add to library",
     "added": "Added to library",
-    "nsfwNeedsKey": "NSFW needs an API key (Settings)"
+    "nsfwNeedsKey": "NSFW needs an API key (Settings)",
+    "sourceLumina": "Lumina",
+    "sourceInternet": "Internet",
+    "comingSoonTitle": "Lumina Cloud is coming soon",
+    "comingSoonBody": "Curated wallpapers from the Lumina service will appear here. This feature isn't available in this build yet — it turns on automatically once the service is live.",
+    "cloudReadyTitle": "Lumina catalog",
+    "cloudReadyBody": "Connected to the Lumina service. The wallpaper catalog will appear here.",
+    "cloudBadgeSoon": "Coming soon",
+    "cloudBadgeStaging": "Staging",
+    "cloudBadgeLive": "Lumina"
   },
   "theme": {
     "group": "Windows theme",

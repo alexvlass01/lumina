@@ -94,6 +94,7 @@ if (!window.api) {
     expandFolders: async () => ({ images: [] }),
     libraryEnsureSizes: async () => mock,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
+    getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
     wallhavenAdd: async () => ({ config: mock, error: null }),
@@ -683,6 +684,8 @@ let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
 let justifiedFrame = 0;
 const justifiedPending = new Set();
 const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
+// Cloud C2: capability state (environment/available/reason) fetched once from main.
+const CLOUD = { cap: null, fetched: false };
 
 function setLibCardAspect(card, aspect) {
   if (!card) return;
@@ -1696,6 +1699,12 @@ function initLibrary() {
     if (res && res.added > 0) toast(t('toast.folderAdded'));
   });
 
+  // online source selector (Cloud C2)
+  const srcLumina = $('#srcLumina');
+  if (srcLumina) srcLumina.addEventListener('click', () => toggleOnlineSource('lumina'));
+  const srcInternet = $('#srcInternet');
+  if (srcInternet) srcInternet.addEventListener('click', () => toggleOnlineSource('internet'));
+
   // online (Wallhaven)
   const whSearchBtn = $('#whSearch');
   if (whSearchBtn) whSearchBtn.addEventListener('click', () => doWhSearch(true));
@@ -1781,7 +1790,67 @@ function updatePurityToggle() {
   });
 }
 
+// Active online content sources (Cloud C2). Defaults to external-only and never
+// returns both off, so the Online tab is never empty.
+function onlineSources() {
+  const s = (config && config.onlineSources) || {};
+  const lumina = !!s.lumina;
+  let internet = s.internet !== false;
+  if (!lumina && !internet) internet = true;
+  return { lumina, internet };
+}
+
+// Fetch the cloud capability once from main (safe subset: no URL/token).
+async function ensureCloudCapability() {
+  if (CLOUD.fetched) return;
+  try { CLOUD.cap = await window.api.getCloudCapability(); }
+  catch { CLOUD.cap = { environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }; }
+  CLOUD.fetched = true;
+}
+
+// Reflect the source selection: chip pressed-state + which panel(s) show.
+function applyOnlineSourceUI(sources) {
+  const lum = $('#srcLumina'), net = $('#srcInternet');
+  if (lum) { lum.setAttribute('aria-pressed', sources.lumina ? 'true' : 'false'); lum.classList.toggle('active', sources.lumina); }
+  if (net) { net.setAttribute('aria-pressed', sources.internet ? 'true' : 'false'); net.classList.toggle('active', sources.internet); }
+  const cloud = $('#libCloud'), internet = $('#libInternet');
+  if (cloud) cloud.hidden = !sources.lumina;
+  if (internet) internet.hidden = !sources.internet;
+}
+
+// Render the Lumina panel for the current capability. Until production, public
+// builds show a calm "coming soon" state; a dev staging build shows a placeholder
+// that the C3 catalog will replace.
+function renderCloudPanel() {
+  const host = $('#libCloudState');
+  if (!host) return;
+  const cap = CLOUD.cap || { environment: 'unavailable', available: false };
+  const ready = cap.available && (cap.environment === 'staging' || cap.environment === 'production');
+  const badge = ready
+    ? (cap.environment === 'staging' ? t('online.cloudBadgeStaging') : t('online.cloudBadgeLive'))
+    : t('online.cloudBadgeSoon');
+  const title = ready ? t('online.cloudReadyTitle') : t('online.comingSoonTitle');
+  const body = ready ? t('online.cloudReadyBody') : t('online.comingSoonBody');
+
+  const wrap = document.createElement('div');
+  wrap.className = 'lib-cloud-empty';
+  wrap.innerHTML = '<svg class="lib-cloud-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M6.5 18.5a4 4 0 0 1-.4-7.98A5 5 0 0 1 15.5 8.2a3.6 3.6 0 0 1 .7 9.6z"/></svg>';
+  const b = document.createElement('span'); b.className = 'lib-cloud-badge'; b.textContent = badge;
+  const h = document.createElement('h3'); h.textContent = title;
+  const p = document.createElement('p'); p.textContent = body;
+  wrap.append(b, h, p);
+  host.innerHTML = '';
+  host.appendChild(wrap);
+}
+
 async function renderOnline() {
+  await ensureCloudCapability();
+  const sources = onlineSources();
+  applyOnlineSourceUI(sources);
+  renderCloudPanel();
+
+  if (!sources.internet) { setLibViewHeader(null); return; }
+
   if (!WH.statusFetched) {
     try { const st = await window.api.wallhavenStatus(); WH.hasKey = !!st.hasKey; }
     catch { WH.hasKey = false; }
@@ -1796,6 +1865,17 @@ async function renderOnline() {
   }
   const grid = $('#whGrid');
   setLibViewHeader(WH.searched && grid ? grid.children.length : null);
+}
+
+// Toggle a content source on/off (keeps at least one on), persist, re-render.
+function toggleOnlineSource(key) {
+  const cur = onlineSources();
+  const next = { lumina: cur.lumina, internet: cur.internet };
+  next[key] = !next[key];
+  if (!next.lumina && !next.internet) return; // never leave the tab empty
+  config.onlineSources = next;
+  window.api.setConfig({ onlineSources: next });
+  renderOnline();
 }
 
 async function doWhSearch(reset) {

@@ -1355,6 +1355,61 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-online-note { color: var(--text-dim); font-size: 13px; padding: 6px 2px 12px; min-height: 18px; }
 .lib-online-more { display: flex; justify-content: center; padding: 16px 0 4px; }
 .lib-online-more .pill[hidden] { display: none; }
+
+/* Cloud C2 — source selector (Lumina / Интернет) + cloud panel state */
+.lib-source-bar { display: flex; gap: 8px; padding: 2px 0 14px; flex-wrap: wrap; }
+.lib-source-chip {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 13px;
+  border: 1px solid var(--card-border);
+  border-radius: 999px;
+  background: var(--btn-bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.lib-source-chip:hover { background: var(--btn-bg-hover); }
+.lib-source-chip .lib-source-ic { width: 15px; height: 15px; flex: 0 0 15px; opacity: 0.8; }
+.lib-source-chip[aria-pressed="true"] {
+  background: var(--accent-soft);
+  border-color: rgba(var(--accent-rgb), 0.5);
+  color: var(--accent);
+}
+.lib-source-chip[aria-pressed="true"]:hover { background: var(--accent-soft-hover); }
+.lib-source-chip[aria-pressed="true"] .lib-source-ic { opacity: 1; }
+.lib-source-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.lib-cloud { padding: 2px 0 10px; }
+.lib-cloud-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 44px 24px;
+  border: 1px dashed var(--card-border);
+  border-radius: 16px;
+  background: var(--preview-bg);
+}
+.lib-cloud-empty .lib-cloud-ic { width: 42px; height: 42px; color: var(--text-dim); opacity: 0.7; }
+.lib-cloud-empty .lib-cloud-badge {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: var(--accent-soft);
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+.lib-cloud-empty h3 { font-size: 15.5px; font-weight: 700; }
+.lib-cloud-empty p { font-size: 13px; color: var(--text-dim); max-width: 380px; line-height: 1.5; }
 .lib-card .wh-add { opacity: 0; font-size: 18px; line-height: 26px; }
 .lib-card:hover .wh-add { opacity: 1; }
 .lib-card .wh-add.added { opacity: 1; background: var(--accent); }

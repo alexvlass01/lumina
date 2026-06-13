@@ -489,6 +489,26 @@
           </div>
 
           <div class="lib-online" id="libOnline" hidden>
+            <!-- Cloud C2: content source selector. Either/both may be active. "Интернет" =
+                 existing external search; "Lumina" = the cloud catalog (placeholder until C3). -->
+            <div class="lib-source-bar" id="libSourceBar">
+              <button class="lib-source-chip" id="srcLumina" type="button" data-source="lumina" aria-pressed="false">
+                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.4 12.5a2.9 2.9 0 0 1-.3-5.78A3.4 3.4 0 0 1 10.5 5.6a2.6 2.6 0 0 1 .5 6.9z"/></svg>
+                <span data-i18n="online.sourceLumina">Lumina</span>
+              </button>
+              <button class="lib-source-chip" id="srcInternet" type="button" data-source="internet" aria-pressed="true">
+                <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
+                <span data-i18n="online.sourceInternet">Интернет</span>
+              </button>
+            </div>
+
+            <!-- Lumina cloud panel: shows its capability state (coming-soon / staging
+                 placeholder). The catalog grid itself lands in C3. -->
+            <div class="lib-cloud" id="libCloud" hidden>
+              <div class="lib-cloud-state" id="libCloudState"></div>
+            </div>
+
+            <div class="lib-internet" id="libInternet">
             <div class="lib-toolbar">
               <label class="lib-searchbox">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
@@ -516,6 +536,7 @@
             <div class="lib-online-more">
               <button class="pill" id="whMore" hidden data-i18n="online.more">Показать ещё</button>
             </div>
+            </div><!-- /#libInternet -->
           </div>
         </div>
       </div>

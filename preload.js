@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('api', {
   expandFolders: () => ipcRenderer.invoke('expand-folders'),
   libraryEnsureSizes: () => ipcRenderer.invoke('library-ensure-sizes'),
 
+  // Lumina Cloud (C2): safe capability state only (environment/available/reason).
+  getCloudCapability: () => ipcRenderer.invoke('get-cloud-capability'),
+
   // Wallhaven (онлайн-обои)
   wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),
   wallhavenSearch: (opts) => ipcRenderer.invoke('wallhaven-search', opts),

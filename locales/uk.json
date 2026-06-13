@@ -174,7 +174,16 @@
     "error": "Помилка: {e}",
     "add": "Додати в бібліотеку",
     "added": "Додано в бібліотеку",
-    "nsfwNeedsKey": "Для NSFW потрібен API-ключ (Налаштування)"
+    "nsfwNeedsKey": "Для NSFW потрібен API-ключ (Налаштування)",
+    "sourceLumina": "Lumina",
+    "sourceInternet": "Інтернет",
+    "comingSoonTitle": "Хмара Lumina незабаром",
+    "comingSoonBody": "Тут з’являться дібрані шпалери із сервісу Lumina. У цій збірці функція поки недоступна — вона ввімкнеться автоматично, коли сервіс запрацює.",
+    "cloudReadyTitle": "Каталог Lumina",
+    "cloudReadyBody": "Підключено до сервісу Lumina. Каталог шпалер з’явиться тут.",
+    "cloudBadgeSoon": "Незабаром",
+    "cloudBadgeStaging": "Staging",
+    "cloudBadgeLive": "Lumina"
   },
   "theme": {
     "group": "Тема Windows",

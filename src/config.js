@@ -40,6 +40,10 @@ const DEFAULT_CONFIG = {
   hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
   gameModeBlock: false,
   triggers: { onStartup: false, onWakeup: false, stealth: false },
+  // Online tab content sources (Cloud C2). 'internet' = existing external search,
+  // 'lumina' = the Lumina Cloud catalog. Either or both may be on; default keeps the
+  // previous behavior (external only) so existing users see no change.
+  onlineSources: { lumina: false, internet: true },
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -119,6 +123,15 @@ function normalize(cfg) {
   cfg.triggers.onStartup = !!cfg.triggers.onStartup;
   cfg.triggers.onWakeup = !!cfg.triggers.onWakeup;
   cfg.triggers.stealth = !!cfg.triggers.stealth;
+
+  cfg.onlineSources = {
+    lumina: false, internet: true,
+    ...(cfg.onlineSources && typeof cfg.onlineSources === 'object' ? cfg.onlineSources : {}),
+  };
+  cfg.onlineSources.lumina = !!cfg.onlineSources.lumina;
+  cfg.onlineSources.internet = !!cfg.onlineSources.internet;
+  // Never leave the Online tab with no source selected (avoids an empty page).
+  if (!cfg.onlineSources.lumina && !cfg.onlineSources.internet) cfg.onlineSources.internet = true;
 
   return cfg;
 }
