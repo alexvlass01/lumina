@@ -982,7 +982,8 @@ function cloudCapability() {
   if (!_cloudCapability) {
     _cloudCapability = cloudCapabilityMod.resolveCapability({
       isPackaged: app.isPackaged,
-      stagingOptIn: process.env.LUMINA_CLOUD === 'staging',
+      // `npm run dev:cloud` sets this; trim guards the Windows `set VAR=x` trailing-space gotcha.
+      stagingOptIn: (process.env.LUMINA_CLOUD || '').trim() === 'staging',
     });
   }
   return _cloudCapability;
