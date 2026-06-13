@@ -95,6 +95,15 @@ if (!window.api) {
     libraryEnsureSizes: async () => mock,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
+    cloudCatalog: async (opts) => {
+      const o = opts || {};
+      const rating = o.rating === 'suggestive' ? 'suggestive' : 'general';
+      const mk = (i, color) => ({ id: 'cloud' + i, title: 'Sample ' + i, rating, published_at: Date.now() / 1000, width: 1920, height: 1080,
+        thumb_url: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="${color}"/></svg>`) });
+      if (!o.cursor) return { items: [mk(1, '#3584e4'), mk(2, '#e23'), mk(3, '#2c6'), mk(4, '#fb0')], nextCursor: 'p2', error: null };
+      return { items: [mk(5, '#8e24aa'), mk(6, '#1e88e5')], nextCursor: null, error: null };
+    },
+    cloudAdd: async (item) => { const iid = 'cl' + item.id; mock.library[iid] = { id: iid, type: 'image', path: 'C:/fake/' + item.id + '.jpg', source: 'lumina:' + item.id }; return { config: mock, id: iid, error: null }; },
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
     wallhavenAdd: async () => ({ config: mock, error: null }),
@@ -686,6 +695,9 @@ const justifiedPending = new Set();
 const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
+// Cloud C3: Lumina catalog paging state. Re-fetched on each entry to the Online tab
+// so signed R2 URLs stay fresh (downloads always use a fresh URL fetched at click).
+const CLOUDCAT = { rating: 'general', items: [], cursor: null, loading: false, fetched: false };
 
 function setLibCardAspect(card, aspect) {
   if (!card) return;
@@ -858,6 +870,7 @@ function renderLibrary() {
   }
   if (online) online.hidden = true;
   if (local) local.hidden = false;
+  CLOUDCAT.fetched = false; // re-fetch fresh signed URLs next time Online opens
   renderBreadcrumbs();
   const tok = ++allViewToken; // invalidate any in-flight async render
 
@@ -1705,6 +1718,12 @@ function initLibrary() {
   const srcInternet = $('#srcInternet');
   if (srcInternet) srcInternet.addEventListener('click', () => toggleOnlineSource('internet'));
 
+  // Lumina catalog (Cloud C3)
+  const cloudRating = $('#cloudRating');
+  if (cloudRating) cloudRating.addEventListener('change', () => { CLOUDCAT.rating = cloudRating.value; loadCloudCatalog(true); });
+  const cloudMoreBtn = $('#cloudMore');
+  if (cloudMoreBtn) cloudMoreBtn.addEventListener('click', () => loadCloudCatalog(false));
+
   // online (Wallhaven)
   const whSearchBtn = $('#whSearch');
   if (whSearchBtn) whSearchBtn.addEventListener('click', () => doWhSearch(true));
@@ -1818,36 +1837,131 @@ function applyOnlineSourceUI(sources) {
   if (internet) internet.hidden = !sources.internet;
 }
 
-// Render the Lumina panel for the current capability. Until production, public
-// builds show a calm "coming soon" state; a dev staging build shows a placeholder
-// that the C3 catalog will replace.
+// Render the Lumina panel for the current capability. Public builds (unavailable)
+// show a calm "coming soon" state with no network; a staging/production build shows
+// the real catalog (C3).
 function renderCloudPanel() {
-  const host = $('#libCloudState');
-  if (!host) return;
+  const toolbar = $('#libCloudToolbar');
+  const grid = $('#cloudGrid');
+  const more = $('#cloudMore');
   const cap = CLOUD.cap || { environment: 'unavailable', available: false };
   const ready = cap.available && (cap.environment === 'staging' || cap.environment === 'production');
-  const badge = ready
-    ? (cap.environment === 'staging' ? t('online.cloudBadgeStaging') : t('online.cloudBadgeLive'))
-    : t('online.cloudBadgeSoon');
-  const title = ready ? t('online.cloudReadyTitle') : t('online.comingSoonTitle');
-  const body = ready ? t('online.cloudReadyBody') : t('online.comingSoonBody');
 
+  if (!ready) {
+    if (toolbar) toolbar.hidden = true;
+    if (grid) { grid.innerHTML = ''; grid.hidden = true; }
+    if (more) more.hidden = true;
+    renderCloudComingSoon(cap);
+    return;
+  }
+
+  if (toolbar) toolbar.hidden = false;
+  if (grid) grid.hidden = false;
+  const ratingSel = $('#cloudRating');
+  if (ratingSel && ratingSel.value !== CLOUDCAT.rating) ratingSel.value = CLOUDCAT.rating;
+  if (!CLOUDCAT.fetched && !CLOUDCAT.loading) loadCloudCatalog(true);
+  else updateCloudStatus(CLOUDCAT.items.length ? '' : (CLOUDCAT.loading ? 'loading' : 'empty'));
+}
+
+// "Coming soon" state shown in public (unavailable) builds.
+function renderCloudComingSoon(cap) {
+  const host = $('#libCloudState');
+  if (!host) return;
+  const badge = (cap.environment === 'staging' || cap.environment === 'production') ? t('online.cloudBadgeStaging') : t('online.cloudBadgeSoon');
   const wrap = document.createElement('div');
   wrap.className = 'lib-cloud-empty';
   wrap.innerHTML = '<svg class="lib-cloud-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M6.5 18.5a4 4 0 0 1-.4-7.98A5 5 0 0 1 15.5 8.2a3.6 3.6 0 0 1 .7 9.6z"/></svg>';
   const b = document.createElement('span'); b.className = 'lib-cloud-badge'; b.textContent = badge;
-  const h = document.createElement('h3'); h.textContent = title;
-  const p = document.createElement('p'); p.textContent = body;
+  const h = document.createElement('h3'); h.textContent = t('online.comingSoonTitle');
+  const p = document.createElement('p'); p.textContent = t('online.comingSoonBody');
   wrap.append(b, h, p);
   host.innerHTML = '';
   host.appendChild(wrap);
+}
+
+// Status line above the cloud grid: loading / empty / error / offline (or cleared).
+function updateCloudStatus(kind, detail) {
+  const host = $('#libCloudState');
+  if (!host) return;
+  host.innerHTML = '';
+  if (!kind) return;
+  const div = document.createElement('div');
+  div.className = 'lib-online-note';
+  if (kind === 'loading') div.textContent = t('online.loading');
+  else if (kind === 'empty') div.textContent = t('online.noResults');
+  else if (kind === 'error') div.textContent = detail === 'network' ? t('online.offline') : t('online.error', { e: detail || '?' });
+  host.appendChild(div);
+}
+
+// Load a catalog page from main (reset = first page / rating change). All requests
+// go through IPC; the renderer never touches the API directly.
+async function loadCloudCatalog(reset) {
+  if (CLOUDCAT.loading) return;
+  CLOUDCAT.loading = true;
+  CLOUDCAT.fetched = true;
+  const grid = $('#cloudGrid');
+  if (reset) { CLOUDCAT.cursor = null; CLOUDCAT.items = []; if (grid) grid.innerHTML = ''; }
+  const more = $('#cloudMore'); if (more) more.disabled = true;
+  if (!CLOUDCAT.items.length) updateCloudStatus('loading');
+  let res;
+  try { res = await window.api.cloudCatalog({ rating: CLOUDCAT.rating, cursor: reset ? null : CLOUDCAT.cursor }); }
+  catch { res = { error: 'network' }; }
+  CLOUDCAT.loading = false;
+  if (more) more.disabled = false;
+  if (!res || res.error) {
+    if (!CLOUDCAT.items.length) updateCloudStatus('error', res && res.error);
+    else toast(res && res.error === 'network' ? t('online.offline') : t('online.error', { e: (res && res.error) || '?' }));
+    if (more) more.hidden = true;
+    return;
+  }
+  (res.items || []).forEach((it) => { CLOUDCAT.items.push(it); if (grid) grid.appendChild(buildCloudCard(it)); });
+  CLOUDCAT.cursor = res.nextCursor || null;
+  if (grid) scheduleJustifiedLayout(grid);
+  if (more) more.hidden = !CLOUDCAT.cursor;
+  updateCloudStatus(CLOUDCAT.items.length ? '' : 'empty');
+  setLibViewHeader(CLOUDCAT.items.length);
+}
+
+// Already imported? Cloud items carry a stable "lumina:<id>" source marker.
+function cloudAlreadyAdded(item) {
+  const marker = 'lumina:' + item.id;
+  return Object.values(config.library || {}).some((it) => it.source === marker);
+}
+
+function buildCloudCard(item) {
+  const card = document.createElement('div');
+  card.className = 'lib-card';
+  makeLibCardFocusable(card);
+  setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
+  if (item.thumb_url) card.style.backgroundImage = `url("${item.thumb_url}")`;
+  const label = [item.width && item.height ? `${item.width}×${item.height}` : '', item.title].filter(Boolean).join(' · ');
+  card.title = item.title || '';
+  const add = document.createElement('button');
+  add.className = 'lib-menu-btn wh-add';
+  const markAdded = () => { add.textContent = '✓'; add.classList.add('added'); add.disabled = true; add.title = t('online.added'); };
+  if (cloudAlreadyAdded(item)) markAdded();
+  else { add.textContent = '+'; add.title = t('online.add'); }
+  add.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (add.disabled) return;
+    add.disabled = true;
+    let res;
+    try { res = await window.api.cloudAdd(item); } catch { res = { error: 'download' }; }
+    if (res && res.config) config = res.config;
+    if (res && !res.error) { markAdded(); toast(t('online.added')); }
+    else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }
+  });
+  card.appendChild(add);
+  card.addEventListener('mouseenter', () => setLibStatus(label || t('online.sourceLumina')));
+  card.addEventListener('click', () => { if (!add.disabled) add.click(); });
+  return card;
 }
 
 async function renderOnline() {
   await ensureCloudCapability();
   const sources = onlineSources();
   applyOnlineSourceUI(sources);
-  renderCloudPanel();
+  if (sources.lumina) renderCloudPanel();
 
   if (!sources.internet) { setLibViewHeader(null); return; }
 

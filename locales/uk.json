@@ -183,7 +183,10 @@
     "cloudReadyBody": "Підключено до сервісу Lumina. Каталог шпалер з’явиться тут.",
     "cloudBadgeSoon": "Незабаром",
     "cloudBadgeStaging": "Staging",
-    "cloudBadgeLive": "Lumina"
+    "cloudBadgeLive": "Lumina",
+    "ratingGeneral": "Звичайні",
+    "ratingSuggestive": "Пікантні",
+    "offline": "Немає підключення до інтернету"
   },
   "theme": {
     "group": "Тема Windows",

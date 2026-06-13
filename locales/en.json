@@ -183,7 +183,10 @@
     "cloudReadyBody": "Connected to the Lumina service. The wallpaper catalog will appear here.",
     "cloudBadgeSoon": "Coming soon",
     "cloudBadgeStaging": "Staging",
-    "cloudBadgeLive": "Lumina"
+    "cloudBadgeLive": "Lumina",
+    "ratingGeneral": "General",
+    "ratingSuggestive": "Suggestive",
+    "offline": "No internet connection"
   },
   "theme": {
     "group": "Windows theme",

@@ -36,6 +36,9 @@ contextBridge.exposeInMainWorld('api', {
 
   // Lumina Cloud (C2): safe capability state only (environment/available/reason).
   getCloudCapability: () => ipcRenderer.invoke('get-cloud-capability'),
+  // Lumina Cloud catalog (C3): renderer goes through main, never calls the API directly.
+  cloudCatalog: (opts) => ipcRenderer.invoke('cloud-catalog', opts),
+  cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
 
   // Wallhaven (онлайн-обои)
   wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),

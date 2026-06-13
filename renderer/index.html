@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc; style-src 'self' 'unsafe-inline';" />
+        content="default-src 'self'; img-src 'self' file: data: https://th.wallhaven.cc https://w.wallhaven.cc https://*.r2.cloudflarestorage.com; style-src 'self' 'unsafe-inline';" />
   <title>Lumina</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -502,10 +502,22 @@
               </button>
             </div>
 
-            <!-- Lumina cloud panel: shows its capability state (coming-soon / staging
-                 placeholder). The catalog grid itself lands in C3. -->
+            <!-- Lumina cloud panel: capability state (coming-soon) when unavailable,
+                 or the real catalog (C3) when staging/production. -->
             <div class="lib-cloud" id="libCloud" hidden>
+              <div class="lib-cloud-toolbar" id="libCloudToolbar" hidden>
+                <div class="select-wrap">
+                  <select id="cloudRating">
+                    <option value="general" data-i18n="online.ratingGeneral">General</option>
+                    <option value="suggestive" data-i18n="online.ratingSuggestive">Suggestive</option>
+                  </select>
+                </div>
+              </div>
               <div class="lib-cloud-state" id="libCloudState"></div>
+              <div class="lib-grid" id="cloudGrid"></div>
+              <div class="lib-online-more">
+                <button class="pill" id="cloudMore" hidden data-i18n="online.more">Показать ещё</button>
+              </div>
             </div>
 
             <div class="lib-internet" id="libInternet">

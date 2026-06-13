@@ -15,6 +15,7 @@ const configMod = require('./src/config'); // дефолты + load/migrate/save
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
+const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -985,6 +986,53 @@ function cloudCapability() {
   return _cloudCapability;
 }
 ipcMain.handle('get-cloud-capability', () => cloudCapabilityMod.publicCapability(cloudCapability()));
+
+// Lumina Cloud catalog client (C3). Created lazily with the REAL fetch and the
+// capability-decided apiBase — only when the environment is staging/production.
+// In 'unavailable' there is no apiBase, so no client and no network ever happens.
+let _cloudClient = null;
+function cloudClient() {
+  const base = cloudCapability().apiBase;
+  if (!base) return null; // unavailable → no client, no requests
+  if (!_cloudClient) _cloudClient = cloudClientMod.createClient({ baseUrl: base });
+  return _cloudClient;
+}
+
+// Catalog page (renderer never calls the API directly — everything goes through here).
+ipcMain.handle('cloud-catalog', async (e, opts) => {
+  const client = cloudClient();
+  if (!client) return { items: [], nextCursor: null, error: 'unavailable' };
+  const o = opts || {};
+  const r = await client.getCatalog({
+    rating: o.rating === 'suggestive' ? 'suggestive' : 'general',
+    cursor: o.cursor || undefined,
+    limit: 30,
+  });
+  if (!r.ok) return { items: [], nextCursor: null, error: r.error.code, kind: r.error.kind };
+  return { items: r.data.items, nextCursor: r.data.next_cursor, error: null };
+});
+
+// Download a catalog image into the local Library — fetches a FRESH signed URL at
+// click time (never a stale catalog thumb URL), then reuses the existing safe import.
+ipcMain.handle('cloud-add', async (e, item) => {
+  const client = cloudClient();
+  if (!client) return { config, error: 'unavailable' };
+  if (!item || !item.id) return { config, error: 'badItem' };
+  try {
+    const dl = await client.getDownload(item.id);
+    if (!dl.ok) return { config, error: dl.error.code };
+    const stored = await downloadWallpaperFromUrl(dl.data.url);
+    const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
+    const id = library.addPath(config.library, 'image', stored, { aspect });
+    const it = config.library[id];
+    if (it) it.source = 'lumina:' + item.id; // stable marker for the "added ✓" indicator
+    saveConfig();
+    return { config, id, error: null };
+  } catch (err) {
+    console.error('cloud add:', err);
+    return { config, error: 'download' };
+  }
+});
 
 ipcMain.handle('get-i18n', () => {
   const code = effectiveLang();
