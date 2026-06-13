@@ -1386,7 +1386,8 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-source-chip:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 .lib-cloud { padding: 2px 0 10px; }
-.lib-cloud-toolbar { display: flex; align-items: center; gap: 10px; padding: 2px 0 12px; }
+.lib-cloud-toolbar { display: flex; align-items: center; gap: 10px; padding: 2px 0 12px; flex-wrap: wrap; }
+.lib-cloud-views { display: flex; gap: 8px; }
 .lib-cloud-account { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 2px 0 12px; flex-wrap: wrap; }
 .lib-cloud-acc-user { display: flex; flex-direction: column; min-width: 0; }
 .lib-cloud-acc-user strong { font-size: 13.5px; overflow: hidden; text-overflow: ellipsis; }
@@ -1419,6 +1420,11 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-card .wh-add { opacity: 0; font-size: 18px; line-height: 26px; }
 .lib-card:hover .wh-add { opacity: 1; }
 .lib-card .wh-add.added { opacity: 1; background: var(--accent); }
+
+/* Cloud favorite heart (C5): top-LEFT, distinct from the local star and the "+" add. */
+.lib-card .cloud-fav { left: 6px; right: auto; }
+.lib-card .cloud-fav svg { width: 15px; height: 15px; vertical-align: middle; }
+.lib-card .cloud-fav.on { opacity: 1; color: #ff5a7a; }
 
 /* folder card: 2×2 collage of inner previews + name + count */
 .lib-folder-collage {

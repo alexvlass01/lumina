@@ -194,7 +194,12 @@
     "signedIn": "Вход выполнен",
     "signedOut": "Вы вышли",
     "signinFailed": "Не удалось войти",
-    "sessionExpired": "Сессия истекла — войдите снова."
+    "sessionExpired": "Сессия истекла — войдите снова.",
+    "viewCatalog": "Каталог",
+    "viewFavorites": "Избранное",
+    "favAdd": "В избранное Lumina",
+    "favRemove": "Убрать из избранного Lumina",
+    "favEmpty": "В избранном Lumina пока пусто"
   },
   "theme": {
     "group": "Тема Windows",

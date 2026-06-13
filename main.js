@@ -1159,6 +1159,27 @@ ipcMain.handle('cloud-signout', async () => {
   return { ok: true, state: cloudAuthState() };
 });
 
+// Cloud favorites (C5) — account-synced, distinct from the local Library favorites.
+// All require a session; a 401 drops it. add/remove are idempotent on the backend.
+ipcMain.handle('cloud-favorites', async () => {
+  const client = cloudClient();
+  if (!client) return { items: [], error: 'unavailable' };
+  if (!_cloudToken) return { items: [], error: 'missing_token' };
+  const r = await client.getFavorites(_cloudToken);
+  if (!r.ok) { cloudHandleAuthError(r); return { items: [], error: r.error.code }; }
+  return { items: r.data.items, error: null };
+});
+
+ipcMain.handle('cloud-favorite', async (e, id, on) => {
+  const client = cloudClient();
+  if (!client) return { ok: false, error: 'unavailable' };
+  if (!_cloudToken) return { ok: false, error: 'missing_token' };
+  if (!id) return { ok: false, error: 'badItem' };
+  const r = on ? await client.addFavorite(id, _cloudToken) : await client.removeFavorite(id, _cloudToken);
+  if (!r.ok) { cloudHandleAuthError(r); return { ok: false, error: r.error.code }; }
+  return { ok: true, error: null };
+});
+
 ipcMain.handle('get-i18n', () => {
   const code = effectiveLang();
   return {

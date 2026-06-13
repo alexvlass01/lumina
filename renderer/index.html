@@ -507,7 +507,16 @@
             <div class="lib-cloud" id="libCloud" hidden>
               <div class="lib-cloud-account" id="libCloudAccount" hidden></div>
               <div class="lib-cloud-toolbar" id="libCloudToolbar" hidden>
-                <div class="select-wrap">
+                <div class="lib-cloud-views" id="libCloudViews" hidden>
+                  <button class="lib-source-chip active" id="cloudViewCatalog" type="button" data-view="catalog" aria-pressed="true">
+                    <span data-i18n="online.viewCatalog">Каталог</span>
+                  </button>
+                  <button class="lib-source-chip" id="cloudViewFav" type="button" data-view="favorites" aria-pressed="false">
+                    <svg class="lib-source-ic" viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.2-3.3-6.7-6.2C.2 5.3 1.5 3 3.8 3c1.4 0 2.3.8 2.9 1.6.3.4.6.4.9 0C8.2 3.8 9.1 3 10.5 3c2.3 0 3.6 2.3 2.5 4.8C12 10.7 8 14 8 14z"/></svg>
+                    <span data-i18n="online.viewFavorites">Избранное</span>
+                  </button>
+                </div>
+                <div class="select-wrap" id="cloudRatingWrap">
                   <select id="cloudRating">
                     <option value="general" data-i18n="online.ratingGeneral">General</option>
                     <option value="suggestive" data-i18n="online.ratingSuggestive">Suggestive</option>

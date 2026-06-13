@@ -107,8 +107,10 @@ if (!window.api) {
     cloudAdd: async (item) => { const iid = 'cl' + item.id; mock.library[iid] = { id: iid, type: 'image', path: 'C:/fake/' + item.id + '.jpg', source: 'lumina:' + item.id }; return { config: mock, id: iid, error: null }; },
     cloudSession: async () => ({ available: true, signedIn: mockCloud.signedIn, user: mockCloud.signedIn ? mockCloud.user : null, entitlements: mockCloud.signedIn ? ['online_catalog'] : [] }),
     cloudSignin: async () => { mockCloud.signedIn = true; mockCloud.user = { id: 'u1', display_name: 'Test User', email: 'test@example.com', role: 'user', explicit_opt_in: false, created_at: Math.floor(Date.now() / 1000) }; return { ok: true, state: { available: true, signedIn: true, user: mockCloud.user, entitlements: ['online_catalog'] } }; },
-    cloudSignout: async () => { mockCloud.signedIn = false; mockCloud.user = null; return { ok: true, state: { available: true, signedIn: false, user: null, entitlements: [] } }; },
+    cloudSignout: async () => { mockCloud.signedIn = false; mockCloud.user = null; mockCloud.favs = {}; return { ok: true, state: { available: true, signedIn: false, user: null, entitlements: [] } }; },
     onCloudSession: () => {},
+    cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
+    cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
     wallhavenAdd: async () => ({ config: mock, error: null }),
@@ -702,9 +704,11 @@ const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw
 const CLOUD = { cap: null, fetched: false };
 // Cloud C3: Lumina catalog paging state. Re-fetched on each entry to the Online tab
 // so signed R2 URLs stay fresh (downloads always use a fresh URL fetched at click).
-const CLOUDCAT = { rating: 'general', items: [], cursor: null, loading: false, fetched: false };
+const CLOUDCAT = { rating: 'general', view: 'catalog', items: [], cursor: null, loading: false, fetched: false };
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
+// Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
+const CLOUDFAV = { ids: new Set(), fetched: false };
 
 function setLibCardAspect(card, aspect) {
   if (!card) return;
@@ -1730,6 +1734,11 @@ function initLibrary() {
   if (cloudRating) cloudRating.addEventListener('change', () => { CLOUDCAT.rating = cloudRating.value; loadCloudCatalog(true); });
   const cloudMoreBtn = $('#cloudMore');
   if (cloudMoreBtn) cloudMoreBtn.addEventListener('click', () => loadCloudCatalog(false));
+  // Lumina catalog/favorites view toggle (Cloud C5)
+  const cvCat = $('#cloudViewCatalog');
+  if (cvCat) cvCat.addEventListener('click', () => setCloudView('catalog'));
+  const cvFav = $('#cloudViewFav');
+  if (cvFav) cvFav.addEventListener('click', () => setCloudView('favorites'));
 
   // online (Wallhaven)
   const whSearchBtn = $('#whSearch');
@@ -1932,7 +1941,9 @@ async function doCloudSignin() {
     CLOUDAUTH.state = res.state; CLOUDAUTH.fetched = true;
     renderCloudAccount();
     refreshCloudRatingOptions();
-    loadCloudCatalog(true); // session may unlock the explicit tier / personalize
+    const views = $('#libCloudViews'); if (views) views.hidden = false;
+    await ensureCloudFavorites(true); // heart states before the catalog renders
+    loadCloudFeed(true); // session may unlock the explicit tier / personalize
     toast(t('online.signedIn'));
   } else {
     renderCloudAccount();
@@ -1945,10 +1956,68 @@ async function doCloudSignout() {
   try { res = await window.api.cloudSignout(); } catch { res = { ok: true, state: { available: true, signedIn: false } }; }
   CLOUDAUTH.state = (res && res.state) || { available: true, signedIn: false, user: null, entitlements: [] };
   CLOUDAUTH.fetched = true;
+  CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false;
+  CLOUDCAT.view = 'catalog';
+  const views = $('#libCloudViews'); if (views) views.hidden = true;
   renderCloudAccount();
   refreshCloudRatingOptions();
-  loadCloudCatalog(true);
+  applyCloudView();
+  loadCloudFeed(true);
   toast(t('online.signedOut'));
+}
+
+// --- Cloud favorites (C5): account-synced, distinct from the local Library "Избранное" ---
+function cloudSignedIn() { const s = CLOUDAUTH.state; return !!(s && s.signedIn); }
+
+async function ensureCloudFavorites(force) {
+  if (!cloudSignedIn()) { CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false; return; }
+  if (CLOUDFAV.fetched && !force) return;
+  try {
+    const res = await window.api.cloudFavorites();
+    CLOUDFAV.ids = new Set(((res && res.items) || []).map((it) => it.id));
+  } catch { CLOUDFAV.ids = new Set(); }
+  CLOUDFAV.fetched = true;
+}
+
+// Reflect catalog vs favorites view: chip pressed-state + hide the rating selector in favorites.
+function applyCloudView() {
+  const isFav = CLOUDCAT.view === 'favorites';
+  const cat = $('#cloudViewCatalog'), fav = $('#cloudViewFav');
+  if (cat) { cat.classList.toggle('active', !isFav); cat.setAttribute('aria-pressed', String(!isFav)); }
+  if (fav) { fav.classList.toggle('active', isFav); fav.setAttribute('aria-pressed', String(isFav)); }
+  const ratingWrap = $('#cloudRatingWrap'); if (ratingWrap) ratingWrap.hidden = isFav;
+}
+
+function setCloudView(view) {
+  if (CLOUDCAT.view === view) return;
+  CLOUDCAT.view = view;
+  applyCloudView();
+  loadCloudFeed(true);
+}
+
+// Load the active feed: the account's favorites or the public catalog.
+function loadCloudFeed(reset) {
+  return CLOUDCAT.view === 'favorites' ? loadCloudFavoritesView() : loadCloudCatalog(reset);
+}
+
+async function loadCloudFavoritesView() {
+  if (CLOUDCAT.loading) return;
+  CLOUDCAT.loading = true; CLOUDCAT.fetched = true;
+  const grid = $('#cloudGrid');
+  if (grid) grid.innerHTML = '';
+  CLOUDCAT.items = []; CLOUDCAT.cursor = null;
+  const more = $('#cloudMore'); if (more) more.hidden = true;
+  updateCloudStatus('loading');
+  let res;
+  try { res = await window.api.cloudFavorites(); } catch { res = { error: 'network' }; }
+  CLOUDCAT.loading = false;
+  if (!res || res.error) { updateCloudStatus('error', res && res.error); return; }
+  CLOUDFAV.ids = new Set((res.items || []).map((it) => it.id));
+  CLOUDFAV.fetched = true;
+  (res.items || []).forEach((it) => { CLOUDCAT.items.push(it); if (grid) grid.appendChild(buildCloudCard(it)); });
+  if (grid) scheduleJustifiedLayout(grid);
+  updateCloudStatus(CLOUDCAT.items.length ? '' : 'favEmpty');
+  setLibViewHeader(CLOUDCAT.items.length);
 }
 
 // Render the Lumina panel for the current capability. Public builds (unavailable)
@@ -1975,11 +2044,18 @@ function renderCloudPanel() {
   if (account) account.hidden = false;
   if (toolbar) toolbar.hidden = false;
   if (grid) grid.hidden = false;
-  ensureCloudSession().then(() => { renderCloudAccount(); refreshCloudRatingOptions(); });
-  const ratingSel = $('#cloudRating');
-  if (ratingSel && ratingSel.value !== CLOUDCAT.rating) ratingSel.value = CLOUDCAT.rating;
-  if (!CLOUDCAT.fetched && !CLOUDCAT.loading) loadCloudCatalog(true);
-  else updateCloudStatus(CLOUDCAT.items.length ? '' : (CLOUDCAT.loading ? 'loading' : 'empty'));
+  ensureCloudSession().then(async () => {
+    renderCloudAccount();
+    refreshCloudRatingOptions();
+    const views = $('#libCloudViews'); if (views) views.hidden = !cloudSignedIn();
+    if (!cloudSignedIn() && CLOUDCAT.view === 'favorites') CLOUDCAT.view = 'catalog';
+    applyCloudView();
+    const ratingSel = $('#cloudRating');
+    if (ratingSel && ratingSel.value !== CLOUDCAT.rating) ratingSel.value = CLOUDCAT.rating;
+    if (cloudSignedIn()) await ensureCloudFavorites(); // heart states before catalog cards render
+    if (!CLOUDCAT.fetched && !CLOUDCAT.loading) loadCloudFeed(true);
+    else updateCloudStatus(CLOUDCAT.items.length ? '' : (CLOUDCAT.loading ? 'loading' : (CLOUDCAT.view === 'favorites' ? 'favEmpty' : 'empty')));
+  });
 }
 
 // "Coming soon" state shown in public (unavailable) builds.
@@ -2008,6 +2084,7 @@ function updateCloudStatus(kind, detail) {
   div.className = 'lib-online-note';
   if (kind === 'loading') div.textContent = t('online.loading');
   else if (kind === 'empty') div.textContent = t('online.noResults');
+  else if (kind === 'favEmpty') div.textContent = t('online.favEmpty');
   else if (kind === 'error') div.textContent = detail === 'network' ? t('online.offline') : t('online.error', { e: detail || '?' });
   host.appendChild(div);
 }
@@ -2071,6 +2148,43 @@ function buildCloudCard(item) {
     else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }
   });
   card.appendChild(add);
+
+  // Cloud favorite heart (account-synced; signed-in only). Distinct from the local
+  // Library "Избранное" (a star on local cards).
+  if (cloudSignedIn()) {
+    const fav = document.createElement('button');
+    const setFavUi = () => {
+      const on = CLOUDFAV.ids.has(item.id);
+      fav.className = 'lib-menu-btn cloud-fav' + (on ? ' on' : '');
+      fav.title = t(on ? 'online.favRemove' : 'online.favAdd');
+    };
+    fav.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 14s-5.2-3.3-6.7-6.2C.2 5.3 1.5 3 3.8 3c1.4 0 2.3.8 2.9 1.6.3.4.6.4.9 0C8.2 3.8 9.1 3 10.5 3c2.3 0 3.6 2.3 2.5 4.8C12 10.7 8 14 8 14z"/></svg>';
+    setFavUi();
+    fav.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (fav.disabled) return;
+      const on = !CLOUDFAV.ids.has(item.id);
+      fav.disabled = true;
+      let res;
+      try { res = await window.api.cloudFavorite(item.id, on); } catch { res = { ok: false, error: 'network' }; }
+      fav.disabled = false;
+      if (res && res.ok) {
+        if (on) CLOUDFAV.ids.add(item.id); else CLOUDFAV.ids.delete(item.id);
+        if (!on && CLOUDCAT.view === 'favorites') {
+          card.remove();
+          const grid = $('#cloudGrid');
+          const left = grid ? grid.children.length : 0;
+          CLOUDCAT.items = CLOUDCAT.items.filter((x) => x.id !== item.id);
+          if (!left) updateCloudStatus('favEmpty');
+          setLibViewHeader(left);
+          return;
+        }
+        setFavUi();
+      } else { toast(t('online.error', { e: (res && res.error) || '?' })); }
+    });
+    card.appendChild(fav);
+  }
+
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.sourceLumina')));
   card.addEventListener('click', () => { if (!add.disabled) add.click(); });
   return card;

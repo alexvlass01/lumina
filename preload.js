@@ -44,6 +44,9 @@ contextBridge.exposeInMainWorld('api', {
   cloudSignin: () => ipcRenderer.invoke('cloud-signin'),
   cloudSignout: () => ipcRenderer.invoke('cloud-signout'),
   onCloudSession: (cb) => ipcRenderer.on('cloud-session-changed', (_e, s) => cb(s)),
+  // Lumina Cloud favorites (C5): account-synced; distinct from local Library favorites.
+  cloudFavorites: () => ipcRenderer.invoke('cloud-favorites'),
+  cloudFavorite: (id, on) => ipcRenderer.invoke('cloud-favorite', id, on),
 
   // Wallhaven (онлайн-обои)
   wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),

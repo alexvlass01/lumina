@@ -194,7 +194,12 @@
     "signedIn": "Signed in",
     "signedOut": "Signed out",
     "signinFailed": "Sign-in failed",
-    "sessionExpired": "Your session expired — please sign in again."
+    "sessionExpired": "Your session expired — please sign in again.",
+    "viewCatalog": "Catalog",
+    "viewFavorites": "Favorites",
+    "favAdd": "Add to Lumina favorites",
+    "favRemove": "Remove from Lumina favorites",
+    "favEmpty": "No Lumina favorites yet"
   },
   "theme": {
     "group": "Windows theme",
