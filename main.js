@@ -1,9 +1,10 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const crypto = require('crypto');
 const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
@@ -16,6 +17,7 @@ const { createTrayController } = require('./src/tray'); // системный т
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
+const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -998,17 +1000,95 @@ function cloudClient() {
   return _cloudClient;
 }
 
+// ---- Lumina Cloud session (C4) -------------------------------------------------
+// The session token lives ONLY in main: encrypted at rest via safeStorage (DPAPI),
+// never in config.json and never sent to the renderer. The renderer gets only the
+// public profile + entitlements through cloudAuthState().
+let _cloudToken = null;          // in-memory bearer token (never crosses IPC to renderer)
+let _cloudUser = null;           // cached { user, entitlements } from /v1/me
+const cloudSessionPath = () => path.join(app.getPath('userData'), 'cloud-session.bin');
+
+function loadStoredToken() {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return null;
+    const p = cloudSessionPath();
+    if (!fs.existsSync(p)) return null;
+    return safeStorage.decryptString(fs.readFileSync(p)) || null;
+  } catch { return null; }
+}
+function saveStoredToken(token) {
+  try {
+    if (!safeStorage.isEncryptionAvailable()) return false; // no DPAPI → keep in memory only
+    fs.writeFileSync(cloudSessionPath(), safeStorage.encryptString(token));
+    return true;
+  } catch (err) { console.error('cloud token save:', err); return false; }
+}
+function clearStoredToken() {
+  try { fs.rmSync(cloudSessionPath(), { force: true }); } catch {}
+}
+
+// Renderer-safe auth state (no token).
+function cloudAuthState() {
+  return {
+    available: !!cloudCapability().apiBase,
+    signedIn: !!_cloudToken && !!_cloudUser,
+    user: _cloudUser ? _cloudUser.user : null,
+    entitlements: _cloudUser ? _cloudUser.entitlements : [],
+  };
+}
+function broadcastCloudSession() {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('cloud-session-changed', cloudAuthState());
+}
+
+// A protected call returned a normalized result. If it's a 401, the session is dead:
+// drop the token everywhere and tell the renderer. Returns true if it was an auth error.
+function cloudHandleAuthError(result) {
+  if (result && result.ok === false && result.error && result.error.status === 401) {
+    _cloudToken = null; _cloudUser = null; clearStoredToken();
+    broadcastCloudSession();
+    return true;
+  }
+  return false;
+}
+
+// Bring up a one-shot loopback listener, open the system browser at the Google start
+// URL, and resolve with the one-time exchange code from the redirect (RFC 8252).
+function runLoopbackSignin(challenge) {
+  return new Promise((resolve, reject) => {
+    const server = http.createServer((req, res) => {
+      const code = cloudOauth.parseLoopbackCode(req.url);
+      res.writeHead(code ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
+      res.end(loopbackHtml(!!code));
+      if (code) { cleanup(); resolve(code); }
+    });
+    let done = false;
+    const timer = setTimeout(() => { cleanup(); reject(new Error('timeout')); }, 5 * 60 * 1000);
+    function cleanup() { if (done) return; done = true; clearTimeout(timer); try { server.close(); } catch {} }
+    server.on('error', (err) => { cleanup(); reject(err); });
+    server.listen(0, '127.0.0.1', () => {
+      const { port } = server.address();
+      const url = cloudClientMod.buildGoogleStartUrl(cloudCapability().apiBase, { port, challenge });
+      shell.openExternal(url).catch((err) => { cleanup(); reject(err); });
+    });
+  });
+}
+
+function loopbackHtml(okCode) {
+  const msg = okCode ? 'Готово! Можете закрыть эту вкладку и вернуться в Lumina.' : 'Код авторизации не получен. Вернитесь в Lumina и попробуйте снова.';
+  return `<!doctype html><meta charset="utf-8"><title>Lumina</title><body style="font-family:Segoe UI,system-ui,sans-serif;background:#fafafa;color:#2e3436;display:grid;place-items:center;height:100vh;margin:0"><div style="text-align:center"><h2 style="margin:0 0 8px">Lumina</h2><p>${msg}</p></div></body>`;
+}
+
 // Catalog page (renderer never calls the API directly — everything goes through here).
 ipcMain.handle('cloud-catalog', async (e, opts) => {
   const client = cloudClient();
   if (!client) return { items: [], nextCursor: null, error: 'unavailable' };
   const o = opts || {};
-  const r = await client.getCatalog({
-    rating: o.rating === 'suggestive' ? 'suggestive' : 'general',
-    cursor: o.cursor || undefined,
-    limit: 30,
-  });
-  if (!r.ok) return { items: [], nextCursor: null, error: r.error.code, kind: r.error.kind };
+  const rating = ['general', 'suggestive', 'explicit'].includes(o.rating) ? o.rating : 'general';
+  const r = await client.getCatalog({ rating, cursor: o.cursor || undefined, limit: 30, token: _cloudToken || undefined });
+  if (!r.ok) {
+    cloudHandleAuthError(r);
+    return { items: [], nextCursor: null, error: r.error.code, kind: r.error.kind };
+  }
   return { items: r.data.items, nextCursor: r.data.next_cursor, error: null };
 });
 
@@ -1019,8 +1099,8 @@ ipcMain.handle('cloud-add', async (e, item) => {
   if (!client) return { config, error: 'unavailable' };
   if (!item || !item.id) return { config, error: 'badItem' };
   try {
-    const dl = await client.getDownload(item.id);
-    if (!dl.ok) return { config, error: dl.error.code };
+    const dl = await client.getDownload(item.id, { token: _cloudToken || undefined });
+    if (!dl.ok) { cloudHandleAuthError(dl); return { config, error: dl.error.code }; }
     const stored = await downloadWallpaperFromUrl(dl.data.url);
     const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
     const id = library.addPath(config.library, 'image', stored, { aspect });
@@ -1032,6 +1112,50 @@ ipcMain.handle('cloud-add', async (e, item) => {
     console.error('cloud add:', err);
     return { config, error: 'download' };
   }
+});
+
+// Current auth state (renderer-safe). If a stored token exists but the profile isn't
+// loaded yet, validate it against /v1/me (a dead/expired token is dropped silently).
+ipcMain.handle('cloud-session', async () => {
+  const client = cloudClient();
+  if (_cloudToken && !_cloudUser && client) {
+    const me = await client.getMe(_cloudToken);
+    if (me.ok) _cloudUser = me.data;
+    else if (cloudHandleAuthError(me)) { /* token cleared */ }
+  }
+  return cloudAuthState();
+});
+
+// Google sign-in: PKCE + loopback + system browser + exchange → store token, load /me.
+ipcMain.handle('cloud-signin', async () => {
+  const client = cloudClient();
+  if (!client) return { ok: false, error: 'unavailable' };
+  try {
+    const { verifier, challenge } = cloudOauth.generatePkce();
+    const code = await runLoopbackSignin(challenge);
+    const ex = await client.exchangeAuth({ code, pkce_verifier: verifier, client_label: `Lumina on ${os.hostname()}` });
+    if (!ex.ok) return { ok: false, error: ex.error.code };
+    _cloudToken = ex.data.session_token;
+    saveStoredToken(_cloudToken);
+    const me = await client.getMe(_cloudToken);
+    _cloudUser = me.ok ? me.data : { user: ex.data.user, entitlements: [] };
+    broadcastCloudSession();
+    return { ok: true, state: cloudAuthState() };
+  } catch (err) {
+    const msg = err && /timeout/.test(String(err.message)) ? 'timeout' : 'signin_failed';
+    console.error('cloud signin:', err);
+    return { ok: false, error: msg };
+  }
+});
+
+// Sign out: revoke the session server-side (best effort) and drop the local token.
+ipcMain.handle('cloud-signout', async () => {
+  const client = cloudClient();
+  const token = _cloudToken;
+  _cloudToken = null; _cloudUser = null; clearStoredToken();
+  if (client && token) { try { await client.logout(token); } catch {} }
+  broadcastCloudSession();
+  return { ok: true, state: cloudAuthState() };
 });
 
 ipcMain.handle('get-i18n', () => {
@@ -1703,6 +1827,7 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   loadConfig();
+  _cloudToken = loadStoredToken(); // restore a previous Lumina Cloud session (validated on first use)
   registerShortcut();
   ensurePsScript();
   ensureComScript();

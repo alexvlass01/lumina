@@ -186,7 +186,15 @@
     "cloudBadgeLive": "Lumina",
     "ratingGeneral": "General",
     "ratingSuggestive": "Suggestive",
-    "offline": "No internet connection"
+    "ratingExplicit": "Explicit",
+    "offline": "No internet connection",
+    "signIn": "Sign in with Google",
+    "signOut": "Sign out",
+    "signingIn": "Opening your browser…",
+    "signedIn": "Signed in",
+    "signedOut": "Signed out",
+    "signinFailed": "Sign-in failed",
+    "sessionExpired": "Your session expired — please sign in again."
   },
   "theme": {
     "group": "Windows theme",

@@ -6,6 +6,7 @@ if (!window.api) {
   let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, triggers: { onStartup: false, onWakeup: false, stealth: false } };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
+  let mockCloud = { signedIn: false, user: null };
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
@@ -104,6 +105,10 @@ if (!window.api) {
       return { items: [mk(5, '#8e24aa'), mk(6, '#1e88e5')], nextCursor: null, error: null };
     },
     cloudAdd: async (item) => { const iid = 'cl' + item.id; mock.library[iid] = { id: iid, type: 'image', path: 'C:/fake/' + item.id + '.jpg', source: 'lumina:' + item.id }; return { config: mock, id: iid, error: null }; },
+    cloudSession: async () => ({ available: true, signedIn: mockCloud.signedIn, user: mockCloud.signedIn ? mockCloud.user : null, entitlements: mockCloud.signedIn ? ['online_catalog'] : [] }),
+    cloudSignin: async () => { mockCloud.signedIn = true; mockCloud.user = { id: 'u1', display_name: 'Test User', email: 'test@example.com', role: 'user', explicit_opt_in: false, created_at: Math.floor(Date.now() / 1000) }; return { ok: true, state: { available: true, signedIn: true, user: mockCloud.user, entitlements: ['online_catalog'] } }; },
+    cloudSignout: async () => { mockCloud.signedIn = false; mockCloud.user = null; return { ok: true, state: { available: true, signedIn: false, user: null, entitlements: [] } }; },
+    onCloudSession: () => {},
     wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
     wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
     wallhavenAdd: async () => ({ config: mock, error: null }),
@@ -698,6 +703,8 @@ const CLOUD = { cap: null, fetched: false };
 // Cloud C3: Lumina catalog paging state. Re-fetched on each entry to the Online tab
 // so signed R2 URLs stay fresh (downloads always use a fresh URL fetched at click).
 const CLOUDCAT = { rating: 'general', items: [], cursor: null, loading: false, fetched: false };
+// Cloud C4: account/session state (renderer-safe; the token never leaves main).
+const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 
 function setLibCardAspect(card, aspect) {
   if (!card) return;
@@ -1837,9 +1844,116 @@ function applyOnlineSourceUI(sources) {
   if (internet) internet.hidden = !sources.internet;
 }
 
+// --- Cloud account (C4) ---
+async function ensureCloudSession(force) {
+  if (CLOUDAUTH.fetched && !force) return CLOUDAUTH.state;
+  try { CLOUDAUTH.state = await window.api.cloudSession(); }
+  catch { CLOUDAUTH.state = { available: false, signedIn: false, user: null, entitlements: [] }; }
+  CLOUDAUTH.fetched = true;
+  return CLOUDAUTH.state;
+}
+
+// Explicit tier is offered only to a signed-in user who has opted in (backend gate).
+function explicitAllowed() {
+  const s = CLOUDAUTH.state;
+  return !!(s && s.signedIn && s.user && s.user.explicit_opt_in);
+}
+
+// Account strip atop the Lumina panel: sign-in button / signing-in / profile + sign-out.
+function renderCloudAccount() {
+  const host = $('#libCloudAccount');
+  if (!host) return;
+  host.hidden = false;
+  host.innerHTML = '';
+  const s = CLOUDAUTH.state || { signedIn: false };
+
+  if (CLOUDAUTH.signingIn) {
+    const msg = document.createElement('span');
+    msg.className = 'lib-cloud-acc-msg';
+    msg.textContent = t('online.signingIn');
+    host.appendChild(msg);
+    return;
+  }
+
+  if (s.signedIn && s.user) {
+    const info = document.createElement('div');
+    info.className = 'lib-cloud-acc-user';
+    const name = document.createElement('strong'); name.textContent = s.user.display_name || s.user.email || '';
+    const email = document.createElement('small'); email.textContent = s.user.email || '';
+    info.append(name, email);
+    const out = document.createElement('button');
+    out.className = 'pill ghost';
+    out.textContent = t('online.signOut');
+    out.addEventListener('click', doCloudSignout);
+    host.append(info, out);
+    return;
+  }
+
+  // signed out (optionally after an expiry)
+  if (s.expired) {
+    const exp = document.createElement('span');
+    exp.className = 'lib-cloud-acc-msg';
+    exp.textContent = t('online.sessionExpired');
+    host.appendChild(exp);
+  }
+  const btn = document.createElement('button');
+  btn.className = 'pill suggested';
+  btn.textContent = t('online.signIn');
+  btn.addEventListener('click', doCloudSignin);
+  host.appendChild(btn);
+}
+
+// Add/remove the "Explicit" rating option to match the current entitlement.
+function refreshCloudRatingOptions() {
+  const sel = $('#cloudRating');
+  if (!sel) return;
+  const allow = explicitAllowed();
+  let opt = sel.querySelector('option[value="explicit"]');
+  if (allow && !opt) {
+    opt = document.createElement('option');
+    opt.value = 'explicit';
+    opt.textContent = t('online.ratingExplicit');
+    sel.appendChild(opt);
+  } else if (!allow && opt) {
+    opt.remove();
+    if (CLOUDCAT.rating === 'explicit') { CLOUDCAT.rating = 'general'; sel.value = 'general'; }
+  }
+}
+
+async function doCloudSignin() {
+  if (CLOUDAUTH.signingIn) return;
+  CLOUDAUTH.signingIn = true;
+  renderCloudAccount();
+  toast(t('online.signingIn'));
+  let res;
+  try { res = await window.api.cloudSignin(); } catch { res = { ok: false, error: 'signin_failed' }; }
+  CLOUDAUTH.signingIn = false;
+  if (res && res.ok) {
+    CLOUDAUTH.state = res.state; CLOUDAUTH.fetched = true;
+    renderCloudAccount();
+    refreshCloudRatingOptions();
+    loadCloudCatalog(true); // session may unlock the explicit tier / personalize
+    toast(t('online.signedIn'));
+  } else {
+    renderCloudAccount();
+    if (!res || res.error !== 'cancelled') toast(t('online.signinFailed'));
+  }
+}
+
+async function doCloudSignout() {
+  let res;
+  try { res = await window.api.cloudSignout(); } catch { res = { ok: true, state: { available: true, signedIn: false } }; }
+  CLOUDAUTH.state = (res && res.state) || { available: true, signedIn: false, user: null, entitlements: [] };
+  CLOUDAUTH.fetched = true;
+  renderCloudAccount();
+  refreshCloudRatingOptions();
+  loadCloudCatalog(true);
+  toast(t('online.signedOut'));
+}
+
 // Render the Lumina panel for the current capability. Public builds (unavailable)
 // show a calm "coming soon" state with no network; a staging/production build shows
-// the real catalog (C3).
+// the real catalog (C3) plus the account strip (C4).
 function renderCloudPanel() {
   const toolbar = $('#libCloudToolbar');
   const grid = $('#cloudGrid');
@@ -1847,7 +1961,10 @@ function renderCloudPanel() {
   const cap = CLOUD.cap || { environment: 'unavailable', available: false };
   const ready = cap.available && (cap.environment === 'staging' || cap.environment === 'production');
 
+  const account = $('#libCloudAccount');
+
   if (!ready) {
+    if (account) account.hidden = true;
     if (toolbar) toolbar.hidden = true;
     if (grid) { grid.innerHTML = ''; grid.hidden = true; }
     if (more) more.hidden = true;
@@ -1855,8 +1972,10 @@ function renderCloudPanel() {
     return;
   }
 
+  if (account) account.hidden = false;
   if (toolbar) toolbar.hidden = false;
   if (grid) grid.hidden = false;
+  ensureCloudSession().then(() => { renderCloudAccount(); refreshCloudRatingOptions(); });
   const ratingSel = $('#cloudRating');
   if (ratingSel && ratingSel.value !== CLOUDCAT.rating) ratingSel.value = CLOUDCAT.rating;
   if (!CLOUDCAT.fetched && !CLOUDCAT.loading) loadCloudCatalog(true);
@@ -2801,6 +2920,13 @@ async function init() {
   });
 
   window.api.onUpdate((st) => renderUpdate(st));
+
+  // Cloud session changed in main (e.g. a 401 dropped an expired session) → refresh
+  // the account strip + rating options if the Online tab is open.
+  window.api.onCloudSession((s) => {
+    CLOUDAUTH.state = s; CLOUDAUTH.fetched = true;
+    if (LIB.filter === 'online' && onlineSources().lumina) { renderCloudAccount(); refreshCloudRatingOptions(); }
+  });
 
   // keep thumbnails fitted when the window (and thus cards) resize
   let resizeT = null;

@@ -39,6 +39,11 @@ contextBridge.exposeInMainWorld('api', {
   // Lumina Cloud catalog (C3): renderer goes through main, never calls the API directly.
   cloudCatalog: (opts) => ipcRenderer.invoke('cloud-catalog', opts),
   cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
+  // Lumina Cloud account (C4): token stays in main; renderer only sees profile state.
+  cloudSession: () => ipcRenderer.invoke('cloud-session'),
+  cloudSignin: () => ipcRenderer.invoke('cloud-signin'),
+  cloudSignout: () => ipcRenderer.invoke('cloud-signout'),
+  onCloudSession: (cb) => ipcRenderer.on('cloud-session-changed', (_e, s) => cb(s)),
 
   // Wallhaven (онлайн-обои)
   wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),

@@ -186,7 +186,15 @@
     "cloudBadgeLive": "Lumina",
     "ratingGeneral": "Звичайні",
     "ratingSuggestive": "Пікантні",
-    "offline": "Немає підключення до інтернету"
+    "ratingExplicit": "Відверті",
+    "offline": "Немає підключення до інтернету",
+    "signIn": "Увійти через Google",
+    "signOut": "Вийти",
+    "signingIn": "Відкриваю браузер…",
+    "signedIn": "Вхід виконано",
+    "signedOut": "Ви вийшли",
+    "signinFailed": "Не вдалося увійти",
+    "sessionExpired": "Сесія завершилася — увійдіть знову."
   },
   "theme": {
     "group": "Тема Windows",
