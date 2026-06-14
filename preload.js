@@ -48,10 +48,10 @@ contextBridge.exposeInMainWorld('api', {
   cloudFavorites: () => ipcRenderer.invoke('cloud-favorites'),
   cloudFavorite: (id, on) => ipcRenderer.invoke('cloud-favorite', id, on),
 
-  // Wallhaven (онлайн-обои)
-  wallhavenStatus: () => ipcRenderer.invoke('wallhaven-status'),
-  wallhavenSearch: (opts) => ipcRenderer.invoke('wallhaven-search', opts),
-  wallhavenAdd: (item, query) => ipcRenderer.invoke('wallhaven-add', item, query),
+  // Internet (онлайн-обои)
+  internetStatus: () => ipcRenderer.invoke('internet-status'),
+  internetSearch: (opts) => ipcRenderer.invoke('internet-search', opts),
+  internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
   setSlideshowToPath: (monitorId, which, p) => ipcRenderer.invoke('set-slideshow-to-path', monitorId, which, p),

@@ -44,7 +44,8 @@ const parsed = W.parseSearch(sample);
 ok('parseSearch: drops items without path', parsed.items.length === 1);
 ok('parseSearch: maps full + thumb + page', (() => {
   const it = parsed.items[0];
-  return it.full === 'https://w.wallhaven.cc/full/ab/wallhaven-abc123.jpg'
+  return it.provider === 'wallhaven'
+    && it.full === 'https://w.wallhaven.cc/full/ab/wallhaven-abc123.jpg'
     && it.thumb === 'https://th.wallhaven.cc/small/ab/abc123.jpg'
     && it.page === 'https://wallhaven.cc/w/abc123'
     && it.resolution === '1920x1080' && it.width === 1920 && it.height === 1080

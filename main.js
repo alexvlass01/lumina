@@ -11,6 +11,8 @@ const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
 const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
+const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
+const online = require('./src/online'); // смешивание и дедуп результатов внешних провайдеров
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
@@ -1492,54 +1494,102 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   return config;
 });
 
-// ---- Wallhaven (онлайн-обои) ----
+// ---- Internet providers: Wallhaven + Danbooru, one mixed result grid ----
 
-// Состояние ключа для UI: есть ли вообще ключ (свой или зашитый) → доступен ли NSFW.
-ipcMain.handle('wallhaven-status', () => ({ hasKey: !!wallhavenKey(), bundled: !!BUNDLED_WALLHAVEN_KEY }));
+const INTERNET_PAGE_SIZE = 24;
+const INTERNET_USER_AGENT = `Lumina/${app.getVersion()} (https://github.com/alexvlass01/lumina)`;
 
-// Поиск. Без NSFW — keyless (purity sfw+sketchy, IP пользователя). NSFW — только если
-// есть ключ; и ключ шлём ТОЛЬКО ради NSFW (keyless-путь не нагружает общий ключ).
-ipcMain.handle('wallhaven-search', async (e, opts) => {
+ipcMain.handle('internet-status', () => ({
+  hasKey: !!wallhavenKey(),
+  bundled: !!BUNDLED_WALLHAVEN_KEY,
+  // Danbooru exposes every rating through its public read API, so the combined
+  // source can offer Explicit even when Wallhaven has no bundled API key.
+  nsfwAvailable: true,
+}));
+
+async function searchWallhavenProvider(opts) {
   const o = opts || {};
   const key = wallhavenKey();
   const p = o.purity || { sfw: true, sketchy: true, nsfw: false };
   const wantNsfw = !!p.nsfw && !!key;
+  if (!p.sfw && !p.sketchy && !wantNsfw) {
+    return { provider: 'wallhaven', items: [], meta: { currentPage: o.page || 1, lastPage: o.page || 1 }, error: null };
+  }
   const purity = wallhaven.purityMask({ sfw: !!p.sfw, sketchy: !!p.sketchy, nsfw: wantNsfw });
   const url = wallhaven.buildSearchUrl({
     q: o.q || '',
     purity,
     categories: o.categories || '111',
-    sorting: o.sorting || 'date_added',
+    sorting: o.sort || o.sorting || 'date_added',
     page: o.page || 1,
     apikey: wantNsfw ? key : '',
   });
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': 'Lumina' } });
-    if (!res.ok) return { items: [], meta: {}, error: String(res.status), hasKey: !!key };
+    const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return { provider: 'wallhaven', items: [], meta: {}, error: String(res.status) };
     const json = await res.json();
-    return { ...wallhaven.parseSearch(json), error: null, hasKey: !!key };
+    return { provider: 'wallhaven', ...wallhaven.parseSearch(json), error: null };
   } catch (err) {
     console.error('wallhaven search:', err);
-    return { items: [], meta: {}, error: 'network', hasKey: !!key };
+    return { provider: 'wallhaven', items: [], meta: {}, error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
   }
+}
+
+async function searchDanbooruProvider(opts) {
+  const o = opts || {};
+  const page = Number(o.page) > 0 ? Number(o.page) : 1;
+  const url = danbooru.buildSearchUrl({
+    q: o.q || '',
+    purity: o.purity,
+    sorting: o.sort || o.sorting || 'date_added',
+    page,
+    limit: INTERNET_PAGE_SIZE,
+  });
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return { provider: 'danbooru', items: [], meta: {}, error: String(res.status) };
+    const json = await res.json();
+    return { provider: 'danbooru', ...danbooru.parseSearch(json, { page, limit: INTERNET_PAGE_SIZE }), error: null };
+  } catch (err) {
+    console.error('danbooru search:', err);
+    return { provider: 'danbooru', items: [], meta: {}, error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+  }
+}
+
+ipcMain.handle('internet-search', async (e, opts) => {
+  const o = opts || {};
+  const page = Number(o.page) > 0 ? Number(o.page) : 1;
+  const results = await Promise.all([searchWallhavenProvider(o), searchDanbooruProvider(o)]);
+  return {
+    ...online.mergeSearchResults(results, page),
+    hasKey: !!wallhavenKey(),
+    nsfwAvailable: true,
+  };
 });
 
-// Скачать полное изображение в пул (как обычный image-элемент) + метаданные (источник, авто-теги по запросу).
-ipcMain.handle('wallhaven-add', async (e, item, query) => {
-  if (!item || !item.full) return { config, error: 'badItem' };
+// Download a normalized provider item into the local pool. The renderer cannot
+// turn this into an arbitrary downloader: provider and CDN host must match.
+ipcMain.handle('internet-add', async (e, item, query) => {
+  if (!online.allowedDownloadUrl(item)) return { config, error: 'badItem' };
   try {
     const stored = await downloadWallpaperFromUrl(item.full);
-    const aspect = item.width > 0 && item.height > 0 ? item.width / item.height : 0;
+    const width = Number(item.width); const height = Number(item.height);
+    const aspect = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 0;
     const id = library.addPath(config.library, 'image', stored, { aspect });
     const it = config.library[id];
     if (it) {
-      it.source = item.page || item.source || '';
-      String(query || '').split(/[\s,]+/).filter(Boolean).forEach((tg) => library.addTag(config.library, id, tg));
+      it.source = online.allowedPageUrl(item) ? item.page : '';
+      if (typeof item.artist === 'string' && item.artist.trim()) it.author = item.artist.trim().slice(0, 120);
+      (Array.isArray(item.tags) ? item.tags : []).slice(0, 24).forEach((tag) => {
+        if (typeof tag === 'string') library.addTag(config.library, id, tag.slice(0, 80));
+      });
+      String(query || '').slice(0, 500).split(/[\s,]+/).filter(Boolean).slice(0, 20)
+        .forEach((tag) => library.addTag(config.library, id, tag.slice(0, 80)));
     }
     saveConfig();
     return { config, id, error: null };
   } catch (err) {
-    console.error('wallhaven add:', err);
+    console.error('internet add:', err);
     return { config, error: 'download' };
   }
 });
@@ -1847,6 +1897,7 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
+  app.userAgentFallback = INTERNET_USER_AGENT;
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   loadConfig();
   _cloudToken = loadStoredToken(); // restore a previous Lumina Cloud session (validated on first use)

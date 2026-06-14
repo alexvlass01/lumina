@@ -111,9 +111,9 @@ if (!window.api) {
     onCloudSession: () => {},
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
-    wallhavenStatus: async () => ({ hasKey: false, bundled: false }),
-    wallhavenSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
-    wallhavenAdd: async () => ({ config: mock, error: null }),
+    internetStatus: async () => ({ hasKey: false, bundled: false }),
+    internetSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
+    internetAdd: async () => ({ config: mock, error: null }),
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     setSlideshowIndex: async (monitorId, which, index) => {
       const theme = which === 'dark' ? 'dark' : 'light';
@@ -2199,7 +2199,7 @@ async function renderOnline() {
   if (!sources.internet) { setLibViewHeader(null); return; }
 
   if (!WH.statusFetched) {
-    try { const st = await window.api.wallhavenStatus(); WH.hasKey = !!st.hasKey; }
+    try { const st = await window.api.internetStatus(); WH.hasKey = !!st.hasKey; }
     catch { WH.hasKey = false; }
     WH.statusFetched = true;
   }
@@ -2233,7 +2233,7 @@ async function doWhSearch(reset) {
   const grid = $('#whGrid');
   if (note) note.textContent = t('online.loading');
   let res;
-  try { res = await window.api.wallhavenSearch({ q: WH.q, sort: WH.sort, purity: WH.purity, page: WH.page }); }
+  try { res = await window.api.internetSearch({ q: WH.q, sort: WH.sort, purity: WH.purity, page: WH.page }); }
   catch (err) { res = { error: 'network' }; }
   WH.searched = true;
   WH.hasKey = !!res.hasKey;
@@ -2277,7 +2277,7 @@ function buildWhCard(item) {
     if (add.disabled) return;
     add.disabled = true;
     let res;
-    try { res = await window.api.wallhavenAdd(item, WH.q); } catch (err) { res = { error: 'download' }; }
+    try { res = await window.api.internetAdd(item, WH.q); } catch (err) { res = { error: 'download' }; }
     if (res && res.config) config = res.config;
     if (res && !res.error) { markAdded(); toast(t('online.added')); }
     else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }

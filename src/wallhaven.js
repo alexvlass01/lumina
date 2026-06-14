@@ -48,6 +48,7 @@ function mapItem(w) {
   const height = Number(w.dimension_y) || (match ? Number(match[2]) : 0);
   return {
     id: w.id,
+    provider: 'wallhaven',
     page: w.url || '',                       // wallhaven.cc page (attribution)
     full: w.path,                            // full-resolution image URL (download this)
     thumb: thumbs.small || thumbs.large || w.path,
