@@ -111,8 +111,9 @@ if (!window.api) {
     onCloudSession: () => {},
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
-    internetStatus: async () => ({ hasKey: false, bundled: false }),
-    internetSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false }),
+    internetStatus: async () => ({ hasKey: false, bundled: false, nsfwAvailable: true }),
+    internetSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false, nsfwAvailable: true }),
+    internetThumbnail: async (item) => ({ dataUrl: item && String(item.thumb || '').startsWith('data:') ? item.thumb : '', error: null }),
     internetAdd: async () => ({ config: mock, error: null }),
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     setSlideshowIndex: async (monitorId, which, index) => {
@@ -699,7 +700,7 @@ let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
 let justifiedFrame = 0;
 const justifiedPending = new Set();
-const WH = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, hasKey: false, searched: false, statusFetched: false };
+const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
 // Cloud C3: Lumina catalog paging state. Re-fetched on each entry to the Online tab
@@ -1740,13 +1741,13 @@ function initLibrary() {
   const cvFav = $('#cloudViewFav');
   if (cvFav) cvFav.addEventListener('click', () => setCloudView('favorites'));
 
-  // online (Wallhaven)
+  // External online providers. The wh* DOM ids are retained for compatibility.
   const whSearchBtn = $('#whSearch');
-  if (whSearchBtn) whSearchBtn.addEventListener('click', () => doWhSearch(true));
+  if (whSearchBtn) whSearchBtn.addEventListener('click', () => doInternetSearch(true));
   const whQ = $('#whQuery');
-  if (whQ) whQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') doWhSearch(true); });
+  if (whQ) whQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') doInternetSearch(true); });
   const whSortEl = $('#whSort');
-  if (whSortEl) whSortEl.addEventListener('change', () => { WH.sort = whSortEl.value; if (WH.searched) doWhSearch(true); });
+  if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; if (INTERNET.searched) doInternetSearch(true); });
   const whFilterToggle = $('#whFilterToggle');
   const whFiltersRow = $('#whFiltersRow');
   if (whFilterToggle && whFiltersRow) {
@@ -1759,23 +1760,23 @@ function initLibrary() {
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     cb.addEventListener('change', () => {
       const p = cb.dataset.purity;
-      if (p === 'nsfw' && !WH.hasKey) {
+      if (p === 'nsfw' && !INTERNET.nsfwAvailable) {
         cb.checked = false;
         toast(t('online.nsfwNeedsKey'));
         return;
       }
-      WH.purity[p] = cb.checked;
+      INTERNET.purity[p] = cb.checked;
       // Don't allow unchecking the last category — keep at least one purity on.
-      if (!WH.purity.sfw && !WH.purity.sketchy && !WH.purity.nsfw) {
+      if (!INTERNET.purity.sfw && !INTERNET.purity.sketchy && !INTERNET.purity.nsfw) {
         cb.checked = true;
-        WH.purity[p] = true;
+        INTERNET.purity[p] = true;
         return;
       }
-      if (WH.searched) doWhSearch(true);
+      if (INTERNET.searched) doInternetSearch(true);
     });
   });
   const whMoreBtn = $('#whMore');
-  if (whMoreBtn) whMoreBtn.addEventListener('click', () => { WH.page += 1; doWhSearch(false); });
+  if (whMoreBtn) whMoreBtn.addEventListener('click', () => { INTERNET.page += 1; doInternetSearch(false); });
 
   initLibraryDragDrop();
 }
@@ -1809,17 +1810,17 @@ function initLibraryDragDrop() {
   });
 }
 
-// ---- Online (Wallhaven) ----
+// ---- External online providers ----
 function updatePurityToggle() {
   document.querySelectorAll('.wh-purity-cb').forEach(cb => {
     const p = cb.dataset.purity;
-    cb.checked = !!WH.purity[p];
+    cb.checked = !!INTERNET.purity[p];
     if (p === 'nsfw') {
-      cb.disabled = !WH.hasKey;
+      cb.disabled = !INTERNET.nsfwAvailable;
       const lbl = $('#lblPurityNsfw');
       if (lbl) {
-        lbl.style.opacity = WH.hasKey ? '1' : '0.5';
-        lbl.title = WH.hasKey ? '' : t('online.nsfwNeedsKey');
+        lbl.style.opacity = INTERNET.nsfwAvailable ? '1' : '0.5';
+        lbl.title = INTERNET.nsfwAvailable ? '' : t('online.nsfwNeedsKey');
       }
     }
   });
@@ -2198,20 +2199,20 @@ async function renderOnline() {
 
   if (!sources.internet) { setLibViewHeader(null); return; }
 
-  if (!WH.statusFetched) {
-    try { const st = await window.api.internetStatus(); WH.hasKey = !!st.hasKey; }
-    catch { WH.hasKey = false; }
-    WH.statusFetched = true;
+  if (!INTERNET.statusFetched) {
+    try { const st = await window.api.internetStatus(); INTERNET.nsfwAvailable = !!st.nsfwAvailable; }
+    catch { INTERNET.nsfwAvailable = false; }
+    INTERNET.statusFetched = true;
   }
   updatePurityToggle();
-  if (!WH.searched) {
+  if (!INTERNET.searched) {
     const note = $('#whNote');
     if (note) note.textContent = t('online.hint');
     const grid = $('#whGrid'); if (grid) grid.innerHTML = '';
     const more = $('#whMore'); if (more) more.hidden = true;
   }
   const grid = $('#whGrid');
-  setLibViewHeader(WH.searched && grid ? grid.children.length : null);
+  setLibViewHeader(INTERNET.searched && grid ? grid.children.length : null);
 }
 
 // Toggle a content source on/off (keeps at least one on), persist, re-render.
@@ -2225,41 +2226,53 @@ function toggleOnlineSource(key) {
   renderOnline();
 }
 
-async function doWhSearch(reset) {
+async function doInternetSearch(reset) {
   const qEl = $('#whQuery');
-  WH.q = (qEl && qEl.value || '').trim();
-  if (reset) WH.page = 1;
+  INTERNET.q = (qEl && qEl.value || '').trim();
+  if (reset) INTERNET.page = 1;
   const note = $('#whNote');
   const grid = $('#whGrid');
   if (note) note.textContent = t('online.loading');
   let res;
-  try { res = await window.api.internetSearch({ q: WH.q, sort: WH.sort, purity: WH.purity, page: WH.page }); }
+  try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, page: INTERNET.page }); }
   catch (err) { res = { error: 'network' }; }
-  WH.searched = true;
-  WH.hasKey = !!res.hasKey;
+  INTERNET.searched = true;
+  INTERNET.nsfwAvailable = !!res.nsfwAvailable;
   updatePurityToggle();
   if (res.error) { if (note) note.textContent = t('online.error', { e: res.error }); return; }
-  WH.lastPage = (res.meta && res.meta.lastPage) || 1;
+  INTERNET.lastPage = (res.meta && res.meta.lastPage) || 1;
   if (reset && grid) grid.innerHTML = '';
-  (res.items || []).forEach((it) => grid.appendChild(buildWhCard(it)));
+  (res.items || []).forEach((it) => grid.appendChild(buildInternetCard(it)));
   scheduleJustifiedLayout(grid);
   setLibViewHeader(grid ? grid.children.length : 0);
   if (note) note.textContent = (grid && grid.children.length) ? '' : t('online.noResults');
-  const more = $('#whMore'); if (more) more.hidden = WH.page >= WH.lastPage;
+  const more = $('#whMore'); if (more) more.hidden = INTERNET.page >= INTERNET.lastPage;
 }
 
 // Already in the pool? Online items carry their source page; we match on it so the
 // "added ✓" survives re-searches (was only set in-session before — fixed).
-function whAlreadyAdded(item) {
+function internetAlreadyAdded(item) {
   return Object.values(config.library || {}).some((it) => it.source && it.source === item.page);
 }
 
-function buildWhCard(item) {
+function setInternetCardThumbnail(card, item) {
+  if (!item.thumb) return;
+  if (item.provider !== 'danbooru') {
+    card.style.backgroundImage = `url("${item.thumb}")`;
+    return;
+  }
+  window.api.internetThumbnail(item).then((result) => {
+    if (result && result.dataUrl) card.style.backgroundImage = `url("${result.dataUrl}")`;
+  }).catch(() => {});
+}
+
+function buildInternetCard(item) {
   const card = document.createElement('div');
   card.className = 'lib-card';
+  card.dataset.provider = item.provider || '';
   makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
-  if (item.thumb) card.style.backgroundImage = `url("${item.thumb}")`;
+  setInternetCardThumbnail(card, item);
   const label = [item.resolution, item.category].filter(Boolean).join(' · ');
   card.title = label;
   const add = document.createElement('button');
@@ -2270,14 +2283,14 @@ function buildWhCard(item) {
     add.disabled = true;
     add.title = t('online.added');
   };
-  if (whAlreadyAdded(item)) markAdded();
+  if (internetAlreadyAdded(item)) markAdded();
   else { add.textContent = '+'; add.title = t('online.add'); }
   add.addEventListener('click', async (e) => {
     e.stopPropagation();
     if (add.disabled) return;
     add.disabled = true;
     let res;
-    try { res = await window.api.internetAdd(item, WH.q); } catch (err) { res = { error: 'download' }; }
+    try { res = await window.api.internetAdd(item, INTERNET.q); } catch (err) { res = { error: 'download' }; }
     if (res && res.config) config = res.config;
     if (res && !res.error) { markAdded(); toast(t('online.added')); }
     else { add.disabled = false; toast(t('online.error', { e: (res && res.error) || '?' })); }

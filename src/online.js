@@ -1,5 +1,7 @@
 'use strict';
 
+const THUMBNAIL_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+
 function canonicalUrl(value) {
   if (!value) return '';
   try {
@@ -33,6 +35,32 @@ function allowedDownloadUrl(item) {
   } catch {
     return false;
   }
+}
+
+function allowedThumbnailUrl(item) {
+  if (!item || item.provider !== 'danbooru' || !item.thumb) return false;
+  try {
+    const url = new URL(item.thumb);
+    return url.protocol === 'https:'
+      && url.hostname === 'cdn.donmai.us'
+      && !url.port
+      && !url.username
+      && !url.password;
+  } catch {
+    return false;
+  }
+}
+
+function thumbnailMime(value) {
+  const mime = String(value || '').split(';', 1)[0].trim().toLowerCase();
+  return THUMBNAIL_MIME_TYPES.has(mime) ? mime : '';
+}
+
+function thumbnailDataUrl(bytes, mime) {
+  const safeMime = thumbnailMime(mime);
+  if (!safeMime || !bytes) return '';
+  const buffer = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
+  return buffer.length ? `data:${safeMime};base64,${buffer.toString('base64')}` : '';
 }
 
 function allowedPageUrl(item) {
@@ -99,4 +127,15 @@ function mergeSearchResults(results, page = 1) {
   };
 }
 
-module.exports = { canonicalUrl, itemKeys, allowedDownloadUrl, allowedPageUrl, interleave, resultHasMore, mergeSearchResults };
+module.exports = {
+  canonicalUrl,
+  itemKeys,
+  allowedDownloadUrl,
+  allowedThumbnailUrl,
+  allowedPageUrl,
+  thumbnailMime,
+  thumbnailDataUrl,
+  interleave,
+  resultHasMore,
+  mergeSearchResults,
+};

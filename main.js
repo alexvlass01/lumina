@@ -1498,6 +1498,9 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
 
 const INTERNET_PAGE_SIZE = 24;
 const INTERNET_USER_AGENT = `Lumina/${app.getVersion()} (https://github.com/alexvlass01/lumina)`;
+const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
+const INTERNET_THUMBNAIL_CACHE_SIZE = 200;
+const internetThumbnailCache = new Map();
 
 ipcMain.handle('internet-status', () => ({
   hasKey: !!wallhavenKey(),
@@ -1566,6 +1569,48 @@ ipcMain.handle('internet-search', async (e, opts) => {
     nsfwAvailable: true,
   };
 });
+
+async function fetchInternetThumbnail(item) {
+  if (!online.allowedThumbnailUrl(item)) return { dataUrl: '', error: 'badItem' };
+  const key = item.thumb;
+  if (internetThumbnailCache.has(key)) {
+    const cached = internetThumbnailCache.get(key);
+    internetThumbnailCache.delete(key);
+    internetThumbnailCache.set(key, cached);
+    return cached;
+  }
+
+  const pending = (async () => {
+    try {
+      const res = await fetch(key, {
+        headers: { 'User-Agent': INTERNET_USER_AGENT },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (!res.ok) return { dataUrl: '', error: String(res.status) };
+      const mime = online.thumbnailMime(res.headers.get('content-type'));
+      const declaredSize = Number(res.headers.get('content-length')) || 0;
+      if (!mime || declaredSize > INTERNET_THUMBNAIL_MAX_BYTES) return { dataUrl: '', error: 'badImage' };
+      const bytes = Buffer.from(await res.arrayBuffer());
+      if (bytes.length > INTERNET_THUMBNAIL_MAX_BYTES) return { dataUrl: '', error: 'badImage' };
+      const dataUrl = online.thumbnailDataUrl(bytes, mime);
+      return dataUrl ? { dataUrl, error: null } : { dataUrl: '', error: 'badImage' };
+    } catch (err) {
+      return { dataUrl: '', error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+    }
+  })();
+
+  internetThumbnailCache.set(key, pending);
+  while (internetThumbnailCache.size > INTERNET_THUMBNAIL_CACHE_SIZE) {
+    internetThumbnailCache.delete(internetThumbnailCache.keys().next().value);
+  }
+  const result = await pending;
+  if (result.error) internetThumbnailCache.delete(key);
+  return result;
+}
+
+// Chromium is challenged by Danbooru's CDN even when the API request succeeds.
+// Fetch only validated preview URLs in main and return a small data URL to renderer.
+ipcMain.handle('internet-thumbnail', (e, item) => fetchInternetThumbnail(item));
 
 // Download a normalized provider item into the local pool. The renderer cannot
 // turn this into an arbitrary downloader: provider and CDN host must match.
@@ -1897,7 +1942,6 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
-  app.userAgentFallback = INTERNET_USER_AGENT;
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   loadConfig();
   _cloudToken = loadStoredToken(); // restore a previous Lumina Cloud session (validated on first use)

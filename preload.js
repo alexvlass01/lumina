@@ -51,6 +51,7 @@ contextBridge.exposeInMainWorld('api', {
   // Internet (онлайн-обои)
   internetStatus: () => ipcRenderer.invoke('internet-status'),
   internetSearch: (opts) => ipcRenderer.invoke('internet-search', opts),
+  internetThumbnail: (item) => ipcRenderer.invoke('internet-thumbnail', item),
   internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),

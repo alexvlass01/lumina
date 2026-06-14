@@ -22,6 +22,16 @@ ok('allowedDownloadUrl: accepts only the provider CDN', (() => {
     && O.allowedDownloadUrl({ provider: 'danbooru', full: 'https://cdn.donmai.us/original/a.jpg' })
     && !O.allowedDownloadUrl({ provider: 'danbooru', full: 'https://example.com/a.jpg' });
 })());
+ok('allowedThumbnailUrl: accepts only Danbooru CDN previews', (() => {
+  return O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://cdn.donmai.us/180x180/a.jpg' })
+    && !O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://example.com/a.jpg' })
+    && !O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://cdn.donmai.us:444/180x180/a.jpg' })
+    && !O.allowedThumbnailUrl({ provider: 'wallhaven', thumb: 'https://cdn.donmai.us/180x180/a.jpg' });
+})());
+ok('thumbnailDataUrl: accepts supported images and rejects HTML', (() => {
+  const dataUrl = O.thumbnailDataUrl(Buffer.from('image'), 'image/jpeg; charset=binary');
+  return dataUrl === 'data:image/jpeg;base64,aW1hZ2U=' && O.thumbnailDataUrl(Buffer.from('nope'), 'text/html') === '';
+})());
 ok('allowedPageUrl: accepts only the provider post site', (() => {
   return O.allowedPageUrl({ provider: 'wallhaven', page: 'https://wallhaven.cc/w/abc123' })
     && O.allowedPageUrl({ provider: 'danbooru', page: 'https://danbooru.donmai.us/posts/123' })
