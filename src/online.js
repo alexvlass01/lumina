@@ -127,36 +127,6 @@ function mergeSearchResults(results, page = 1) {
   };
 }
 
-function combineProviderPages(pages) {
-  const providers = new Map();
-  for (const page of Array.isArray(pages) ? pages : []) {
-    for (const result of Array.isArray(page) ? page : []) {
-      if (!result || !result.provider) continue;
-      let combined = providers.get(result.provider);
-      if (!combined) {
-        combined = { provider: result.provider, items: [], meta: {}, error: null, _succeeded: false };
-        providers.set(result.provider, combined);
-      }
-      if (!result.error) {
-        combined.items.push(...(Array.isArray(result.items) ? result.items : []));
-        combined.meta = result.meta || {};
-        combined.error = null;
-        combined._succeeded = true;
-      } else if (!combined._succeeded) {
-        combined.error = result.error;
-      }
-    }
-  }
-  return [...providers.values()].map(({ _succeeded, ...result }) => result);
-}
-
-function shouldFillInitialSearch(result, startPage, currentPage, target = 40, maxPages = 3) {
-  if (!result || result.error) return false;
-  const count = Array.isArray(result.items) ? result.items.length : 0;
-  const consumed = Math.max(1, Number(currentPage) - Number(startPage) + 1);
-  return count < target && result.meta && result.meta.hasMore === true && consumed < maxPages;
-}
-
 module.exports = {
   canonicalUrl,
   itemKeys,
@@ -168,6 +138,4 @@ module.exports = {
   interleave,
   resultHasMore,
   mergeSearchResults,
-  combineProviderPages,
-  shouldFillInitialSearch,
 };

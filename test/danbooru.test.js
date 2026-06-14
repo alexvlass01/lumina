@@ -52,5 +52,7 @@ ok('parseSearch: junk is empty and final', (() => {
   const result = D.parseSearch(null, { page: 1, limit: 24 });
   return result.items.length === 0 && result.meta.hasMore === false;
 })());
+const hundredUrl = D.buildSearchUrl({ q: '1girl', purity: { sfw: false, sketchy: false, nsfw: true }, page: 1, limit: 100 });
+ok('buildSearchUrl: supports 100 results in one request', new URL(hundredUrl).searchParams.get('limit') === '100');
 
 console.log('\nAll ' + passed + ' danbooru tests passed.');

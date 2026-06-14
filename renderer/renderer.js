@@ -2234,21 +2234,12 @@ async function doInternetSearch(reset) {
   const grid = $('#whGrid');
   if (note) note.textContent = t('online.loading');
   let res;
-  try {
-    res = await window.api.internetSearch({
-      q: INTERNET.q,
-      sort: INTERNET.sort,
-      purity: INTERNET.purity,
-      page: INTERNET.page,
-      fillInitial: !!reset,
-    });
-  }
+  try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, page: INTERNET.page }); }
   catch (err) { res = { error: 'network' }; }
   INTERNET.searched = true;
   INTERNET.nsfwAvailable = !!res.nsfwAvailable;
   updatePurityToggle();
   if (res.error) { if (note) note.textContent = t('online.error', { e: res.error }); return; }
-  INTERNET.page = (res.meta && res.meta.currentPage) || INTERNET.page;
   INTERNET.lastPage = (res.meta && res.meta.lastPage) || INTERNET.page;
   if (reset && grid) grid.innerHTML = '';
   (res.items || []).forEach((it) => grid.appendChild(buildInternetCard(it)));
