@@ -1497,6 +1497,8 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
 // ---- Internet providers: Wallhaven + Danbooru, one mixed result grid ----
 
 const INTERNET_PAGE_SIZE = 24;
+const INTERNET_INITIAL_TARGET = 40;
+const INTERNET_MAX_AUTO_PAGES = 3;
 const INTERNET_USER_AGENT = `Lumina/${app.getVersion()} (https://github.com/alexvlass01/lumina)`;
 const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const INTERNET_THUMBNAIL_CACHE_SIZE = 200;
@@ -1561,10 +1563,32 @@ async function searchDanbooruProvider(opts) {
 
 ipcMain.handle('internet-search', async (e, opts) => {
   const o = opts || {};
-  const page = Number(o.page) > 0 ? Number(o.page) : 1;
-  const results = await Promise.all([searchWallhavenProvider(o), searchDanbooruProvider(o)]);
+  const startPage = Number(o.page) > 0 ? Number(o.page) : 1;
+  let currentPage = startPage;
+  const pages = [];
+  let merged;
+  do {
+    const pageOpts = { ...o, page: currentPage };
+    pages.push(await Promise.all([searchWallhavenProvider(pageOpts), searchDanbooruProvider(pageOpts)]));
+    merged = online.mergeSearchResults(online.combineProviderPages(pages), currentPage);
+    if (!o.fillInitial || !online.shouldFillInitialSearch(
+      merged,
+      startPage,
+      currentPage,
+      INTERNET_INITIAL_TARGET,
+      INTERNET_MAX_AUTO_PAGES,
+    )) break;
+    currentPage++;
+  } while (true);
+
   return {
-    ...online.mergeSearchResults(results, page),
+    ...merged,
+    meta: {
+      ...merged.meta,
+      currentPage,
+      lastPage: merged.meta.hasMore ? currentPage + 1 : currentPage,
+      consumedPages: currentPage - startPage + 1,
+    },
     hasKey: !!wallhavenKey(),
     nsfwAvailable: true,
   };

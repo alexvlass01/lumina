@@ -52,5 +52,28 @@ ok('merge: Danbooru optimistic page keeps Show more visible', (() => {
   const result = O.mergeSearchResults([{ provider: 'd', items: [], meta: { hasMore: true }, error: null }], 5);
   return result.meta.lastPage === 6 && result.meta.hasMore;
 })());
+ok('combineProviderPages: joins provider items across fetched pages', (() => {
+  const combined = O.combineProviderPages([
+    [{ provider: 'wallhaven', items: [item('w1', 'w')], meta: { currentPage: 1 }, error: null }],
+    [{ provider: 'wallhaven', items: [item('w2', 'w')], meta: { currentPage: 2 }, error: null }],
+  ]);
+  return combined.length === 1 && combined[0].items.map((x) => x.id).join(',') === 'w1,w2'
+    && combined[0].meta.currentPage === 2;
+})());
+ok('combineProviderPages: later failure keeps earlier successful page', (() => {
+  const combined = O.combineProviderPages([
+    [{ provider: 'danbooru', items: [item('d1', 'd')], meta: { hasMore: true }, error: null }],
+    [{ provider: 'danbooru', items: [], meta: {}, error: '429' }],
+  ]);
+  return combined[0].error === null && combined[0].items.length === 1 && combined[0].meta.hasMore === true;
+})());
+ok('shouldFillInitialSearch: fills a short first batch only while more pages exist', (() => {
+  const short = { items: Array(12).fill({}), meta: { hasMore: true }, error: null };
+  const full = { items: Array(40).fill({}), meta: { hasMore: true }, error: null };
+  return O.shouldFillInitialSearch(short, 1, 1)
+    && !O.shouldFillInitialSearch(full, 1, 1)
+    && !O.shouldFillInitialSearch(short, 1, 3)
+    && !O.shouldFillInitialSearch({ ...short, meta: { hasMore: false } }, 1, 1);
+})());
 
 console.log('\nAll ' + passed + ' online provider tests passed.');
