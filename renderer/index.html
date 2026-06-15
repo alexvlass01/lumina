@@ -489,9 +489,9 @@
           </div>
 
           <div class="lib-online" id="libOnline" hidden>
-            <!-- Cloud C2: content source selector. Either/both may be active. "Интернет" =
-                 existing external search; "Lumina" = the cloud catalog (placeholder until C3). -->
-            <div class="lib-source-bar" id="libSourceBar">
+            <!-- Either or both online sources may be active. -->
+            <div class="lib-toolbar lib-online-toolbar" id="libSourceBar">
+              <span class="lib-online-toolbar-label" data-i18n="online.sourcesLabel">Источники</span>
               <button class="lib-source-chip" id="srcLumina" type="button" data-source="lumina" aria-pressed="false">
                 <svg class="lib-source-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M4.4 12.5a2.9 2.9 0 0 1-.3-5.78A3.4 3.4 0 0 1 10.5 5.6a2.6 2.6 0 0 1 .5 6.9z"/></svg>
                 <span data-i18n="online.sourceLumina">Lumina</span>
@@ -504,9 +504,15 @@
 
             <!-- Lumina cloud panel: capability state (coming-soon) when unavailable,
                  or the real catalog (C3) when staging/production. -->
-            <div class="lib-cloud" id="libCloud" hidden>
-              <div class="lib-cloud-account" id="libCloudAccount" hidden></div>
-              <div class="lib-cloud-toolbar" id="libCloudToolbar" hidden>
+            <section class="lib-cloud lib-online-section" id="libCloud" hidden>
+              <div class="lib-online-section-head">
+                <div>
+                  <h3 data-i18n="online.sourceLumina">Lumina</h3>
+                  <p data-i18n="online.luminaSectionHint">Каталог Lumina и избранное аккаунта</p>
+                </div>
+                <div class="lib-cloud-account" id="libCloudAccount" hidden></div>
+              </div>
+              <div class="lib-toolbar lib-cloud-toolbar" id="libCloudToolbar" hidden>
                 <div class="lib-cloud-views" id="libCloudViews" hidden>
                   <button class="lib-source-chip active" id="cloudViewCatalog" type="button" data-view="catalog" aria-pressed="true">
                     <span data-i18n="online.viewCatalog">Каталог</span>
@@ -528,14 +534,20 @@
               <div class="lib-online-more">
                 <button class="pill" id="cloudMore" hidden data-i18n="online.more">Показать ещё</button>
               </div>
-            </div>
+            </section>
 
-            <div class="lib-internet" id="libInternet">
-            <div class="lib-toolbar">
-              <label class="lib-searchbox">
+            <section class="lib-internet lib-online-section" id="libInternet">
+              <div class="lib-online-section-head">
+                <div>
+                  <h3 data-i18n="online.sourceInternet">Интернет</h3>
+                  <p data-i18n="online.internetSectionHint">Поиск обоев по тегам во внешних каталогах</p>
+                </div>
+              </div>
+              <div class="lib-toolbar">
+                <label class="lib-searchbox">
                 <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
                 <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" />
-              </label>
+                </label>
               <div class="select-wrap">
                 <select id="whSort">
                   <option value="date_added" data-i18n="online.sortLatest">Новые</option>
@@ -546,19 +558,19 @@
               </div>
               <button class="pill icon-only" id="whFilterToggle" data-i18n-title="online.filterToggle" title="Фильтры контента"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-top:-1px"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg></button>
               <button class="pill suggested" id="whSearch" data-i18n="online.search">Найти</button>
-            </div>
-            <div class="lib-filters-row" id="whFiltersRow" hidden>
+              </div>
+              <div class="lib-filters-row" id="whFiltersRow" hidden>
               <span class="lib-filters-label" data-i18n="online.purityLabel">Допуск контента:</span>
               <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sfw"> SFW</label>
               <label class="lib-filter-label"><input type="checkbox" class="wh-purity-cb" data-purity="sketchy"> Sketchy</label>
               <label class="lib-filter-label" id="lblPurityNsfw" data-i18n-title="online.nsfwNeedsKey" title="18+ (нужен ключ)"><input type="checkbox" class="wh-purity-cb" data-purity="nsfw"> NSFW</label>
-            </div>
-            <div class="lib-online-note" id="whNote"></div>
-            <div class="lib-grid" id="whGrid"></div>
-            <div class="lib-online-more">
-              <button class="pill" id="whMore" hidden data-i18n="online.more">Показать ещё</button>
-            </div>
-            </div><!-- /#libInternet -->
+              </div>
+              <div class="lib-online-note" id="whNote"></div>
+              <div class="lib-grid" id="whGrid"></div>
+              <div class="lib-online-more">
+                <button class="pill" id="whMore" hidden data-i18n="online.more">Показать ещё</button>
+              </div>
+            </section><!-- /#libInternet -->
           </div>
         </div>
       </div>
