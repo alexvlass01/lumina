@@ -14,6 +14,7 @@ const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онл�
 const gelbooru = require('./src/gelbooru'); // Gelbooru: основной booru-провайдер
 const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
 const online = require('./src/online'); // смешивание и дедуп результатов внешних провайдеров
+const tagSuggest = require('./src/tag-suggest'); // anonymous Gelbooru tag autocomplete
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
@@ -1525,7 +1526,9 @@ const DANBOORU_PAGE_SIZE = 100;
 const INTERNET_USER_AGENT = `Lumina/${app.getVersion()} (https://github.com/alexvlass01/lumina)`;
 const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const INTERNET_THUMBNAIL_CACHE_SIZE = 200;
+const INTERNET_TAG_SUGGEST_CACHE_SIZE = 200;
 const internetThumbnailCache = new Map();
+const internetTagSuggestCache = new Map();
 
 ipcMain.handle('internet-status', () => ({
   hasKey: !!wallhavenKey(),
@@ -1534,6 +1537,44 @@ ipcMain.handle('internet-status', () => ({
   // no bundled API key.
   nsfwAvailable: true,
 }));
+
+async function fetchInternetTagSuggestions(opts) {
+  const prefix = tagSuggest.normalizeTagPrefix(opts && opts.q);
+  if (prefix.length < tagSuggest.MIN_PREFIX_LEN) return { items: [], error: null };
+
+  const limit = tagSuggest.clampLimit(opts && opts.limit);
+  const cacheKey = `${prefix}|${limit}`;
+  if (internetTagSuggestCache.has(cacheKey)) {
+    const cached = internetTagSuggestCache.get(cacheKey);
+    internetTagSuggestCache.delete(cacheKey);
+    internetTagSuggestCache.set(cacheKey, cached);
+    return cached;
+  }
+
+  const url = tagSuggest.buildGelbooruTagSuggestUrl({ q: prefix, limit });
+  try {
+    const res = await fetch(url, {
+      headers: { 'User-Agent': INTERNET_USER_AGENT },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res.ok) return { items: [], error: String(res.status) };
+    const json = await res.json();
+    const result = {
+      items: tagSuggest.parseGelbooruTagSuggestions(json, { prefix, limit }),
+      error: null,
+    };
+    internetTagSuggestCache.set(cacheKey, result);
+    while (internetTagSuggestCache.size > INTERNET_TAG_SUGGEST_CACHE_SIZE) {
+      internetTagSuggestCache.delete(internetTagSuggestCache.keys().next().value);
+    }
+    return result;
+  } catch (err) {
+    console.error('gelbooru tag suggest:', err);
+    return { items: [], error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+  }
+}
+
+ipcMain.handle('internet-tag-suggest', (e, opts) => fetchInternetTagSuggestions(opts));
 
 async function searchWallhavenProvider(opts) {
   const o = opts || {};

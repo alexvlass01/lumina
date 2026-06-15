@@ -570,10 +570,13 @@
                 </div>
               </div>
               <div class="lib-toolbar">
-                <label class="lib-searchbox">
-                <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
-                <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" />
-                </label>
+                <div class="lib-search-wrap">
+                  <label class="lib-searchbox" for="whQuery">
+                    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+                    <input type="search" id="whQuery" class="lib-search" placeholder="Теги: nature, space…" data-i18n-ph="online.searchPh" autocomplete="off" aria-autocomplete="list" aria-expanded="false" aria-controls="whSuggest" />
+                  </label>
+                  <div class="online-tag-suggest" id="whSuggest" role="listbox" hidden></div>
+                </div>
               <div class="select-wrap">
                 <select id="whSort">
                   <option value="date_added" data-i18n="online.sortLatest">Новые</option>

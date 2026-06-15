@@ -113,6 +113,17 @@ if (!window.api) {
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
     internetStatus: async () => ({ hasKey: false, bundled: false, nsfwAvailable: true }),
     internetSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false, nsfwAvailable: true }),
+    internetTagSuggest: async (opts) => {
+      const q = String(opts && opts.q || '').toLowerCase();
+      const items = [
+        { name: 'blue_hair', count: 450000, category: 'general' },
+        { name: 'blue_eyes', count: 390000, category: 'general' },
+        { name: 'blue_archive', count: 90000, category: 'copyright' },
+        { name: 'landscape', count: 70000, category: 'general' },
+        { name: 'night_sky', count: 42000, category: 'general' },
+      ].filter((it) => it.name.startsWith(q)).slice(0, (opts && opts.limit) || 10);
+      return { items, error: null };
+    },
     internetThumbnail: async (item) => ({ dataUrl: item && String(item.thumb || '').startsWith('data:') ? item.thumb : '', error: null }),
     internetAdd: async () => ({ config: mock, error: null }),
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
@@ -701,6 +712,9 @@ let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
 let justifiedFrame = 0;
 const justifiedPending = new Set();
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
+const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
+const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
+const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
 // Cloud C3: Lumina catalog paging state. Re-fetched on each entry to the Online tab
@@ -1748,9 +1762,22 @@ function initLibrary() {
 
   // External online providers. The wh* DOM ids are retained for compatibility.
   const whSearchBtn = $('#whSearch');
-  if (whSearchBtn) whSearchBtn.addEventListener('click', () => doInternetSearch(true));
+  if (whSearchBtn) whSearchBtn.addEventListener('click', () => { hideOnlineTagSuggest(); doInternetSearch(true); });
   const whQ = $('#whQuery');
-  if (whQ) whQ.addEventListener('keydown', (e) => { if (e.key === 'Enter') doInternetSearch(true); });
+  const whSuggest = $('#whSuggest');
+  if (whSuggest) whSuggest.addEventListener('mousedown', (e) => e.preventDefault());
+  if (whQ) {
+    whQ.addEventListener('input', scheduleOnlineTagSuggest);
+    whQ.addEventListener('focus', scheduleOnlineTagSuggest);
+    whQ.addEventListener('blur', () => setTimeout(hideOnlineTagSuggest, 120));
+    whQ.addEventListener('keydown', (e) => {
+      if (handleOnlineTagSuggestKeydown(e)) return;
+      if (e.key === 'Enter') {
+        hideOnlineTagSuggest();
+        doInternetSearch(true);
+      }
+    });
+  }
   const whSortEl = $('#whSort');
   if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; if (INTERNET.searched) doInternetSearch(true); });
   const whFilterToggle = $('#whFilterToggle');
@@ -1831,6 +1858,206 @@ function updatePurityToggle() {
   });
 }
 
+function onlineTagToken(input) {
+  if (!input) return null;
+  const value = String(input.value || '');
+  const caret = Number.isFinite(input.selectionStart) ? input.selectionStart : value.length;
+  const pos = Math.max(0, Math.min(value.length, caret));
+  let start = pos;
+  while (start > 0 && !/[\s,]/.test(value[start - 1])) start -= 1;
+  let end = pos;
+  while (end < value.length && !/[\s,]/.test(value[end])) end += 1;
+  const raw = value.slice(start, end);
+  const prefix = raw
+    .trim()
+    .toLowerCase()
+    .replace(/^[-~]+/, '')
+    .replace(/\s+/g, '_')
+    .replace(/[^a-z0-9_()]+/g, '');
+  return { start, end, raw, prefix };
+}
+
+function onlineTagSuggestAllowed(token) {
+  return !!(token
+    && token.prefix.length >= INTERNET_TAG_SUGGEST_MIN_LEN
+    && !token.raw.includes(':'));
+}
+
+function compactOnlineTagCount(value) {
+  const n = Number(value) || 0;
+  if (!n) return '';
+  try {
+    return new Intl.NumberFormat(document.documentElement.lang || undefined, {
+      notation: 'compact',
+      maximumFractionDigits: 1,
+    }).format(n);
+  } catch {
+    return String(n);
+  }
+}
+
+function hideOnlineTagSuggest() {
+  const box = $('#whSuggest');
+  const input = $('#whQuery');
+  INTERNET_TAG_SUGGEST.seq += 1;
+  clearTimeout(INTERNET_TAG_SUGGEST.timer);
+  INTERNET_TAG_SUGGEST.items = [];
+  INTERNET_TAG_SUGGEST.index = -1;
+  INTERNET_TAG_SUGGEST.token = null;
+  if (box) {
+    box.innerHTML = '';
+    box.hidden = true;
+  }
+  if (input) {
+    input.setAttribute('aria-expanded', 'false');
+    input.removeAttribute('aria-activedescendant');
+  }
+}
+
+function setOnlineTagSuggestIndex(index) {
+  const box = $('#whSuggest');
+  const input = $('#whQuery');
+  const items = INTERNET_TAG_SUGGEST.items;
+  if (!box || !items.length) return;
+  const next = ((index % items.length) + items.length) % items.length;
+  INTERNET_TAG_SUGGEST.index = next;
+  Array.from(box.children).forEach((el, i) => {
+    const selected = i === next;
+    el.classList.toggle('active', selected);
+    el.setAttribute('aria-selected', selected ? 'true' : 'false');
+    if (selected) {
+      el.scrollIntoView({ block: 'nearest' });
+      if (input) input.setAttribute('aria-activedescendant', el.id);
+    }
+  });
+}
+
+function renderOnlineTagSuggest(items, token) {
+  const box = $('#whSuggest');
+  const input = $('#whQuery');
+  if (!box || !input || !items || !items.length) {
+    hideOnlineTagSuggest();
+    return;
+  }
+
+  INTERNET_TAG_SUGGEST.items = items;
+  INTERNET_TAG_SUGGEST.token = token;
+  INTERNET_TAG_SUGGEST.index = 0;
+  box.innerHTML = '';
+  items.forEach((item, index) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'online-tag-sug';
+    btn.id = `whSuggestOpt${index}`;
+    btn.setAttribute('role', 'option');
+    btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
+    if (index === 0) btn.classList.add('active');
+
+    const name = document.createElement('span');
+    name.className = 'online-tag-name';
+    name.textContent = item.name;
+    const meta = document.createElement('span');
+    meta.className = 'online-tag-meta';
+    const count = compactOnlineTagCount(item.count);
+    meta.textContent = [count, item.category].filter(Boolean).join(' · ');
+    btn.append(name, meta);
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      applyOnlineTagSuggestion(item);
+    });
+    box.appendChild(btn);
+  });
+  input.setAttribute('aria-expanded', 'true');
+  input.setAttribute('aria-activedescendant', 'whSuggestOpt0');
+  box.hidden = false;
+}
+
+async function loadOnlineTagSuggestions(token) {
+  if (!onlineTagSuggestAllowed(token)) {
+    hideOnlineTagSuggest();
+    return;
+  }
+  const key = token.prefix;
+  if (INTERNET_TAG_SUGGEST.cache.has(key)) {
+    renderOnlineTagSuggest(INTERNET_TAG_SUGGEST.cache.get(key), token);
+    return;
+  }
+
+  const seq = ++INTERNET_TAG_SUGGEST.seq;
+  let res;
+  try { res = await window.api.internetTagSuggest({ q: token.prefix, limit: 10 }); }
+  catch { res = { items: [] }; }
+  if (seq !== INTERNET_TAG_SUGGEST.seq) return;
+  const items = (res && Array.isArray(res.items)) ? res.items : [];
+  INTERNET_TAG_SUGGEST.cache.set(key, items);
+  renderOnlineTagSuggest(items, token);
+}
+
+function scheduleOnlineTagSuggest() {
+  const input = $('#whQuery');
+  const token = onlineTagToken(input);
+  clearTimeout(INTERNET_TAG_SUGGEST.timer);
+  if (!onlineTagSuggestAllowed(token)) {
+    hideOnlineTagSuggest();
+    return;
+  }
+  if (INTERNET_TAG_SUGGEST.cache.has(token.prefix)) {
+    renderOnlineTagSuggest(INTERNET_TAG_SUGGEST.cache.get(token.prefix), token);
+    return;
+  }
+  INTERNET_TAG_SUGGEST.timer = setTimeout(() => loadOnlineTagSuggestions(token), INTERNET_TAG_SUGGEST_DEBOUNCE_MS);
+}
+
+function applyOnlineTagSuggestion(item) {
+  const input = $('#whQuery');
+  const token = onlineTagToken(input);
+  if (!input || !token || !item || !item.name) return;
+
+  const value = String(input.value || '');
+  const marker = token.raw.startsWith('-') || token.raw.startsWith('~') ? token.raw[0] : '';
+  const before = value.slice(0, token.start);
+  let after = value.slice(token.end);
+  let inserted = marker + item.name;
+  if (!after) inserted += ' ';
+  else if (!/^[\s,]/.test(after)) after = ` ${after}`;
+  input.value = before + inserted + after;
+  const caret = (before + inserted).length;
+  input.setSelectionRange(caret, caret);
+  hideOnlineTagSuggest();
+  input.focus();
+}
+
+function handleOnlineTagSuggestKeydown(e) {
+  const box = $('#whSuggest');
+  const open = !!(box && !box.hidden && INTERNET_TAG_SUGGEST.items.length);
+  if (!open) {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') scheduleOnlineTagSuggest();
+    return false;
+  }
+  if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    setOnlineTagSuggestIndex(INTERNET_TAG_SUGGEST.index + 1);
+    return true;
+  }
+  if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    setOnlineTagSuggestIndex(INTERNET_TAG_SUGGEST.index - 1);
+    return true;
+  }
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const item = INTERNET_TAG_SUGGEST.items[INTERNET_TAG_SUGGEST.index] || INTERNET_TAG_SUGGEST.items[0];
+    applyOnlineTagSuggestion(item);
+    return true;
+  }
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    hideOnlineTagSuggest();
+    return true;
+  }
+  return false;
+}
+
 // Active online content sources (Cloud C2). Defaults to external-only and never
 // returns both off, so the Online tab is never empty.
 function onlineSources() {
@@ -1857,6 +2084,7 @@ function applyOnlineSourceUI(sources) {
   const cloud = $('#libCloud'), internet = $('#libInternet');
   if (cloud) cloud.hidden = !sources.lumina;
   if (internet) internet.hidden = !sources.internet;
+  if (!sources.internet) hideOnlineTagSuggest();
 }
 
 // --- Cloud account (C4) ---
@@ -2232,6 +2460,7 @@ function toggleOnlineSource(key) {
 }
 
 async function doInternetSearch(reset) {
+  hideOnlineTagSuggest();
   const qEl = $('#whQuery');
   INTERNET.q = (qEl && qEl.value || '').trim();
   if (reset) INTERNET.page = 1;
