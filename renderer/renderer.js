@@ -2677,6 +2677,93 @@ function renderHome() {
   sizeHomeDisplays(visibleMonitors);
   updateHomeInfo();
   updateHomeBackdrop();
+  renderHomeRecent();
+}
+
+const HOME_RECENT_LIMIT = 5;
+let homeRecentRenderVersion = 0;
+
+function homeRecentItems() {
+  return Object.values((config && config.library) || {})
+    .filter((item) => item && item.type === 'image' && item.path)
+    .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
+    .slice(0, HOME_RECENT_LIMIT);
+}
+
+function homeRecentLabel(item) {
+  const file = baseName(item.path).replace(/\.[^.]+$/, '');
+  if (!/^wp-[a-f0-9]{16}$/i.test(file)) return file;
+  if (item.author) return item.author;
+  const tag = Array.isArray(item.tags) ? item.tags.find(Boolean) : '';
+  return tag ? String(tag).replace(/_/g, ' ') : t('home.recentWallpaper');
+}
+
+function homeRecentDate(timestamp) {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value) || value <= 0) return t('home.recentWallpaper');
+  try {
+    return new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
+      day: 'numeric', month: 'short', year: new Date(value).getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
+    }).format(new Date(value));
+  } catch { return t('home.recentWallpaper'); }
+}
+
+function openRecentLibrary() {
+  closeLibPopup();
+  clearSelection();
+  LIB.filter = 'all';
+  LIB.sort = 'added';
+  LIB.q = '';
+  exitFolderState();
+  const search = $('#libSearch'); if (search) search.value = '';
+  const sort = $('#libSort'); if (sort) sort.value = 'added';
+  showPage('library');
+  const page = document.querySelector('.page');
+  if (page) page.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function renderHomeRecent() {
+  const grid = $('#homeRecentGrid');
+  const empty = $('#homeRecentEmpty');
+  const all = $('#homeRecentAll');
+  if (!grid || !empty || !all) return;
+  const version = ++homeRecentRenderVersion;
+  const items = homeRecentItems();
+  grid.innerHTML = '';
+  grid.hidden = items.length === 0;
+  empty.hidden = items.length > 0;
+  all.hidden = items.length === 0;
+
+  items.forEach((item) => {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'home-recent-card';
+    card.title = t('home.recentAssignHint');
+
+    const preview = document.createElement('span');
+    preview.className = 'home-recent-preview';
+    const placeholder = document.createElement('span');
+    placeholder.className = 'home-recent-placeholder';
+    placeholder.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m5.5 17 4-4.5 3 3 2.4-2.5 3.6 4"/><circle cx="15.5" cy="8.5" r="1.5"/></svg>';
+    preview.appendChild(placeholder);
+
+    const copy = document.createElement('span');
+    copy.className = 'home-recent-copy';
+    const title = document.createElement('strong');
+    title.textContent = homeRecentLabel(item);
+    const date = document.createElement('small');
+    date.textContent = homeRecentDate(item.addedAt);
+    copy.append(title, date);
+    card.append(preview, copy);
+    card.addEventListener('click', () => openAssignMenu(item, card));
+    grid.appendChild(card);
+
+    window.api.thumb(item.path, 360, 220).then((url) => {
+      if (version !== homeRecentRenderVersion || !card.isConnected || !url) return;
+      preview.style.backgroundImage = `url("${url}")`;
+      preview.classList.add('loaded');
+    }).catch(() => {});
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2748,6 +2835,21 @@ async function init() {
       toast(t('toast.nextWallpaper'));
     } finally {
       setTimeout(() => { renderHome(); renderPreviews(); }, 350);
+    }
+  });
+
+  const recentAll = $('#homeRecentAll');
+  if (recentAll) recentAll.addEventListener('click', openRecentLibrary);
+  const recentAdd = $('#homeRecentAdd');
+  if (recentAdd) recentAdd.addEventListener('click', async () => {
+    recentAdd.disabled = true;
+    try {
+      const res = await window.api.libraryAddImages();
+      config = (res && res.config) || config;
+      renderHome();
+      if (res && res.added > 0) toast(t('toast.photosAdded', { n: res.added }));
+    } finally {
+      recentAdd.disabled = false;
     }
   });
 

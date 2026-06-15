@@ -90,7 +90,15 @@
     "monitorSingle": "Монітор {n}",
     "monitorPages": "Сторінки моніторів",
     "pageLabel": "Сторінка моніторів {n}",
-    "monitorDetails": "Показати відомості про монітор {n}"
+    "monitorDetails": "Показати відомості про монітор {n}",
+    "recentTitle": "Нещодавно додані",
+    "recentSubtitle": "Останні зображення з вашої Бібліотеки",
+    "recentAll": "Показати всі",
+    "recentEmpty": "Тут з’являться нові шпалери",
+    "recentEmptyHint": "Додайте зображення з комп’ютера або онлайн-каталогу",
+    "recentAdd": "Додати фото…",
+    "recentWallpaper": "Шпалери",
+    "recentAssignHint": "Призначити ці шпалери"
   },
   "status": {
     "autoSwitch": "Автозміна під час перемикання теми",

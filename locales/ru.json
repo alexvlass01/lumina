@@ -90,7 +90,15 @@
     "monitorSingle": "Монитор {n}",
     "monitorPages": "Страницы мониторов",
     "pageLabel": "Страница мониторов {n}",
-    "monitorDetails": "Показать сведения о мониторе {n}"
+    "monitorDetails": "Показать сведения о мониторе {n}",
+    "recentTitle": "Недавно добавленные",
+    "recentSubtitle": "Последние изображения из вашей Библиотеки",
+    "recentAll": "Показать все",
+    "recentEmpty": "Здесь появятся новые обои",
+    "recentEmptyHint": "Добавьте изображения с компьютера или из онлайн-каталога",
+    "recentAdd": "Добавить фото…",
+    "recentWallpaper": "Обои",
+    "recentAssignHint": "Назначить эти обои"
   },
   "status": {
     "autoSwitch": "Автосмена при переключении темы",

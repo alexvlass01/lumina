@@ -90,7 +90,15 @@
     "monitorSingle": "Monitor {n}",
     "monitorPages": "Monitor pages",
     "pageLabel": "Monitor page {n}",
-    "monitorDetails": "Show details for monitor {n}"
+    "monitorDetails": "Show details for monitor {n}",
+    "recentTitle": "Recently added",
+    "recentSubtitle": "The latest images from your Library",
+    "recentAll": "Show all",
+    "recentEmpty": "New wallpapers will appear here",
+    "recentEmptyHint": "Add images from your computer or the online catalog",
+    "recentAdd": "Add photos…",
+    "recentWallpaper": "Wallpaper",
+    "recentAssignHint": "Assign this wallpaper"
   },
   "status": {
     "autoSwitch": "Auto-switch on theme change",
