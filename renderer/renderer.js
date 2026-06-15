@@ -2262,7 +2262,7 @@ function internetAlreadyAdded(item) {
 
 function setInternetCardThumbnail(card, item) {
   if (!item.thumb) return;
-  if (item.provider !== 'danbooru') {
+  if (item.provider === 'wallhaven') {
     card.style.backgroundImage = `url("${item.thumb}")`;
     return;
   }

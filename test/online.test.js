@@ -20,10 +20,14 @@ ok('interleave: deduplicates matching original sources', (() => {
 ok('allowedDownloadUrl: accepts only the provider CDN', (() => {
   return O.allowedDownloadUrl({ provider: 'wallhaven', full: 'https://w.wallhaven.cc/full/a.jpg' })
     && O.allowedDownloadUrl({ provider: 'danbooru', full: 'https://cdn.donmai.us/original/a.jpg' })
+    && O.allowedDownloadUrl({ provider: 'gelbooru', full: 'https://img4.gelbooru.com/images/a.jpg' })
+    && !O.allowedDownloadUrl({ provider: 'gelbooru', full: 'https://gelbooru.com/images/a.jpg' })
     && !O.allowedDownloadUrl({ provider: 'danbooru', full: 'https://example.com/a.jpg' });
 })());
-ok('allowedThumbnailUrl: accepts only Danbooru CDN previews', (() => {
+ok('allowedThumbnailUrl: accepts only booru CDN previews', (() => {
   return O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://cdn.donmai.us/180x180/a.jpg' })
+    && O.allowedThumbnailUrl({ provider: 'gelbooru', thumb: 'https://img3.gelbooru.com/thumbnails/a.jpg' })
+    && !O.allowedThumbnailUrl({ provider: 'gelbooru', thumb: 'https://example.com/a.jpg' })
     && !O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://example.com/a.jpg' })
     && !O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://cdn.donmai.us:444/180x180/a.jpg' })
     && !O.allowedThumbnailUrl({ provider: 'wallhaven', thumb: 'https://cdn.donmai.us/180x180/a.jpg' });
@@ -35,6 +39,7 @@ ok('thumbnailDataUrl: accepts supported images and rejects HTML', (() => {
 ok('allowedPageUrl: accepts only the provider post site', (() => {
   return O.allowedPageUrl({ provider: 'wallhaven', page: 'https://wallhaven.cc/w/abc123' })
     && O.allowedPageUrl({ provider: 'danbooru', page: 'https://danbooru.donmai.us/posts/123' })
+    && O.allowedPageUrl({ provider: 'gelbooru', page: 'https://gelbooru.com/index.php?page=post&s=view&id=123' })
     && !O.allowedPageUrl({ provider: 'wallhaven', page: 'https://example.com/w/abc123' });
 })());
 ok('merge: one failed provider does not fail the search', (() => {
@@ -51,5 +56,20 @@ ok('merge: both failures are reported', (() => {
 ok('merge: Danbooru optimistic page keeps Show more visible', (() => {
   const result = O.mergeSearchResults([{ provider: 'd', items: [], meta: { hasMore: true }, error: null }], 5);
   return result.meta.lastPage === 6 && result.meta.hasMore;
+})());
+ok('fallback: successful primary is kept', (() => {
+  const primary = { provider: 'gelbooru', items: [item('g1', 'g')], error: null };
+  return O.resolveFallback(primary, { provider: 'danbooru', items: [item('d1', 'd')], error: null }) === primary;
+})());
+ok('fallback: Danbooru replaces a failed Gelbooru request', (() => {
+  const result = O.resolveFallback(
+    { provider: 'gelbooru', items: [], error: '429' },
+    { provider: 'danbooru', items: [item('d1', 'd')], meta: { hasMore: true }, error: null },
+  );
+  return result.provider === 'danbooru' && result.items.length === 1 && result.fallbackFrom === 'gelbooru' && result.fallbackReason === '429';
+})());
+ok('fallback: both provider errors are retained', (() => {
+  const result = O.resolveFallback({ provider: 'gelbooru', error: 'timeout' }, { provider: 'danbooru', error: '429' });
+  return result.provider === 'gelbooru' && result.error.includes('timeout') && result.error.includes('429');
 })());
 console.log('\nAll ' + passed + ' online provider tests passed.');

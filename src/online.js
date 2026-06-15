@@ -2,6 +2,10 @@
 
 const THUMBNAIL_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
+function isGelbooruImageHost(hostname) {
+  return /^img\d*\.gelbooru\.com$/i.test(String(hostname || ''));
+}
+
 function canonicalUrl(value) {
   if (!value) return '';
   try {
@@ -31,6 +35,7 @@ function allowedDownloadUrl(item) {
     if (url.protocol !== 'https:') return false;
     if (item.provider === 'wallhaven') return url.hostname === 'w.wallhaven.cc';
     if (item.provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
+    if (item.provider === 'gelbooru') return isGelbooruImageHost(url.hostname);
     return false;
   } catch {
     return false;
@@ -38,14 +43,13 @@ function allowedDownloadUrl(item) {
 }
 
 function allowedThumbnailUrl(item) {
-  if (!item || item.provider !== 'danbooru' || !item.thumb) return false;
+  if (!item || !item.thumb) return false;
   try {
     const url = new URL(item.thumb);
-    return url.protocol === 'https:'
-      && url.hostname === 'cdn.donmai.us'
-      && !url.port
-      && !url.username
-      && !url.password;
+    if (url.protocol !== 'https:' || url.port || url.username || url.password) return false;
+    if (item.provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
+    if (item.provider === 'gelbooru') return isGelbooruImageHost(url.hostname);
+    return false;
   } catch {
     return false;
   }
@@ -70,6 +74,7 @@ function allowedPageUrl(item) {
     if (url.protocol !== 'https:') return false;
     if (item.provider === 'wallhaven') return url.hostname === 'wallhaven.cc';
     if (item.provider === 'danbooru') return url.hostname === 'danbooru.donmai.us';
+    if (item.provider === 'gelbooru') return url.hostname === 'gelbooru.com' || url.hostname === 'www.gelbooru.com';
     return false;
   } catch {
     return false;
@@ -127,9 +132,32 @@ function mergeSearchResults(results, page = 1) {
   };
 }
 
+function providerFailed(result) {
+  return !result || !!result.error;
+}
+
+function resolveFallback(primary, fallback) {
+  if (!providerFailed(primary)) return primary;
+  if (!providerFailed(fallback)) {
+    return {
+      ...fallback,
+      fallbackFrom: primary && primary.provider || '',
+      fallbackReason: primary && primary.error || 'network',
+    };
+  }
+  const errors = [primary && primary.error, fallback && fallback.error].filter(Boolean);
+  return {
+    provider: primary && primary.provider || fallback && fallback.provider || 'unknown',
+    items: [],
+    meta: {},
+    error: errors.join(', ') || 'network',
+  };
+}
+
 module.exports = {
   canonicalUrl,
   itemKeys,
+  isGelbooruImageHost,
   allowedDownloadUrl,
   allowedThumbnailUrl,
   allowedPageUrl,
@@ -138,4 +166,6 @@ module.exports = {
   interleave,
   resultHasMore,
   mergeSearchResults,
+  providerFailed,
+  resolveFallback,
 };

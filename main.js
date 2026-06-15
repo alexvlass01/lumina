@@ -11,6 +11,7 @@ const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
 const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
+const gelbooru = require('./src/gelbooru'); // Gelbooru: основной booru-провайдер
 const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
 const online = require('./src/online'); // смешивание и дедуп результатов внешних провайдеров
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
@@ -77,9 +78,9 @@ async function importWallpaper(srcPath) {
 }
 
 // Download a remote image into the app's data dir (content-addressed, like importWallpaper).
-async function downloadWallpaperFromUrl(url) {
+async function downloadWallpaperFromUrl(url, fetchOptions = {}) {
   await fs.promises.mkdir(WALLPAPERS_DIR, { recursive: true });
-  const res = await fetch(url);
+  const res = await fetch(url, fetchOptions);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const buf = Buffer.from(await res.arrayBuffer());
   const hash = crypto.createHash('md5').update(buf).digest('hex').slice(0, 16);
@@ -105,6 +106,19 @@ const BUNDLED_WALLHAVEN_KEY = loadBundledWallhavenKey();
 function wallhavenKey() {
   return BUNDLED_WALLHAVEN_KEY || '';
 }
+
+// Gelbooru credentials are bundled only with official/local builds and stay in
+// a gitignored file. If absent or rejected, the search path falls back to the
+// public Danbooru adapter instead of disabling the Internet source.
+function loadBundledGelbooruCredentials() {
+  try {
+    const k = require('./gelbooru-key.json');
+    const userId = String(k && (k.userId || k.user_id) || '').trim();
+    const apiKey = String(k && (k.apiKey || k.api_key) || '').trim();
+    return userId && apiKey ? { userId, apiKey } : null;
+  } catch { return null; }
+}
+const BUNDLED_GELBOORU_CREDENTIALS = loadBundledGelbooruCredentials();
 
 // Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).
 let config = configMod.freshDefaults();
@@ -1504,8 +1518,9 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   return config;
 });
 
-// ---- Internet providers: Wallhaven + Danbooru, one mixed result grid ----
+// ---- Internet providers: Wallhaven + Gelbooru, with Danbooru fallback ----
 
+const GELBOORU_PAGE_SIZE = 100;
 const DANBOORU_PAGE_SIZE = 100;
 const INTERNET_USER_AGENT = `Lumina/${app.getVersion()} (https://github.com/alexvlass01/lumina)`;
 const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
@@ -1515,8 +1530,8 @@ const internetThumbnailCache = new Map();
 ipcMain.handle('internet-status', () => ({
   hasKey: !!wallhavenKey(),
   bundled: !!BUNDLED_WALLHAVEN_KEY,
-  // Danbooru exposes every rating through its public read API, so the combined
-  // source can offer Explicit even when Wallhaven has no bundled API key.
+  // Gelbooru and the Danbooru fallback cover Explicit even when Wallhaven has
+  // no bundled API key.
   nsfwAvailable: true,
 }));
 
@@ -1569,10 +1584,47 @@ async function searchDanbooruProvider(opts) {
   }
 }
 
+async function searchGelbooruProvider(opts) {
+  const o = opts || {};
+  const page = Number(o.page) > 0 ? Number(o.page) : 1;
+  const credentials = BUNDLED_GELBOORU_CREDENTIALS;
+  if (!credentials) return { provider: 'gelbooru', items: [], meta: {}, error: 'unavailable' };
+  const url = gelbooru.buildSearchUrl({
+    q: o.q || '',
+    purity: o.purity,
+    sorting: o.sort || o.sorting || 'date_added',
+    page,
+    limit: GELBOORU_PAGE_SIZE,
+    ...credentials,
+  });
+  try {
+    const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(15000) });
+    if (!res.ok) return { provider: 'gelbooru', items: [], meta: {}, error: String(res.status) };
+    const json = await res.json();
+    const apiError = gelbooru.responseError(json);
+    if (apiError) return { provider: 'gelbooru', items: [], meta: {}, error: apiError };
+    return { provider: 'gelbooru', ...gelbooru.parseSearch(json, { page, limit: GELBOORU_PAGE_SIZE }), error: null };
+  } catch (err) {
+    console.error('gelbooru search:', err);
+    return { provider: 'gelbooru', items: [], meta: {}, error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+  }
+}
+
+async function searchBooruProvider(opts) {
+  const primary = await searchGelbooruProvider(opts);
+  if (!online.providerFailed(primary)) return primary;
+  const fallback = await searchDanbooruProvider(opts);
+  const resolved = online.resolveFallback(primary, fallback);
+  if (!online.providerFailed(resolved)) {
+    console.warn(`gelbooru unavailable (${primary.error}); using danbooru fallback`);
+  }
+  return resolved;
+}
+
 ipcMain.handle('internet-search', async (e, opts) => {
   const o = opts || {};
   const page = Number(o.page) > 0 ? Number(o.page) : 1;
-  const results = await Promise.all([searchWallhavenProvider({ ...o, page }), searchDanbooruProvider({ ...o, page })]);
+  const results = await Promise.all([searchWallhavenProvider({ ...o, page }), searchBooruProvider({ ...o, page })]);
   const merged = online.mergeSearchResults(results, page);
   return {
     ...merged,
@@ -1580,6 +1632,12 @@ ipcMain.handle('internet-search', async (e, opts) => {
     nsfwAvailable: true,
   };
 });
+
+function internetRequestHeaders(item) {
+  const headers = { 'User-Agent': INTERNET_USER_AGENT };
+  if (item && item.provider === 'gelbooru') headers.Referer = 'https://gelbooru.com/';
+  return headers;
+}
 
 async function fetchInternetThumbnail(item) {
   if (!online.allowedThumbnailUrl(item)) return { dataUrl: '', error: 'badItem' };
@@ -1594,7 +1652,7 @@ async function fetchInternetThumbnail(item) {
   const pending = (async () => {
     try {
       const res = await fetch(key, {
-        headers: { 'User-Agent': INTERNET_USER_AGENT },
+        headers: internetRequestHeaders(item),
         signal: AbortSignal.timeout(15000),
       });
       if (!res.ok) return { dataUrl: '', error: String(res.status) };
@@ -1619,8 +1677,8 @@ async function fetchInternetThumbnail(item) {
   return result;
 }
 
-// Chromium is challenged by Danbooru's CDN even when the API request succeeds.
-// Fetch only validated preview URLs in main and return a small data URL to renderer.
+// Booru CDNs may reject direct Chromium requests. Fetch only validated preview
+// URLs in main and return a small data URL to renderer.
 ipcMain.handle('internet-thumbnail', (e, item) => fetchInternetThumbnail(item));
 
 // Download a normalized provider item into the local pool. The renderer cannot
@@ -1628,7 +1686,7 @@ ipcMain.handle('internet-thumbnail', (e, item) => fetchInternetThumbnail(item));
 ipcMain.handle('internet-add', async (e, item, query) => {
   if (!online.allowedDownloadUrl(item)) return { config, error: 'badItem' };
   try {
-    const stored = await downloadWallpaperFromUrl(item.full);
+    const stored = await downloadWallpaperFromUrl(item.full, { headers: internetRequestHeaders(item) });
     const width = Number(item.width); const height = Number(item.height);
     const aspect = Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0 ? width / height : 0;
     const id = library.addPath(config.library, 'image', stored, { aspect });
