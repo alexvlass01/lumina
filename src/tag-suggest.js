@@ -22,12 +22,10 @@ function clampLimit(value) {
 function buildGelbooruTagSuggestUrl(opts = {}) {
   const prefix = normalizeTagPrefix(opts.q);
   const p = new URLSearchParams({
-    page: 'dapi',
-    s: 'tag',
-    q: 'index',
-    json: '1',
+    page: 'autocomplete2',
+    term: prefix,
+    type: 'tag',
     limit: String(clampLimit(opts.limit)),
-    name_pattern: `${prefix}%`,
   });
   return `${GELBOORU_TAG_API}?${p.toString()}`;
 }
@@ -41,6 +39,12 @@ function tagEntriesFromResponse(json) {
 }
 
 function tagCategory(type) {
+  const raw = String(type || '').toLowerCase();
+  if (raw === 'tag' || raw === 'general') return 'general';
+  if (raw === 'artist') return 'artist';
+  if (raw === 'copyright') return 'copyright';
+  if (raw === 'character') return 'character';
+  if (raw === 'metadata' || raw === 'meta') return 'metadata';
   const n = Number(type);
   if (n === 1) return 'artist';
   if (n === 3) return 'copyright';
@@ -50,10 +54,12 @@ function tagCategory(type) {
 }
 
 function normalizeSuggestion(entry) {
-  const name = normalizeTagPrefix(entry && (entry.name || entry.tag || entry.value));
+  const rawName = String(entry && (entry.name || entry.tag || entry.value) || '').trim();
+  if (!rawName || /\s/.test(rawName)) return null;
+  const name = normalizeTagPrefix(rawName);
   if (!name) return null;
   const count = Math.max(0, Math.floor(Number(entry.count ?? entry.post_count ?? entry.posts) || 0));
-  return { name, count, category: tagCategory(entry.type) };
+  return { name, count, category: tagCategory(entry.category ?? entry.type) };
 }
 
 function parseGelbooruTagSuggestions(json, opts = {}) {
