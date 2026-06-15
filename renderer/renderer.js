@@ -871,6 +871,11 @@ function renderLibrary() {
   setLibViewHeader();
   const local = $('#libLocal');
   const online = $('#libOnline');
+  const canAddLocalSources = !LIB.folderPath && (LIB.filter === 'all' || LIB.filter === 'folder');
+  const addPhotos = $('#libAddPhotos');
+  const addFolder = $('#libAddFolder');
+  if (addPhotos) addPhotos.hidden = !canAddLocalSources;
+  if (addFolder) addFolder.hidden = !canAddLocalSources;
   if (LIB.filter === 'online') {
     if (local) local.hidden = true;
     if (online) online.hidden = false;
@@ -3021,7 +3026,9 @@ async function init() {
   window.api.onTheme((theme) => {
     applyThemeToUI(theme);
     renderHome();
-    toast(theme === 'dark' ? t('toast.themeDark') : t('toast.themeLight'));
+    // A hidden autostart window must not queue a stale theme toast that appears
+    // when the user opens Lumina moments later. Visible theme changes still announce.
+    if (!document.hidden) toast(theme === 'dark' ? t('toast.themeDark') : t('toast.themeLight'));
   });
 
   window.api.onWallpaperTheme((theme) => {

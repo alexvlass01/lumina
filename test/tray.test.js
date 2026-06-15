@@ -26,5 +26,6 @@ m = buildMenuTemplate({ slideshowEnabled: false, hasSlideshowItems: false, updat
 ok('shows "install update" only when update ready', labels(m).includes('tray.installUpdate'));
 
 ok('click handlers are wired through', m[0].click === A.onOpen && m[m.length - 1].click === A.onQuit);
+ok('reapply action remains available without a slideshow', m[1].click === A.onApplyCurrent);
 
 console.log('\nAll ' + passed + ' tray tests passed.');
