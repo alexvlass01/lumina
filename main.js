@@ -20,6 +20,17 @@ const schedule = require('./src/schedule'); // чистая математика
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
+const cloudDevProfile = require('./src/cloud/dev-profile'); // isolated userData for explicit staging launches
+
+// Resolve staging userData before the single-instance lock and before any paths
+// are derived from app.getPath('userData'). This keeps config, wallpapers,
+// Chromium storage and safeStorage-encrypted Cloud sessions separate from prod.
+const STAGING_USER_DATA = cloudDevProfile.resolveStagingUserData({
+  isPackaged: app.isPackaged,
+  cloudEnv: process.env.LUMINA_CLOUD,
+  requestedPath: process.env.LUMINA_DEV_USER_DATA,
+});
+if (STAGING_USER_DATA) app.setPath('userData', STAGING_USER_DATA);
 
 // ---------------------------------------------------------------------------
 // Squirrel.Windows install/update/uninstall events (creates/removes shortcuts,
@@ -32,7 +43,8 @@ try {
 } catch { /* module absent (e.g. running from source) — ignore */ }
 
 // ---------------------------------------------------------------------------
-// Single instance
+// Single instance (the lock follows the selected userData profile, so isolated
+// staging and installed production can run at the same time).
 // ---------------------------------------------------------------------------
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -975,10 +987,8 @@ ipcMain.handle('get-config', () => config);
 ipcMain.handle('get-version', () => app.getVersion());
 
 // Lumina Cloud capability (C2). Resolved once: staging is reachable ONLY from an
-// unpackaged dev build with an explicit opt-in (LUMINA_CLOUD=staging); installed
-// GitHub builds are always 'unavailable' (visible UI, no network). The renderer
-// receives only the safe subset — never the API URL or any token. The private
-// apiBase is kept here for the future catalog client (C3+).
+// unpackaged dev build with an explicit opt-in; all normal launches use production.
+// The renderer receives only the safe subset — never the API URL or any token.
 let _cloudCapability = null;
 function cloudCapability() {
   if (!_cloudCapability) {
