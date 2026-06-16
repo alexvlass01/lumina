@@ -58,6 +58,7 @@ const START_TS = Date.now();
 
 let mainWindow = null;
 let galleryWindow = null;
+let galleryWindowNormalBounds = null;
 let galleryPayload = { items: [], index: 0 };
 app.isQuitting = false;
 
@@ -813,16 +814,17 @@ function sanitizeGalleryPayload(payload) {
 
 function createGalleryWindow() {
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const bounds = display.workArea || display.bounds;
+  galleryWindowNormalBounds = { ...bounds };
   galleryWindow = new BrowserWindow({
-    x: display.bounds.x,
-    y: display.bounds.y,
-    width: display.bounds.width,
-    height: display.bounds.height,
+    x: bounds.x,
+    y: bounds.y,
+    width: bounds.width,
+    height: bounds.height,
     minWidth: 640,
     minHeight: 420,
     show: false,
     frame: false,
-    fullscreen: true,
     autoHideMenuBar: true,
     title: 'Lumina Media Viewer',
     backgroundColor: '#050505',
@@ -845,12 +847,19 @@ function createGalleryWindow() {
   galleryWindow.once('ready-to-show', () => {
     if (!galleryWindow || galleryWindow.isDestroyed()) return;
     galleryWindow.show();
-    galleryWindow.setFullScreen(true);
     bringToFront(galleryWindow);
+  });
+
+  galleryWindow.on('enter-full-screen', () => {
+    if (galleryWindow && !galleryWindow.isDestroyed()) galleryWindow.webContents.send('gallery-fullscreen-changed', true);
+  });
+  galleryWindow.on('leave-full-screen', () => {
+    if (galleryWindow && !galleryWindow.isDestroyed()) galleryWindow.webContents.send('gallery-fullscreen-changed', false);
   });
 
   galleryWindow.on('closed', () => {
     galleryWindow = null;
+    galleryWindowNormalBounds = null;
   });
 }
 
@@ -861,7 +870,6 @@ function openGalleryWindow(payload) {
     createGalleryWindow();
   } else {
     galleryWindow.webContents.send('gallery-payload', galleryPayload);
-    galleryWindow.setFullScreen(true);
     bringToFront(galleryWindow);
   }
   return { ok: true };
@@ -2093,6 +2101,19 @@ ipcMain.handle('gallery-close', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win && !win.isDestroyed()) win.close();
   return { ok: true };
+});
+ipcMain.handle('gallery-toggle-fullscreen', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win || win.isDestroyed()) return { ok: false };
+  const next = !win.isFullScreen();
+  if (!next) {
+    win.setFullScreen(false);
+    if (galleryWindowNormalBounds) win.setBounds(galleryWindowNormalBounds);
+  } else {
+    if (!win.isFullScreen()) galleryWindowNormalBounds = win.getBounds();
+    win.setFullScreen(true);
+  }
+  return { ok: true, fullscreen: next };
 });
 
 ipcMain.handle('quit-app', () => {

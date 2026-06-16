@@ -172,7 +172,9 @@
     "counter": "{current} of {total}",
     "close": "Close preview",
     "previous": "Previous image",
-    "next": "Next image"
+    "next": "Next image",
+    "fullscreen": "Enter fullscreen",
+    "windowed": "Exit fullscreen"
   },
   "online": {
     "rail": "Online",

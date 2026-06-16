@@ -4,6 +4,18 @@ const $ = (sel) => document.querySelector(sel);
 
 const I18N = { dict: {}, fallback: {} };
 const VIEWER = { items: [], index: 0, token: 0 };
+const POINTER = { x: 0, y: 0, t: 0, button: -1, blocked: false };
+
+function setFullscreenUi(on) {
+  const root = $('#viewerRoot');
+  if (root) root.classList.toggle('is-fullscreen', !!on);
+  const btn = $('#viewerFullscreen');
+  if (btn) {
+    const label = t(on ? 'viewer.windowed' : 'viewer.fullscreen');
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+  }
+}
 
 function tPath(obj, key) {
   return key.split('.').reduce((o, k) => (o && o[k] != null ? o[k] : undefined), obj);
@@ -37,6 +49,7 @@ async function loadI18n() {
     next.title = t('viewer.next');
     next.setAttribute('aria-label', t('viewer.next'));
   }
+  setFullscreenUi(false);
 }
 
 function normalizePayload(payload) {
@@ -66,7 +79,7 @@ function setState(message, hidden = false) {
   state.hidden = hidden || !message;
 }
 
-async function resolveImage(entry) {
+async function previewSource(entry) {
   if (!entry) return '';
   if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
     return window.viewerApi.fileUrl(entry.path);
@@ -76,17 +89,37 @@ async function resolveImage(entry) {
   }
   if (entry.kind === 'internet') {
     const item = entry.raw || {};
-    const full = String(item.full || '');
     const thumb = String(item.thumb || entry.previewUrl || '');
-    if (item.provider === 'wallhaven' && full) return full;
     if (thumb.startsWith('data:image/')) return thumb;
     try {
       const result = await window.viewerApi.internetThumbnail(item);
       if (result && result.dataUrl) return result.dataUrl;
     } catch {}
-    return thumb || full || '';
+    return thumb || '';
   }
   return entry.previewUrl || '';
+}
+
+async function fullSource(entry, fallback = '') {
+  if (!entry) return fallback;
+  if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
+    return window.viewerApi.fileUrl(entry.path);
+  }
+  if (entry.kind === 'internet') {
+    const item = entry.raw || {};
+    return String(item.full || '') || fallback;
+  }
+  return fallback || entry.previewUrl || '';
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    if (!src) { reject(new Error('empty')); return; }
+    const probe = new Image();
+    probe.onload = () => resolve(src);
+    probe.onerror = () => reject(new Error('load'));
+    probe.src = src;
+  });
 }
 
 function markAdded(entry) {
@@ -163,38 +196,69 @@ async function render() {
   img.removeAttribute('src');
   setState(t('viewer.loading'));
 
-  let src = '';
+  let preview = '';
   try {
-    src = await resolveImage(entry);
+    preview = await previewSource(entry);
   } catch {
-    src = '';
+    preview = '';
   }
   if (token !== VIEWER.token) return;
-  if (!src) {
+  if (!preview) {
     setState(t('viewer.loadError'));
     return;
   }
 
-  const probe = new Image();
-  probe.onload = () => {
-    if (token !== VIEWER.token) return;
-    img.src = src;
+  try {
+    img.src = await loadImage(preview);
     setState('', true);
-  };
-  probe.onerror = () => {
+  } catch {
     if (token !== VIEWER.token) return;
     setState(t('viewer.loadError'));
-  };
-  probe.src = src;
+    return;
+  }
+  if (token !== VIEWER.token) return;
+
+  let full = '';
+  try {
+    full = await fullSource(entry, preview);
+  } catch {
+    full = preview;
+  }
+  if (!full || full === preview || token !== VIEWER.token) return;
+
+  try {
+    img.src = await loadImage(full);
+  } catch {
+    // Keep the already visible preview if the provider blocks direct full-size loading.
+  }
 }
 
 function initEvents() {
   const close = $('#viewerClose');
   if (close) close.addEventListener('click', () => window.viewerApi.close());
+  const root = $('#viewerRoot');
+  const fullscreen = $('#viewerFullscreen');
+  if (fullscreen) fullscreen.addEventListener('click', () => window.viewerApi.toggleFullscreen());
   const prev = $('#viewerPrev');
   if (prev) prev.addEventListener('click', () => step(-1));
   const next = $('#viewerNext');
   if (next) next.addEventListener('click', () => step(1));
+  if (root) {
+    root.addEventListener('pointerdown', (e) => {
+      POINTER.x = e.clientX;
+      POINTER.y = e.clientY;
+      POINTER.t = Date.now();
+      POINTER.button = e.button;
+      POINTER.blocked = !!e.target.closest('button');
+    });
+    root.addEventListener('pointerup', (e) => {
+      if (POINTER.button !== 0 || POINTER.blocked || e.button !== 0 || e.target.closest('button')) return;
+      const dx = Math.abs(e.clientX - POINTER.x);
+      const dy = Math.abs(e.clientY - POINTER.y);
+      const dt = Date.now() - POINTER.t;
+      if (dx <= 4 && dy <= 4 && dt < 350) window.viewerApi.close();
+    });
+  }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
       e.preventDefault();
@@ -208,6 +272,7 @@ function initEvents() {
     }
   });
   window.viewerApi.onPayload((payload) => setPayload(payload));
+  window.viewerApi.onFullscreenChanged(setFullscreenUi);
 }
 
 async function init() {
