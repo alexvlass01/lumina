@@ -116,7 +116,7 @@ function loadImage(src) {
   return new Promise((resolve, reject) => {
     if (!src) { reject(new Error('empty')); return; }
     const probe = new Image();
-    probe.onload = () => resolve(src);
+    probe.onload = () => resolve({ src, width: probe.naturalWidth, height: probe.naturalHeight });
     probe.onerror = () => reject(new Error('load'));
     probe.src = src;
   });
@@ -166,6 +166,28 @@ function renderActions(entry) {
   actions.appendChild(add);
 }
 
+function updateResolutionInSubtitle(width, height, entry) {
+  if (!width || !height || !entry) return;
+
+  const resStr = `${width}x${height}`;
+  const titleText = (entry.title || '').trim();
+  const baseSubtitle = (entry.subtitle || '').trim();
+
+  // If the title or the original base subtitle already contains a resolution pattern,
+  // we do not need to append any temporary or loaded resolutions.
+  const hasOriginalRes = /\d+x\d+/.test(titleText) || /\d+x\d+/.test(baseSubtitle);
+
+  const subtitle = $('#viewerSubtitle');
+  if (subtitle) {
+    if (hasOriginalRes) {
+      subtitle.textContent = baseSubtitle;
+    } else {
+      const separator = baseSubtitle ? ' - ' : '';
+      subtitle.textContent = `${baseSubtitle}${separator}${resStr}`;
+    }
+  }
+}
+
 function step(delta) {
   if (VIEWER.items.length <= 1) return;
   VIEWER.index = (VIEWER.index + delta + VIEWER.items.length) % VIEWER.items.length;
@@ -209,8 +231,10 @@ async function render() {
   }
 
   try {
-    img.src = await loadImage(preview);
+    const loadedPreview = await loadImage(preview);
+    img.src = loadedPreview.src;
     setState('', true);
+    updateResolutionInSubtitle(loadedPreview.width, loadedPreview.height, entry);
   } catch {
     if (token !== VIEWER.token) return;
     setState(t('viewer.loadError'));
@@ -227,7 +251,9 @@ async function render() {
   if (!full || full === preview || token !== VIEWER.token) return;
 
   try {
-    img.src = await loadImage(full);
+    const loadedFull = await loadImage(full);
+    img.src = loadedFull.src;
+    updateResolutionInSubtitle(loadedFull.width, loadedFull.height, entry);
   } catch {
     // Keep the already visible preview if the provider blocks direct full-size loading.
   }
