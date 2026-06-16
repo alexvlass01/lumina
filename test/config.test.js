@@ -167,5 +167,19 @@ ok('lumina-only selection survives', (() => {
   return s.lumina === true && s.internet === false;
 })());
 
+// onlineSort / onlinePurity (persisted Online search params)
+ok('fresh defaults: onlineSort date_added, purity sfw+sketchy',
+  fresh.onlineSort === 'date_added' && fresh.onlinePurity.sfw === true && fresh.onlinePurity.sketchy === true && fresh.onlinePurity.nsfw === false);
+fs.writeFileSync(p('online_params.json'), JSON.stringify({ onlineSort: 'toplist', onlinePurity: { sfw: false, sketchy: 0, nsfw: 'yes' } }));
+ok('valid onlineSort survives; purity coerced to booleans', (() => {
+  const c = C.load(p('online_params.json'));
+  return c.onlineSort === 'toplist' && c.onlinePurity.sfw === false && c.onlinePurity.sketchy === false && c.onlinePurity.nsfw === true;
+})());
+fs.writeFileSync(p('online_bad.json'), JSON.stringify({ onlineSort: 'banana', onlinePurity: { sfw: false, sketchy: false, nsfw: false } }));
+ok('bad onlineSort → date_added; all-off purity → sfw forced on', (() => {
+  const c = C.load(p('online_bad.json'));
+  return c.onlineSort === 'date_added' && c.onlinePurity.sfw === true;
+})());
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

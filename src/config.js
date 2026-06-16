@@ -44,6 +44,10 @@ const DEFAULT_CONFIG = {
   // 'lumina' = the Lumina Cloud catalog. Either or both may be on; default keeps the
   // previous behavior (external only) so existing users see no change.
   onlineSources: { lumina: false, internet: true },
+  // Persisted Online search params (restored on restart). sort = whSort value;
+  // purity = the SFW/Sketchy/NSFW content filter.
+  onlineSort: 'date_added',
+  onlinePurity: { sfw: true, sketchy: true, nsfw: false },
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -132,6 +136,17 @@ function normalize(cfg) {
   cfg.onlineSources.internet = !!cfg.onlineSources.internet;
   // Never leave the Online tab with no source selected (avoids an empty page).
   if (!cfg.onlineSources.lumina && !cfg.onlineSources.internet) cfg.onlineSources.internet = true;
+
+  if (!['date_added', 'toplist', 'random', 'views'].includes(cfg.onlineSort)) cfg.onlineSort = 'date_added';
+  cfg.onlinePurity = {
+    sfw: true, sketchy: true, nsfw: false,
+    ...(cfg.onlinePurity && typeof cfg.onlinePurity === 'object' ? cfg.onlinePurity : {}),
+  };
+  cfg.onlinePurity.sfw = !!cfg.onlinePurity.sfw;
+  cfg.onlinePurity.sketchy = !!cfg.onlinePurity.sketchy;
+  cfg.onlinePurity.nsfw = !!cfg.onlinePurity.nsfw;
+  // Keep at least one purity on (the UI enforces the same).
+  if (!cfg.onlinePurity.sfw && !cfg.onlinePurity.sketchy && !cfg.onlinePurity.nsfw) cfg.onlinePurity.sfw = true;
 
   return cfg;
 }

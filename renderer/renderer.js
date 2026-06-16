@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, triggers: { onStartup: false, onWakeup: false, stealth: false } };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, triggers: { onStartup: false, onWakeup: false, stealth: false }, onlineSources: { lumina: false, internet: true }, onlineSort: 'date_added', onlinePurity: { sfw: true, sketchy: true, nsfw: false } };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   let mockCloud = { signedIn: false, user: null };
@@ -1778,7 +1778,7 @@ function initLibrary() {
     });
   }
   const whSortEl = $('#whSort');
-  if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; if (ONLINE.loaded) doOnlineSearch(true); });
+  if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; persistOnlineParams(); if (ONLINE.loaded) doOnlineSearch(true); });
   const whFilterToggle = $('#whFilterToggle');
   const whFiltersRow = $('#whFiltersRow');
   if (whFilterToggle && whFiltersRow) {
@@ -1803,6 +1803,7 @@ function initLibrary() {
         INTERNET.purity[p] = true;
         return;
       }
+      persistOnlineParams();
       if (ONLINE.loaded) doOnlineSearch(true);
     });
   });
@@ -2065,6 +2066,26 @@ function onlineSources() {
   let internet = s.internet !== false;
   if (!lumina && !internet) internet = true;
   return { lumina, internet };
+}
+
+// Restore persisted Online search params (sort + purity) into INTERNET at startup.
+// Sources are read live from config.onlineSources; sort/purity live in INTERNET.
+function hydrateOnlineFromConfig() {
+  const sort = config && config.onlineSort;
+  if (['date_added', 'toplist', 'random', 'views'].includes(sort)) INTERNET.sort = sort;
+  const p = config && config.onlinePurity;
+  if (p && typeof p === 'object') {
+    INTERNET.purity = { sfw: !!p.sfw, sketchy: !!p.sketchy, nsfw: !!p.nsfw };
+    if (!INTERNET.purity.sfw && !INTERNET.purity.sketchy && !INTERNET.purity.nsfw) INTERNET.purity.sfw = true;
+  }
+}
+
+// Persist the current sort + purity so they survive a restart.
+function persistOnlineParams() {
+  if (!config) return;
+  config.onlineSort = INTERNET.sort;
+  config.onlinePurity = { sfw: !!INTERNET.purity.sfw, sketchy: !!INTERNET.purity.sketchy, nsfw: !!INTERNET.purity.nsfw };
+  window.api.setConfig({ onlineSort: config.onlineSort, onlinePurity: config.onlinePurity });
 }
 
 // Fetch the cloud capability once from main (safe subset: no URL/token).
@@ -2350,6 +2371,7 @@ async function renderOnline() {
     INTERNET.statusFetched = true;
   }
   updatePurityToggle();
+  const sortEl = $('#whSort'); if (sortEl && sortEl.value !== INTERNET.sort) sortEl.value = INTERNET.sort;
   if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
   if (!ONLINE.loaded) { doOnlineSearch(true); return; }
   const grid = $('#whGrid');
@@ -2992,6 +3014,7 @@ function renderUpdate(st) {
 // ---------------------------------------------------------------------------
 async function init() {
   config = await window.api.getConfig();
+  hydrateOnlineFromConfig();
   currentTheme = await window.api.getTheme();
   currentWallpaperTheme = await window.api.getWallpaperTheme();
   await loadI18n();
