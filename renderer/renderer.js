@@ -112,7 +112,11 @@ if (!window.api) {
     cloudFavorites: async () => { const favs = mockCloud.favs || {}; const items = Object.keys(favs).map((id) => favs[id]); return { items, error: null }; },
     cloudFavorite: async (id, on) => { mockCloud.favs = mockCloud.favs || {}; if (on) mockCloud.favs[id] = { id, title: 'Fav ' + id, rating: 'general', published_at: Date.now() / 1000, width: 1920, height: 1080, thumb_url: 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="180"><rect width="320" height="180" fill="#e91e63"/></svg>') }; else delete mockCloud.favs[id]; return { ok: true, error: null }; },
     internetStatus: async () => ({ hasKey: false, bundled: false, nsfwAvailable: true }),
-    internetSearch: async () => ({ items: [], meta: { currentPage: 1, lastPage: 1 }, error: null, hasKey: false, nsfwAvailable: true }),
+    internetSearch: async (opts) => {
+      const page = (opts && opts.page) || 1;
+      const mk = (i, color) => ({ id: 'net' + page + '_' + i, provider: 'wallhaven', page: 'https://wh/' + page + '-' + i, full: 'data:', thumb: 'data:image/svg+xml,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200"><rect width="320" height="200" fill="${color}"/></svg>`), resolution: '1920x1080', category: 'general', width: 1920, height: 1080 });
+      return { items: [mk(1, '#4b5563'), mk(2, '#374151'), mk(3, '#475569'), mk(4, '#334155')], meta: { currentPage: page, lastPage: 3 }, error: null, hasKey: false, nsfwAvailable: true };
+    },
     internetTagSuggest: async (opts) => {
       const q = String(opts && opts.q || '').toLowerCase();
       const items = [
@@ -717,9 +721,11 @@ const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
-// Cloud C3: Lumina catalog paging state. Re-fetched on each entry to the Online tab
-// so signed R2 URLs stay fresh (downloads always use a fresh URL fetched at click).
-const CLOUDCAT = { rating: 'general', view: 'catalog', items: [], cursor: null, loading: false, fetched: false };
+// Unified online feed state. view = 'search' | 'favorites'; loaded gates the initial
+// auto-search and is reset when leaving the Online tab (so signed R2 URLs stay fresh).
+const ONLINE = { view: 'search', loaded: false, loading: false };
+// Lumina cursor pagination within the shared feed.
+const LUMINA = { cursor: null };
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
@@ -901,7 +907,7 @@ function renderLibrary() {
   }
   if (online) online.hidden = true;
   if (local) local.hidden = false;
-  CLOUDCAT.fetched = false; // re-fetch fresh signed URLs next time Online opens
+  ONLINE.loaded = false; // re-fetch fresh signed URLs next time Online opens
   renderBreadcrumbs();
   const tok = ++allViewToken; // invalidate any in-flight async render
 
@@ -1749,20 +1755,13 @@ function initLibrary() {
   const srcInternet = $('#srcInternet');
   if (srcInternet) srcInternet.addEventListener('click', () => toggleOnlineSource('internet'));
 
-  // Lumina catalog (Cloud C3)
-  const cloudRating = $('#cloudRating');
-  if (cloudRating) cloudRating.addEventListener('change', () => { CLOUDCAT.rating = cloudRating.value; loadCloudCatalog(true); });
-  const cloudMoreBtn = $('#cloudMore');
-  if (cloudMoreBtn) cloudMoreBtn.addEventListener('click', () => loadCloudCatalog(false));
-  // Lumina catalog/favorites view toggle (Cloud C5)
-  const cvCat = $('#cloudViewCatalog');
-  if (cvCat) cvCat.addEventListener('click', () => setCloudView('catalog'));
-  const cvFav = $('#cloudViewFav');
-  if (cvFav) cvFav.addEventListener('click', () => setCloudView('favorites'));
+  // Lumina favorites toggle (Cloud C5) — shares the unified search bar.
+  const favToggle = $('#onlineFavToggle');
+  if (favToggle) favToggle.addEventListener('click', toggleFavoritesView);
 
-  // External online providers. The wh* DOM ids are retained for compatibility.
+  // Unified online search. The wh* DOM ids are retained for compatibility.
   const whSearchBtn = $('#whSearch');
-  if (whSearchBtn) whSearchBtn.addEventListener('click', () => { hideOnlineTagSuggest(); doInternetSearch(true); });
+  if (whSearchBtn) whSearchBtn.addEventListener('click', () => { hideOnlineTagSuggest(); doOnlineSearch(true); });
   const whQ = $('#whQuery');
   const whSuggest = $('#whSuggest');
   if (whSuggest) whSuggest.addEventListener('mousedown', (e) => e.preventDefault());
@@ -1774,12 +1773,12 @@ function initLibrary() {
       if (handleOnlineTagSuggestKeydown(e)) return;
       if (e.key === 'Enter') {
         hideOnlineTagSuggest();
-        doInternetSearch(true);
+        doOnlineSearch(true);
       }
     });
   }
   const whSortEl = $('#whSort');
-  if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; if (INTERNET.searched) doInternetSearch(true); });
+  if (whSortEl) whSortEl.addEventListener('change', () => { INTERNET.sort = whSortEl.value; if (ONLINE.loaded) doOnlineSearch(true); });
   const whFilterToggle = $('#whFilterToggle');
   const whFiltersRow = $('#whFiltersRow');
   if (whFilterToggle && whFiltersRow) {
@@ -1804,11 +1803,11 @@ function initLibrary() {
         INTERNET.purity[p] = true;
         return;
       }
-      if (INTERNET.searched) doInternetSearch(true);
+      if (ONLINE.loaded) doOnlineSearch(true);
     });
   });
   const whMoreBtn = $('#whMore');
-  if (whMoreBtn) whMoreBtn.addEventListener('click', () => { INTERNET.page += 1; doInternetSearch(false); });
+  if (whMoreBtn) whMoreBtn.addEventListener('click', loadMoreOnline);
 
   initLibraryDragDrop();
 }
@@ -2081,9 +2080,6 @@ function applyOnlineSourceUI(sources) {
   const lum = $('#srcLumina'), net = $('#srcInternet');
   if (lum) { lum.setAttribute('aria-pressed', sources.lumina ? 'true' : 'false'); lum.classList.toggle('active', sources.lumina); }
   if (net) { net.setAttribute('aria-pressed', sources.internet ? 'true' : 'false'); net.classList.toggle('active', sources.internet); }
-  const cloud = $('#libCloud'), internet = $('#libInternet');
-  if (cloud) cloud.hidden = !sources.lumina;
-  if (internet) internet.hidden = !sources.internet;
   if (!sources.internet) hideOnlineTagSuggest();
 }
 
@@ -2146,23 +2142,6 @@ function renderCloudAccount() {
   host.appendChild(btn);
 }
 
-// Add/remove the "Explicit" rating option to match the current entitlement.
-function refreshCloudRatingOptions() {
-  const sel = $('#cloudRating');
-  if (!sel) return;
-  const allow = explicitAllowed();
-  let opt = sel.querySelector('option[value="explicit"]');
-  if (allow && !opt) {
-    opt = document.createElement('option');
-    opt.value = 'explicit';
-    opt.textContent = t('online.ratingExplicit');
-    sel.appendChild(opt);
-  } else if (!allow && opt) {
-    opt.remove();
-    if (CLOUDCAT.rating === 'explicit') { CLOUDCAT.rating = 'general'; sel.value = 'general'; }
-  }
-}
-
 async function doCloudSignin() {
   if (CLOUDAUTH.signingIn) return;
   CLOUDAUTH.signingIn = true;
@@ -2174,10 +2153,10 @@ async function doCloudSignin() {
   if (res && res.ok) {
     CLOUDAUTH.state = res.state; CLOUDAUTH.fetched = true;
     renderCloudAccount();
-    refreshCloudRatingOptions();
-    const views = $('#libCloudViews'); if (views) views.hidden = false;
-    await ensureCloudFavorites(true); // heart states before the catalog renders
-    loadCloudFeed(true); // session may unlock the explicit tier / personalize
+    applyFavToggleUI();
+    await ensureCloudFavorites(true); // heart states before the feed renders
+    ONLINE.loaded = false;
+    doOnlineSearch(true); // session may unlock the explicit tier / personalize
     toast(t('online.signedIn'));
   } else {
     renderCloudAccount();
@@ -2191,13 +2170,47 @@ async function doCloudSignout() {
   CLOUDAUTH.state = (res && res.state) || { available: true, signedIn: false, user: null, entitlements: [] };
   CLOUDAUTH.fetched = true;
   CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false;
-  CLOUDCAT.view = 'catalog';
-  const views = $('#libCloudViews'); if (views) views.hidden = true;
+  ONLINE.view = 'search';
   renderCloudAccount();
-  refreshCloudRatingOptions();
-  applyCloudView();
-  loadCloudFeed(true);
+  applyFavToggleUI();
+  ONLINE.loaded = false;
+  doOnlineSearch(true);
   toast(t('online.signedOut'));
+}
+
+// Lumina is reachable only when capability says staging/production.
+function cloudAvailable() {
+  const c = CLOUD.cap;
+  return !!(c && c.available && (c.environment === 'staging' || c.environment === 'production'));
+}
+
+// The shared content filter (SFW/Sketchy/NSFW) maps to a Lumina rating tier;
+// explicit only for a signed-in user who has opted in (backend gate).
+function luminaRatingFromPurity() {
+  const p = INTERNET.purity || {};
+  if (p.nsfw && explicitAllowed()) return 'explicit';
+  if (p.sketchy) return 'suggestive';
+  return 'general';
+}
+
+// "Избранное" toggle in the search bar — only when Lumina is on and signed in.
+function applyFavToggleUI() {
+  const btn = $('#onlineFavToggle');
+  if (!btn) return;
+  const sources = onlineSources();
+  const show = sources.lumina && cloudAvailable() && cloudSignedIn();
+  btn.hidden = !show;
+  if (!show && ONLINE.view === 'favorites') ONLINE.view = 'search';
+  const isFav = ONLINE.view === 'favorites';
+  btn.classList.toggle('active', isFav);
+  btn.setAttribute('aria-pressed', isFav ? 'true' : 'false');
+}
+
+function toggleFavoritesView() {
+  ONLINE.view = ONLINE.view === 'favorites' ? 'search' : 'favorites';
+  applyFavToggleUI();
+  if (ONLINE.view === 'favorites') loadFavoritesFeed();
+  else { ONLINE.loaded = false; doOnlineSearch(true); }
 }
 
 // --- Cloud favorites (C5): account-synced, distinct from the local Library "Избранное" ---
@@ -2213,143 +2226,45 @@ async function ensureCloudFavorites(force) {
   CLOUDFAV.fetched = true;
 }
 
-// Reflect catalog vs favorites view: chip pressed-state + hide the rating selector in favorites.
-function applyCloudView() {
-  const isFav = CLOUDCAT.view === 'favorites';
-  const cat = $('#cloudViewCatalog'), fav = $('#cloudViewFav');
-  if (cat) { cat.classList.toggle('active', !isFav); cat.setAttribute('aria-pressed', String(!isFav)); }
-  if (fav) { fav.classList.toggle('active', isFav); fav.setAttribute('aria-pressed', String(isFav)); }
-  const ratingWrap = $('#cloudRatingWrap'); if (ratingWrap) ratingWrap.hidden = isFav;
-}
-
-function setCloudView(view) {
-  if (CLOUDCAT.view === view) return;
-  CLOUDCAT.view = view;
-  applyCloudView();
-  loadCloudFeed(true);
-}
-
-// Load the active feed: the account's favorites or the public catalog.
-function loadCloudFeed(reset) {
-  return CLOUDCAT.view === 'favorites' ? loadCloudFavoritesView() : loadCloudCatalog(reset);
-}
-
-async function loadCloudFavoritesView() {
-  if (CLOUDCAT.loading) return;
-  CLOUDCAT.loading = true; CLOUDCAT.fetched = true;
-  const grid = $('#cloudGrid');
+// The account's Lumina favorites, shown in the same shared grid (a distinct mode).
+async function loadFavoritesFeed() {
+  if (ONLINE.loading) return;
+  ONLINE.loading = true;
+  const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
+  if (more) more.hidden = true;
   if (grid) grid.innerHTML = '';
-  CLOUDCAT.items = []; CLOUDCAT.cursor = null;
-  const more = $('#cloudMore'); if (more) more.hidden = true;
-  updateCloudStatus('loading');
+  if (note) note.textContent = t('online.loading');
   let res;
   try { res = await window.api.cloudFavorites(); } catch { res = { error: 'network' }; }
-  CLOUDCAT.loading = false;
-  if (!res || res.error) { updateCloudStatus('error', res && res.error); return; }
-  CLOUDFAV.ids = new Set((res.items || []).map((it) => it.id));
-  CLOUDFAV.fetched = true;
-  (res.items || []).forEach((it) => { CLOUDCAT.items.push(it); if (grid) grid.appendChild(buildCloudCard(it)); });
-  if (grid) scheduleJustifiedLayout(grid);
-  updateCloudStatus(CLOUDCAT.items.length ? '' : 'favEmpty');
-  setLibViewHeader(CLOUDCAT.items.length);
-}
-
-// Render the Lumina panel for the current capability. Public builds (unavailable)
-// show a calm "coming soon" state with no network; a staging/production build shows
-// the real catalog (C3) plus the account strip (C4).
-function renderCloudPanel() {
-  const toolbar = $('#libCloudToolbar');
-  const grid = $('#cloudGrid');
-  const more = $('#cloudMore');
-  const cap = CLOUD.cap || { environment: 'unavailable', available: false };
-  const ready = cap.available && (cap.environment === 'staging' || cap.environment === 'production');
-
-  const account = $('#libCloudAccount');
-
-  if (!ready) {
-    if (account) account.hidden = true;
-    if (toolbar) toolbar.hidden = true;
-    if (grid) { grid.innerHTML = ''; grid.hidden = true; }
-    if (more) more.hidden = true;
-    renderCloudComingSoon(cap);
-    return;
-  }
-
-  if (account) account.hidden = false;
-  if (toolbar) toolbar.hidden = false;
-  if (grid) grid.hidden = false;
-  ensureCloudSession().then(async () => {
-    renderCloudAccount();
-    refreshCloudRatingOptions();
-    const views = $('#libCloudViews'); if (views) views.hidden = !cloudSignedIn();
-    if (!cloudSignedIn() && CLOUDCAT.view === 'favorites') CLOUDCAT.view = 'catalog';
-    applyCloudView();
-    const ratingSel = $('#cloudRating');
-    if (ratingSel && ratingSel.value !== CLOUDCAT.rating) ratingSel.value = CLOUDCAT.rating;
-    if (cloudSignedIn()) await ensureCloudFavorites(); // heart states before catalog cards render
-    if (!CLOUDCAT.fetched && !CLOUDCAT.loading) loadCloudFeed(true);
-    else updateCloudStatus(CLOUDCAT.items.length ? '' : (CLOUDCAT.loading ? 'loading' : (CLOUDCAT.view === 'favorites' ? 'favEmpty' : 'empty')));
-  });
-}
-
-// "Coming soon" state shown in public (unavailable) builds.
-function renderCloudComingSoon(cap) {
-  const host = $('#libCloudState');
-  if (!host) return;
-  const badge = (cap.environment === 'staging' || cap.environment === 'production') ? t('online.cloudBadgeStaging') : t('online.cloudBadgeSoon');
-  const wrap = document.createElement('div');
-  wrap.className = 'lib-cloud-empty';
-  wrap.innerHTML = '<svg class="lib-cloud-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M6.5 18.5a4 4 0 0 1-.4-7.98A5 5 0 0 1 15.5 8.2a3.6 3.6 0 0 1 .7 9.6z"/></svg>';
-  const b = document.createElement('span'); b.className = 'lib-cloud-badge'; b.textContent = badge;
-  const h = document.createElement('h3'); h.textContent = t('online.comingSoonTitle');
-  const p = document.createElement('p'); p.textContent = t('online.comingSoonBody');
-  wrap.append(b, h, p);
-  host.innerHTML = '';
-  host.appendChild(wrap);
-}
-
-// Status line above the cloud grid: loading / empty / error / offline (or cleared).
-function updateCloudStatus(kind, detail) {
-  const host = $('#libCloudState');
-  if (!host) return;
-  host.innerHTML = '';
-  if (!kind) return;
-  const div = document.createElement('div');
-  div.className = 'lib-online-note';
-  if (kind === 'loading') div.textContent = t('online.loading');
-  else if (kind === 'empty') div.textContent = t('online.noResults');
-  else if (kind === 'favEmpty') div.textContent = t('online.favEmpty');
-  else if (kind === 'error') div.textContent = detail === 'network' ? t('online.offline') : t('online.error', { e: detail || '?' });
-  host.appendChild(div);
-}
-
-// Load a catalog page from main (reset = first page / rating change). All requests
-// go through IPC; the renderer never touches the API directly.
-async function loadCloudCatalog(reset) {
-  if (CLOUDCAT.loading) return;
-  CLOUDCAT.loading = true;
-  CLOUDCAT.fetched = true;
-  const grid = $('#cloudGrid');
-  if (reset) { CLOUDCAT.cursor = null; CLOUDCAT.items = []; if (grid) grid.innerHTML = ''; }
-  const more = $('#cloudMore'); if (more) more.disabled = true;
-  if (!CLOUDCAT.items.length) updateCloudStatus('loading');
-  let res;
-  try { res = await window.api.cloudCatalog({ rating: CLOUDCAT.rating, cursor: reset ? null : CLOUDCAT.cursor }); }
-  catch { res = { error: 'network' }; }
-  CLOUDCAT.loading = false;
-  if (more) more.disabled = false;
+  ONLINE.loading = false;
   if (!res || res.error) {
-    if (!CLOUDCAT.items.length) updateCloudStatus('error', res && res.error);
-    else toast(res && res.error === 'network' ? t('online.offline') : t('online.error', { e: (res && res.error) || '?' }));
-    if (more) more.hidden = true;
+    if (note) note.textContent = res && res.error === 'network' ? t('online.offline') : t('online.error', { e: (res && res.error) || '?' });
+    setLibViewHeader(0);
     return;
   }
-  (res.items || []).forEach((it) => { CLOUDCAT.items.push(it); if (grid) grid.appendChild(buildCloudCard(it)); });
-  CLOUDCAT.cursor = res.nextCursor || null;
+  CLOUDFAV.ids = new Set((res.items || []).map((it) => it.id)); CLOUDFAV.fetched = true;
+  (res.items || []).forEach((it) => { if (grid) grid.appendChild(buildCloudCard(it)); });
   if (grid) scheduleJustifiedLayout(grid);
-  if (more) more.hidden = !CLOUDCAT.cursor;
-  updateCloudStatus(CLOUDCAT.items.length ? '' : 'empty');
-  setLibViewHeader(CLOUDCAT.items.length);
+  const n = grid ? grid.children.length : 0;
+  setLibViewHeader(n);
+  if (note) note.textContent = n ? '' : t('online.favEmpty');
+}
+
+// Append a page of Lumina catalog results into the shared grid (#whGrid). The Lumina
+// source is searched by the same tag and content filter as the Internet source.
+async function loadLuminaResults(reset) {
+  const grid = $('#whGrid');
+  let res;
+  try {
+    res = await window.api.cloudCatalog({
+      rating: luminaRatingFromPurity(),
+      tag: INTERNET.q || undefined,
+      cursor: reset ? null : LUMINA.cursor,
+    });
+  } catch { res = { error: 'network' }; }
+  if (!res || res.error) { LUMINA.cursor = null; return; }
+  LUMINA.cursor = res.nextCursor || null;
+  (res.items || []).forEach((it) => { if (grid) grid.appendChild(buildCloudCard(it)); });
 }
 
 // Already imported? Cloud items carry a stable "lumina:<id>" source marker.
@@ -2404,12 +2319,12 @@ function buildCloudCard(item) {
       fav.disabled = false;
       if (res && res.ok) {
         if (on) CLOUDFAV.ids.add(item.id); else CLOUDFAV.ids.delete(item.id);
-        if (!on && CLOUDCAT.view === 'favorites') {
+        if (!on && ONLINE.view === 'favorites') {
           card.remove();
-          const grid = $('#cloudGrid');
+          const grid = $('#whGrid');
           const left = grid ? grid.children.length : 0;
-          CLOUDCAT.items = CLOUDCAT.items.filter((x) => x.id !== item.id);
-          if (!left) updateCloudStatus('favEmpty');
+          const note = $('#whNote');
+          if (!left && note) note.textContent = t('online.favEmpty');
           setLibViewHeader(left);
           return;
         }
@@ -2428,27 +2343,34 @@ async function renderOnline() {
   await ensureCloudCapability();
   const sources = onlineSources();
   applyOnlineSourceUI(sources);
-  if (sources.lumina) renderCloudPanel();
-
-  if (!sources.internet) { setLibViewHeader(null); return; }
-
-  if (!INTERNET.statusFetched) {
+  await refreshOnlineAccount(sources);
+  if (sources.internet && !INTERNET.statusFetched) {
     try { const st = await window.api.internetStatus(); INTERNET.nsfwAvailable = !!st.nsfwAvailable; }
     catch { INTERNET.nsfwAvailable = false; }
     INTERNET.statusFetched = true;
   }
   updatePurityToggle();
-  if (!INTERNET.searched) {
-    const note = $('#whNote');
-    if (note) note.textContent = t('online.hint');
-    const grid = $('#whGrid'); if (grid) grid.innerHTML = '';
-    const more = $('#whMore'); if (more) more.hidden = true;
-  }
+  if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
+  if (!ONLINE.loaded) { doOnlineSearch(true); return; }
   const grid = $('#whGrid');
-  setLibViewHeader(INTERNET.searched && grid ? grid.children.length : null);
+  setLibViewHeader(grid ? grid.children.length : 0);
 }
 
-// Toggle a content source on/off (keeps at least one on), persist, re-render.
+// Account chip + favorites toggle reflect the session (only when Lumina is reachable).
+async function refreshOnlineAccount(sources) {
+  const acc = $('#libCloudAccount');
+  if (!(sources.lumina && cloudAvailable())) {
+    if (acc) acc.hidden = true;
+    applyFavToggleUI();
+    return;
+  }
+  await ensureCloudSession();
+  renderCloudAccount();
+  applyFavToggleUI();
+  if (cloudSignedIn()) await ensureCloudFavorites();
+}
+
+// Toggle a content source on/off (keeps at least one on), persist, re-search.
 function toggleOnlineSource(key) {
   const cur = onlineSources();
   const next = { lumina: cur.lumina, internet: cur.internet };
@@ -2456,31 +2378,71 @@ function toggleOnlineSource(key) {
   if (!next.lumina && !next.internet) return; // never leave the tab empty
   config.onlineSources = next;
   window.api.setConfig({ onlineSources: next });
+  ONLINE.loaded = false;
   renderOnline();
 }
 
-async function doInternetSearch(reset) {
+// Unified search: one query + content filter drives every active source into #whGrid.
+async function doOnlineSearch(reset) {
   hideOnlineTagSuggest();
-  const qEl = $('#whQuery');
-  INTERNET.q = (qEl && qEl.value || '').trim();
-  if (reset) INTERNET.page = 1;
-  const note = $('#whNote');
-  const grid = $('#whGrid');
+  if (ONLINE.loading) return;
+  ONLINE.view = 'search';
+  applyFavToggleUI();
+  const sources = onlineSources();
+  const qEl = $('#whQuery'); INTERNET.q = (qEl && qEl.value || '').trim();
+  const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
+  if (reset) { INTERNET.page = 1; LUMINA.cursor = null; ONLINE.loaded = true; if (grid) grid.innerHTML = ''; }
+  ONLINE.loading = true; if (more) more.disabled = true;
   if (note) note.textContent = t('online.loading');
+
+  const tasks = [];
+  if (sources.internet) tasks.push(loadInternetResults());
+  if (sources.lumina && cloudAvailable()) tasks.push(loadLuminaResults(reset));
+  await Promise.all(tasks);
+
+  ONLINE.loading = false; if (more) more.disabled = false;
+  if (grid) scheduleJustifiedLayout(grid);
+  finalizeOnlineFeed();
+}
+
+// Append one Internet page (Wallhaven + Gelbooru/Danbooru, merged in main) into #whGrid.
+async function loadInternetResults() {
+  const grid = $('#whGrid');
   let res;
   try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, page: INTERNET.page }); }
-  catch (err) { res = { error: 'network' }; }
+  catch { res = { error: 'network' }; }
   INTERNET.searched = true;
-  INTERNET.nsfwAvailable = !!res.nsfwAvailable;
-  updatePurityToggle();
-  if (res.error) { if (note) note.textContent = t('online.error', { e: res.error }); return; }
+  if (typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
+  if (res.error) { INTERNET.lastPage = INTERNET.page; return; }
   INTERNET.lastPage = (res.meta && res.meta.lastPage) || INTERNET.page;
-  if (reset && grid) grid.innerHTML = '';
-  (res.items || []).forEach((it) => grid.appendChild(buildInternetCard(it)));
-  scheduleJustifiedLayout(grid);
-  setLibViewHeader(grid ? grid.children.length : 0);
-  if (note) note.textContent = (grid && grid.children.length) ? '' : t('online.noResults');
-  const more = $('#whMore'); if (more) more.hidden = INTERNET.page >= INTERNET.lastPage;
+  (res.items || []).forEach((it) => { if (grid) grid.appendChild(buildInternetCard(it)); });
+}
+
+// Note + "more" button + header for the current shared grid.
+function finalizeOnlineFeed() {
+  const sources = onlineSources();
+  const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
+  const n = grid ? grid.children.length : 0;
+  setLibViewHeader(n);
+  if (note) note.textContent = n ? '' : t('online.noResults');
+  const hasMore = (sources.internet && INTERNET.page < INTERNET.lastPage)
+    || (sources.lumina && cloudAvailable() && !!LUMINA.cursor);
+  if (more) more.hidden = !hasMore;
+}
+
+// "Показать ещё" advances every active source that still has a next page.
+async function loadMoreOnline() {
+  if (ONLINE.loading || ONLINE.view === 'favorites') return;
+  const sources = onlineSources();
+  const more = $('#whMore'); if (more) more.disabled = true;
+  ONLINE.loading = true;
+  const tasks = [];
+  if (sources.internet && INTERNET.page < INTERNET.lastPage) { INTERNET.page += 1; tasks.push(loadInternetResults()); }
+  if (sources.lumina && cloudAvailable() && LUMINA.cursor) tasks.push(loadLuminaResults(false));
+  await Promise.all(tasks);
+  ONLINE.loading = false; if (more) more.disabled = false;
+  const grid = $('#whGrid'); if (grid) scheduleJustifiedLayout(grid);
+  finalizeOnlineFeed();
 }
 
 // Already in the pool? Online items carry their source page; we match on it so the
@@ -3387,10 +3349,10 @@ async function init() {
   window.api.onUpdate((st) => renderUpdate(st));
 
   // Cloud session changed in main (e.g. a 401 dropped an expired session) → refresh
-  // the account strip + rating options if the Online tab is open.
+  // the account chip + favorites toggle if the Online tab is open.
   window.api.onCloudSession((s) => {
     CLOUDAUTH.state = s; CLOUDAUTH.fetched = true;
-    if (LIB.filter === 'online' && onlineSources().lumina) { renderCloudAccount(); refreshCloudRatingOptions(); }
+    if (LIB.filter === 'online' && onlineSources().lumina) { renderCloudAccount(); applyFavToggleUI(); }
   });
 
   // keep thumbnails fitted when the window (and thus cards) resize

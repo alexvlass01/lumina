@@ -1112,7 +1112,8 @@ ipcMain.handle('cloud-catalog', async (e, opts) => {
   if (!client) return { items: [], nextCursor: null, error: 'unavailable' };
   const o = opts || {};
   const rating = ['general', 'suggestive', 'explicit'].includes(o.rating) ? o.rating : 'general';
-  const r = await client.getCatalog({ rating, cursor: o.cursor || undefined, limit: 30, token: _cloudToken || undefined });
+  const tag = typeof o.tag === 'string' && o.tag.trim() ? o.tag.trim() : undefined;
+  const r = await client.getCatalog({ rating, tag, cursor: o.cursor || undefined, limit: 30, token: _cloudToken || undefined });
   if (!r.ok) {
     cloudHandleAuthError(r);
     return { items: [], nextCursor: null, error: r.error.code, kind: r.error.kind };

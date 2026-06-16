@@ -210,7 +210,8 @@
     "viewFavorites": "Избранное",
     "favAdd": "В избранное Lumina",
     "favRemove": "Убрать из избранного Lumina",
-    "favEmpty": "В избранном Lumina пока пусто"
+    "favEmpty": "В избранном Lumina пока пусто",
+    "favViewHint": "Показать избранное Lumina"
   },
   "theme": {
     "group": "Тема Windows",
