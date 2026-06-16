@@ -194,6 +194,7 @@ function applyI18n() {
     const txt = t(el.dataset.i18nTitle);
     if (el.tagName === 'OPTGROUP') el.label = txt;
     else el.title = txt;
+    if (el.hasAttribute('aria-label')) el.setAttribute('aria-label', txt);
   });
   document.querySelectorAll('[data-i18n-tooltip]').forEach((el) => {
     el.setAttribute('data-tooltip', t(el.dataset.i18nTooltip));
@@ -730,6 +731,9 @@ const LUMINA = { cursor: null };
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
 const CLOUDFAV = { ids: new Set(), fetched: false };
+// Gallery viewer state. Cards pass normalized entries into this list, so future
+// gallery features (details pane, zoom, filmstrip, source actions) can evolve here.
+const GALLERY = { open: false, items: [], index: 0, token: 0, lastFocus: null };
 
 function setLibCardAspect(card, aspect) {
   if (!card) return;
@@ -941,6 +945,7 @@ function buildLibCard(it, isAssigned) {
   } else {
     card.title = baseName(it.path);
     lazyThumb(card, it.path, 320, 200);
+    card.__galleryItem = galleryItemFromLibrary(it);
   }
 
   const fav = document.createElement('button');
@@ -997,10 +1002,10 @@ function buildLibCard(it, isAssigned) {
       else LIB.selection.add(it.id);
       LIB.lastSelected = it.id;
     } else {
-      // Plain click: leave selection mode if active, otherwise open the quick assign menu.
+      // Plain click: leave selection mode if active, otherwise preview the image.
       if (LIB.selection.size > 0) { clearSelection(); syncSelectionUI(); return; }
       LIB.lastSelected = it.id; // remember anchor so a later Shift+click can extend from here
-      openAssignMenu(it, menu);
+      if (card.__galleryItem) openGalleryFromCard(card, card.__galleryItem);
       return;
     }
     syncSelectionUI();
@@ -1212,8 +1217,8 @@ function buildPathImageCard(p, assigned, pmap) {
   return buildEphemeralImageCard(p);
 }
 
-// Image living inside a folder, not yet in the pool. Any action first "materializes"
-// it (adds by reference, no copy) → then the normal assign menu / favorite flow runs.
+// Image living inside a folder, not yet in the pool. Preview can open it directly;
+// actions that mutate library state first materialize it by reference (no copy).
 function buildEphemeralImageCard(p) {
   const card = document.createElement('div');
   card.className = 'lib-card';
@@ -1221,6 +1226,7 @@ function buildEphemeralImageCard(p) {
   makeLibCardFocusable(card);
   primeLibCardAspect(card, null, p);
   lazyThumb(card, p, 320, 200);
+  card.__galleryItem = galleryItemFromPath(p);
   const materialize = async () => {
     const res = await window.api.libraryMaterialize(p, 'image');
     config = (res && res.config) || config;
@@ -1251,7 +1257,7 @@ function buildEphemeralImageCard(p) {
   card.appendChild(menu);
 
   card.addEventListener('mouseenter', () => setLibStatus(baseName(p)));
-  card.addEventListener('click', open);
+  card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
   return card;
 }
 
@@ -1355,6 +1361,277 @@ function makeLibCardFocusable(card) {
     e.preventDefault();
     card.click();
   });
+}
+
+// ---- Gallery viewer helpers ----
+function gallerySubtitle(parts) {
+  return parts.filter(Boolean).join(' - ');
+}
+
+function galleryItemFromLibrary(it) {
+  return {
+    kind: 'library',
+    key: `library:${it.id}`,
+    title: baseName(it.path),
+    subtitle: t('viewer.local'),
+    path: it.path,
+    raw: it,
+  };
+}
+
+function galleryItemFromPath(p) {
+  return {
+    kind: 'path',
+    key: `path:${normPathKey(p)}`,
+    title: baseName(p),
+    subtitle: t('viewer.localFolder'),
+    path: p,
+    raw: { path: p },
+  };
+}
+
+function galleryItemFromCloud(item) {
+  const resolution = item.width && item.height ? `${item.width}x${item.height}` : '';
+  return {
+    kind: 'cloud',
+    key: `cloud:${item.id}`,
+    title: item.title || t('online.sourceLumina'),
+    subtitle: gallerySubtitle([t('online.sourceLumina'), resolution, item.rating && t(`online.rating${item.rating[0].toUpperCase()}${item.rating.slice(1)}`)]),
+    previewUrl: item.thumb_url || '',
+    raw: item,
+  };
+}
+
+function galleryItemFromInternet(item) {
+  return {
+    kind: 'internet',
+    key: `internet:${item.provider || 'source'}:${item.id || item.page || item.full || item.thumb}`,
+    title: item.resolution || item.id || t('online.source'),
+    subtitle: gallerySubtitle([t('online.source'), item.category, item.purity]),
+    previewUrl: item.thumb || '',
+    raw: item,
+    query: INTERNET.q,
+  };
+}
+
+function openGalleryFromCard(card, fallbackItem) {
+  const grid = card && card.closest('.lib-grid');
+  const cards = grid
+    ? Array.from(grid.querySelectorAll('.lib-card')).filter((c) => c.__galleryItem)
+    : [card].filter(Boolean);
+  const items = cards.map((c) => c.__galleryItem).filter(Boolean);
+  const index = Math.max(0, cards.indexOf(card));
+  openGalleryViewer(items.length ? items : [fallbackItem].filter(Boolean), index);
+}
+
+function openGalleryViewer(items, index = 0) {
+  const root = $('#galleryViewer');
+  if (!root) return;
+  const list = (items || []).filter(Boolean);
+  if (!list.length) return;
+  closeLibPopup();
+  hideOnlineTagSuggest();
+  GALLERY.items = list;
+  GALLERY.index = Math.max(0, Math.min(list.length - 1, index || 0));
+  GALLERY.open = true;
+  GALLERY.lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  root.hidden = false;
+  root.setAttribute('aria-hidden', 'false');
+  renderGalleryViewer();
+}
+
+function closeGalleryViewer() {
+  const root = $('#galleryViewer');
+  if (!root || root.hidden) return;
+  GALLERY.open = false;
+  GALLERY.token += 1;
+  root.hidden = true;
+  root.setAttribute('aria-hidden', 'true');
+  const img = $('#galleryViewerImage');
+  if (img) {
+    img.removeAttribute('src');
+    img.style.opacity = '0';
+  }
+  const state = $('#galleryViewerState');
+  if (state) state.hidden = true;
+  const focus = GALLERY.lastFocus;
+  GALLERY.lastFocus = null;
+  if (focus && focus.isConnected && typeof focus.focus === 'function') focus.focus();
+}
+
+function galleryStep(delta) {
+  if (!GALLERY.open || GALLERY.items.length <= 1) return;
+  const count = GALLERY.items.length;
+  GALLERY.index = (GALLERY.index + delta + count) % count;
+  renderGalleryViewer();
+}
+
+function setGalleryState(message, hidden = false) {
+  const state = $('#galleryViewerState');
+  if (!state) return;
+  state.textContent = message || '';
+  state.hidden = hidden || !message;
+}
+
+function isGalleryItemAdded(entry) {
+  if (!entry || !entry.raw) return false;
+  if (entry.kind === 'cloud') return cloudAlreadyAdded(entry.raw);
+  if (entry.kind === 'internet') return internetAlreadyAdded(entry.raw);
+  return false;
+}
+
+function markGalleryItemAdded(entry) {
+  if (!entry) return;
+  entry.added = true;
+  document.querySelectorAll('.lib-card').forEach((card) => {
+    const current = card.__galleryItem;
+    if (!current || current.key !== entry.key) return;
+    current.added = true;
+    const add = card.querySelector('.wh-add');
+    if (!add) return;
+    add.textContent = '\u2713';
+    add.classList.add('added');
+    add.disabled = true;
+    add.title = t('online.added');
+  });
+}
+
+function renderGalleryActions(entry) {
+  const actions = $('#galleryViewerActions');
+  if (!actions) return;
+  actions.innerHTML = '';
+  if (!entry || (entry.kind !== 'cloud' && entry.kind !== 'internet')) return;
+
+  const add = document.createElement('button');
+  add.className = 'gallery-viewer-action suggested';
+  const already = entry.added || isGalleryItemAdded(entry);
+  add.textContent = already ? t('online.added') : t('online.add');
+  add.disabled = already;
+  add.addEventListener('click', async () => {
+    if (add.disabled) return;
+    add.disabled = true;
+    let res;
+    try {
+      if (entry.kind === 'cloud') res = await window.api.cloudAdd(entry.raw);
+      else res = await window.api.internetAdd(entry.raw, entry.query || INTERNET.q);
+    } catch {
+      res = { error: 'download' };
+    }
+    if (res && res.config) config = res.config;
+    if (res && !res.error) {
+      markGalleryItemAdded(entry);
+      add.textContent = t('online.added');
+      toast(t('online.added'));
+    } else {
+      add.disabled = false;
+      toast(t('online.error', { e: (res && res.error) || '?' }));
+    }
+  });
+  actions.appendChild(add);
+}
+
+async function resolveGalleryImage(entry) {
+  if (!entry) return '';
+  if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
+    return window.api.fileUrl(entry.path);
+  }
+  if (entry.kind === 'cloud') {
+    return entry.previewUrl || '';
+  }
+  if (entry.kind === 'internet') {
+    const item = entry.raw || {};
+    const full = String(item.full || '');
+    const thumb = String(item.thumb || entry.previewUrl || '');
+    if (item.provider === 'wallhaven' && full) return full;
+    if (thumb.startsWith('data:image/')) return thumb;
+    try {
+      const result = await window.api.internetThumbnail(item);
+      if (result && result.dataUrl) return result.dataUrl;
+    } catch {}
+    return thumb || full || '';
+  }
+  return entry.previewUrl || '';
+}
+
+async function renderGalleryViewer() {
+  const root = $('#galleryViewer');
+  if (!root || root.hidden) return;
+  const entry = GALLERY.items[GALLERY.index];
+  const token = ++GALLERY.token;
+  const title = $('#galleryViewerTitle');
+  const subtitle = $('#galleryViewerSubtitle');
+  const footer = $('#galleryViewerFooter');
+  const img = $('#galleryViewerImage');
+  const prev = $('#galleryViewerPrev');
+  const next = $('#galleryViewerNext');
+
+  if (title) title.textContent = (entry && entry.title) || t('viewer.title');
+  if (subtitle) subtitle.textContent = (entry && entry.subtitle) || '';
+  if (footer) footer.textContent = t('viewer.counter', { current: GALLERY.index + 1, total: GALLERY.items.length });
+  if (prev) prev.disabled = GALLERY.items.length <= 1;
+  if (next) next.disabled = GALLERY.items.length <= 1;
+  renderGalleryActions(entry);
+
+  if (!img) return;
+  img.alt = (entry && entry.title) || '';
+  img.removeAttribute('src');
+  img.style.opacity = '0';
+  setGalleryState(t('viewer.loading'));
+
+  let src = '';
+  try {
+    src = await resolveGalleryImage(entry);
+  } catch {
+    src = '';
+  }
+  if (token !== GALLERY.token || !GALLERY.open) return;
+  if (!src) {
+    setGalleryState(t('viewer.loadError'));
+    return;
+  }
+
+  const probe = new Image();
+  probe.onload = () => {
+    if (token !== GALLERY.token || !GALLERY.open) return;
+    img.src = src;
+    img.style.opacity = '';
+    setGalleryState('', true);
+  };
+  probe.onerror = () => {
+    if (token !== GALLERY.token || !GALLERY.open) return;
+    setGalleryState(t('viewer.loadError'));
+  };
+  probe.src = src;
+}
+
+function initGalleryViewer() {
+  const root = $('#galleryViewer');
+  if (!root) return;
+  const close = $('#galleryViewerClose');
+  if (close) close.addEventListener('click', closeGalleryViewer);
+  const prev = $('#galleryViewerPrev');
+  if (prev) prev.addEventListener('click', () => galleryStep(-1));
+  const next = $('#galleryViewerNext');
+  if (next) next.addEventListener('click', () => galleryStep(1));
+  root.addEventListener('click', (e) => {
+    if (e.target.closest('[data-gallery-close]')) closeGalleryViewer();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (!GALLERY.open) return;
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeGalleryViewer();
+    } else if (e.key === 'ArrowLeft') {
+      e.preventDefault();
+      e.stopPropagation();
+      galleryStep(-1);
+    } else if (e.key === 'ArrowRight') {
+      e.preventDefault();
+      e.stopPropagation();
+      galleryStep(1);
+    }
+  }, true);
 }
 
 // ---- Multi-selection helpers ----
@@ -2299,6 +2576,7 @@ function buildCloudCard(item) {
   card.className = 'lib-card';
   makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
+  card.__galleryItem = galleryItemFromCloud(item);
   if (item.thumb_url) card.style.backgroundImage = `url("${item.thumb_url}")`;
   const label = [item.width && item.height ? `${item.width}×${item.height}` : '', item.title].filter(Boolean).join(' · ');
   card.title = item.title || '';
@@ -2356,7 +2634,7 @@ function buildCloudCard(item) {
   }
 
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.sourceLumina')));
-  card.addEventListener('click', () => { if (!add.disabled) add.click(); });
+  card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
   return card;
 }
 
@@ -2490,6 +2768,7 @@ function buildInternetCard(item) {
   card.dataset.provider = item.provider || '';
   makeLibCardFocusable(card);
   setLibCardAspect(card, item.width && item.height ? item.width / item.height : 1.6);
+  card.__galleryItem = galleryItemFromInternet(item);
   setInternetCardThumbnail(card, item);
   const label = [item.resolution, item.category].filter(Boolean).join(' · ');
   card.title = label;
@@ -2515,7 +2794,7 @@ function buildInternetCard(item) {
   });
   card.appendChild(add);
   card.addEventListener('mouseenter', () => setLibStatus(label || t('online.source')));
-  card.addEventListener('click', () => { if (!add.disabled) add.click(); });
+  card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
   return card;
 }
 
@@ -3031,6 +3310,7 @@ async function init() {
 
   window.api.getUpdateState().then(renderUpdate);
   initSmartPanel();
+  initGalleryViewer();
 
   // ---- page navigation ----
   document.querySelectorAll('.navbtn').forEach((b) => {

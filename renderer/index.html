@@ -703,6 +703,33 @@
     </section>
   </main>
 
+  <div class="gallery-viewer" id="galleryViewer" hidden aria-hidden="true">
+    <div class="gallery-viewer-backdrop" data-gallery-close></div>
+    <div class="gallery-viewer-shell" role="dialog" aria-modal="true" aria-labelledby="galleryViewerTitle">
+      <div class="gallery-viewer-topbar">
+        <div class="gallery-viewer-titlebox">
+          <div class="gallery-viewer-title" id="galleryViewerTitle"></div>
+          <div class="gallery-viewer-subtitle" id="galleryViewerSubtitle"></div>
+        </div>
+        <div class="gallery-viewer-actions" id="galleryViewerActions"></div>
+        <button class="gallery-viewer-close" id="galleryViewerClose" type="button" data-i18n-title="viewer.close" title="Close" aria-label="Close preview">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2 8 8m3.8 3.8L8 8m0 0 3.8-3.8M8 8l-3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <button class="gallery-viewer-nav prev" id="galleryViewerPrev" type="button" data-i18n-title="viewer.previous" title="Previous" aria-label="Previous image">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <figure class="gallery-viewer-stage" id="galleryViewerStage">
+        <img class="gallery-viewer-image" id="galleryViewerImage" alt="" draggable="false" />
+        <figcaption class="gallery-viewer-state" id="galleryViewerState" hidden></figcaption>
+      </figure>
+      <button class="gallery-viewer-nav next" id="galleryViewerNext" type="button" data-i18n-title="viewer.next" title="Next" aria-label="Next image">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+      <div class="gallery-viewer-footer" id="galleryViewerFooter"></div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script src="justified-layout.js"></script>

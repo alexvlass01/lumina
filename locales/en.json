@@ -163,6 +163,17 @@
     "massDelete": "Remove from library",
     "itemsCount": "Items: {n}"
   },
+  "viewer": {
+    "title": "Preview",
+    "local": "Local library",
+    "localFolder": "Folder image",
+    "loading": "Loading image...",
+    "loadError": "Could not open this image",
+    "counter": "{current} of {total}",
+    "close": "Close preview",
+    "previous": "Previous image",
+    "next": "Next image"
+  },
   "online": {
     "rail": "Online",
     "source": "Online",
