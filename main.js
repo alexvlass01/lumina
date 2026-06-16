@@ -825,6 +825,7 @@ function createGalleryWindow() {
     minHeight: 420,
     show: false,
     frame: false,
+    thickFrame: false,
     autoHideMenuBar: true,
     title: 'Lumina Media Viewer',
     backgroundColor: '#050505',
