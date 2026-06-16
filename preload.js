@@ -54,6 +54,7 @@ contextBridge.exposeInMainWorld('api', {
   internetTagSuggest: (opts) => ipcRenderer.invoke('internet-tag-suggest', opts),
   internetThumbnail: (item) => ipcRenderer.invoke('internet-thumbnail', item),
   internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
+  openGalleryViewer: (payload) => ipcRenderer.invoke('gallery-open', payload),
   setSlideshow: (patch) => ipcRenderer.invoke('set-slideshow', patch),
   setSlideshowIndex: (monitorId, which, index) => ipcRenderer.invoke('set-slideshow-index', monitorId, which, index),
   setSlideshowToPath: (monitorId, which, p) => ipcRenderer.invoke('set-slideshow-to-path', monitorId, which, p),

@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file: data: https://w.wallhaven.cc https://th.wallhaven.cc https://*.r2.cloudflarestorage.com; style-src 'self'; script-src 'self';" />
+  <title>Lumina Media Viewer</title>
+  <link rel="stylesheet" href="viewer.css" />
+</head>
+<body>
+  <main class="media-viewer" id="viewerRoot">
+    <div class="media-topbar">
+      <div class="media-titlebox">
+        <div class="media-title" id="viewerTitle"></div>
+        <div class="media-subtitle" id="viewerSubtitle"></div>
+      </div>
+      <div class="media-actions" id="viewerActions"></div>
+      <button class="media-close" id="viewerClose" type="button" aria-label="Close preview" title="Close preview">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.2 4.2 8 8m3.8 3.8L8 8m0 0 3.8-3.8M8 8l-3.8 3.8" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>
+      </button>
+    </div>
+
+    <button class="media-nav prev" id="viewerPrev" type="button" aria-label="Previous image" title="Previous image">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+    <section class="media-stage" id="viewerStage">
+      <img class="media-image" id="viewerImage" alt="" draggable="false" />
+      <div class="media-state" id="viewerState" hidden></div>
+    </section>
+    <button class="media-nav next" id="viewerNext" type="button" aria-label="Next image" title="Next image">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </button>
+
+    <div class="media-footer" id="viewerFooter"></div>
+  </main>
+
+  <script src="viewer.js"></script>
+</body>
+</html>

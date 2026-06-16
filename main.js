@@ -57,6 +57,8 @@ const STARTED_HIDDEN = process.argv.includes('--hidden');
 const START_TS = Date.now();
 
 let mainWindow = null;
+let galleryWindow = null;
+let galleryPayload = { items: [], index: 0 };
 app.isQuitting = false;
 
 // ---------------------------------------------------------------------------
@@ -782,6 +784,87 @@ function showWindow() {
     return;
   }
   bringToFront(mainWindow);
+}
+
+function sanitizeGalleryPayload(payload) {
+  const raw = payload && typeof payload === 'object' ? payload : {};
+  const items = Array.isArray(raw.items) ? raw.items : [];
+  const safeItems = items.slice(0, 500).map((item) => {
+    if (!item || typeof item !== 'object') return null;
+    const rawItem = item.raw && typeof item.raw === 'object' ? item.raw : {};
+    return {
+      kind: String(item.kind || ''),
+      key: String(item.key || ''),
+      title: String(item.title || '').slice(0, 300),
+      subtitle: String(item.subtitle || '').slice(0, 300),
+      path: typeof item.path === 'string' ? item.path : '',
+      previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : '',
+      query: typeof item.query === 'string' ? item.query.slice(0, 500) : '',
+      added: !!item.added,
+      raw: rawItem,
+    };
+  }).filter(Boolean);
+  const index = Number(raw.index);
+  return {
+    items: safeItems,
+    index: safeItems.length ? Math.max(0, Math.min(safeItems.length - 1, Number.isFinite(index) ? Math.floor(index) : 0)) : 0,
+  };
+}
+
+function createGalleryWindow() {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  galleryWindow = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    minWidth: 640,
+    minHeight: 420,
+    show: false,
+    frame: false,
+    fullscreen: true,
+    autoHideMenuBar: true,
+    title: 'Lumina Media Viewer',
+    backgroundColor: '#050505',
+    icon: path.join(__dirname, 'assets', 'icon.png'),
+    webPreferences: {
+      preload: path.join(__dirname, 'renderer', 'viewer-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+      backgroundThrottling: false,
+    },
+  });
+
+  galleryWindow.loadFile(path.join(__dirname, 'renderer', 'viewer.html'));
+
+  galleryWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
+    console.log(`[Viewer Console] ${message} (${sourceId}:${line})`);
+  });
+
+  galleryWindow.once('ready-to-show', () => {
+    if (!galleryWindow || galleryWindow.isDestroyed()) return;
+    galleryWindow.show();
+    galleryWindow.setFullScreen(true);
+    bringToFront(galleryWindow);
+  });
+
+  galleryWindow.on('closed', () => {
+    galleryWindow = null;
+  });
+}
+
+function openGalleryWindow(payload) {
+  galleryPayload = sanitizeGalleryPayload(payload);
+  if (!galleryPayload.items.length) return { ok: false, error: 'empty' };
+  if (!galleryWindow || galleryWindow.isDestroyed()) {
+    createGalleryWindow();
+  } else {
+    galleryWindow.webContents.send('gallery-payload', galleryPayload);
+    galleryWindow.setFullScreen(true);
+    bringToFront(galleryWindow);
+  }
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -2002,6 +2085,14 @@ ipcMain.handle('file-url', (e, p) => {
   } catch {
     return '';
   }
+});
+
+ipcMain.handle('gallery-open', (e, payload) => openGalleryWindow(payload));
+ipcMain.handle('gallery-payload', () => galleryPayload);
+ipcMain.handle('gallery-close', (e) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (win && !win.isDestroyed()) win.close();
+  return { ok: true };
 });
 
 ipcMain.handle('quit-app', () => {

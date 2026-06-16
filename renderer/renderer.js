@@ -130,6 +130,7 @@ if (!window.api) {
     },
     internetThumbnail: async (item) => ({ dataUrl: item && String(item.thumb || '').startsWith('data:') ? item.thumb : '', error: null }),
     internetAdd: async () => ({ config: mock, error: null }),
+    openGalleryViewer: async () => ({ ok: true }),
     setSlideshow: async (patch) => { mock.slideshow = { ...mock.slideshow, ...patch }; return mock; },
     setSlideshowIndex: async (monitorId, which, index) => {
       const theme = which === 'dark' ? 'dark' : 'light';
@@ -731,9 +732,6 @@ const LUMINA = { cursor: null };
 const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
 const CLOUDFAV = { ids: new Set(), fetched: false };
-// Gallery viewer state. Cards pass normalized entries into this list, so future
-// gallery features (details pane, zoom, filmstrip, source actions) can evolve here.
-const GALLERY = { open: false, items: [], index: 0, token: 0, lastFocus: null };
 
 function setLibCardAspect(card, aspect) {
   if (!card) return;
@@ -1425,52 +1423,18 @@ function openGalleryFromCard(card, fallbackItem) {
 }
 
 function openGalleryViewer(items, index = 0) {
-  const root = $('#galleryViewer');
-  if (!root) return;
   const list = (items || []).filter(Boolean);
   if (!list.length) return;
   closeLibPopup();
   hideOnlineTagSuggest();
-  GALLERY.items = list;
-  GALLERY.index = Math.max(0, Math.min(list.length - 1, index || 0));
-  GALLERY.open = true;
-  GALLERY.lastFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-  root.hidden = false;
-  root.setAttribute('aria-hidden', 'false');
-  renderGalleryViewer();
-}
-
-function closeGalleryViewer() {
-  const root = $('#galleryViewer');
-  if (!root || root.hidden) return;
-  GALLERY.open = false;
-  GALLERY.token += 1;
-  root.hidden = true;
-  root.setAttribute('aria-hidden', 'true');
-  const img = $('#galleryViewerImage');
-  if (img) {
-    img.removeAttribute('src');
-    img.style.opacity = '0';
-  }
-  const state = $('#galleryViewerState');
-  if (state) state.hidden = true;
-  const focus = GALLERY.lastFocus;
-  GALLERY.lastFocus = null;
-  if (focus && focus.isConnected && typeof focus.focus === 'function') focus.focus();
-}
-
-function galleryStep(delta) {
-  if (!GALLERY.open || GALLERY.items.length <= 1) return;
-  const count = GALLERY.items.length;
-  GALLERY.index = (GALLERY.index + delta + count) % count;
-  renderGalleryViewer();
-}
-
-function setGalleryState(message, hidden = false) {
-  const state = $('#galleryViewerState');
-  if (!state) return;
-  state.textContent = message || '';
-  state.hidden = hidden || !message;
+  const payloadItems = list.map((entry) => ({
+    ...entry,
+    added: entry.added || isGalleryItemAdded(entry),
+  }));
+  window.api.openGalleryViewer({
+    items: payloadItems,
+    index: Math.max(0, Math.min(payloadItems.length - 1, index || 0)),
+  }).catch(() => toast(t('viewer.loadError')));
 }
 
 function isGalleryItemAdded(entry) {
@@ -1478,160 +1442,6 @@ function isGalleryItemAdded(entry) {
   if (entry.kind === 'cloud') return cloudAlreadyAdded(entry.raw);
   if (entry.kind === 'internet') return internetAlreadyAdded(entry.raw);
   return false;
-}
-
-function markGalleryItemAdded(entry) {
-  if (!entry) return;
-  entry.added = true;
-  document.querySelectorAll('.lib-card').forEach((card) => {
-    const current = card.__galleryItem;
-    if (!current || current.key !== entry.key) return;
-    current.added = true;
-    const add = card.querySelector('.wh-add');
-    if (!add) return;
-    add.textContent = '\u2713';
-    add.classList.add('added');
-    add.disabled = true;
-    add.title = t('online.added');
-  });
-}
-
-function renderGalleryActions(entry) {
-  const actions = $('#galleryViewerActions');
-  if (!actions) return;
-  actions.innerHTML = '';
-  if (!entry || (entry.kind !== 'cloud' && entry.kind !== 'internet')) return;
-
-  const add = document.createElement('button');
-  add.className = 'gallery-viewer-action suggested';
-  const already = entry.added || isGalleryItemAdded(entry);
-  add.textContent = already ? t('online.added') : t('online.add');
-  add.disabled = already;
-  add.addEventListener('click', async () => {
-    if (add.disabled) return;
-    add.disabled = true;
-    let res;
-    try {
-      if (entry.kind === 'cloud') res = await window.api.cloudAdd(entry.raw);
-      else res = await window.api.internetAdd(entry.raw, entry.query || INTERNET.q);
-    } catch {
-      res = { error: 'download' };
-    }
-    if (res && res.config) config = res.config;
-    if (res && !res.error) {
-      markGalleryItemAdded(entry);
-      add.textContent = t('online.added');
-      toast(t('online.added'));
-    } else {
-      add.disabled = false;
-      toast(t('online.error', { e: (res && res.error) || '?' }));
-    }
-  });
-  actions.appendChild(add);
-}
-
-async function resolveGalleryImage(entry) {
-  if (!entry) return '';
-  if ((entry.kind === 'library' || entry.kind === 'path') && entry.path) {
-    return window.api.fileUrl(entry.path);
-  }
-  if (entry.kind === 'cloud') {
-    return entry.previewUrl || '';
-  }
-  if (entry.kind === 'internet') {
-    const item = entry.raw || {};
-    const full = String(item.full || '');
-    const thumb = String(item.thumb || entry.previewUrl || '');
-    if (item.provider === 'wallhaven' && full) return full;
-    if (thumb.startsWith('data:image/')) return thumb;
-    try {
-      const result = await window.api.internetThumbnail(item);
-      if (result && result.dataUrl) return result.dataUrl;
-    } catch {}
-    return thumb || full || '';
-  }
-  return entry.previewUrl || '';
-}
-
-async function renderGalleryViewer() {
-  const root = $('#galleryViewer');
-  if (!root || root.hidden) return;
-  const entry = GALLERY.items[GALLERY.index];
-  const token = ++GALLERY.token;
-  const title = $('#galleryViewerTitle');
-  const subtitle = $('#galleryViewerSubtitle');
-  const footer = $('#galleryViewerFooter');
-  const img = $('#galleryViewerImage');
-  const prev = $('#galleryViewerPrev');
-  const next = $('#galleryViewerNext');
-
-  if (title) title.textContent = (entry && entry.title) || t('viewer.title');
-  if (subtitle) subtitle.textContent = (entry && entry.subtitle) || '';
-  if (footer) footer.textContent = t('viewer.counter', { current: GALLERY.index + 1, total: GALLERY.items.length });
-  if (prev) prev.disabled = GALLERY.items.length <= 1;
-  if (next) next.disabled = GALLERY.items.length <= 1;
-  renderGalleryActions(entry);
-
-  if (!img) return;
-  img.alt = (entry && entry.title) || '';
-  img.removeAttribute('src');
-  img.style.opacity = '0';
-  setGalleryState(t('viewer.loading'));
-
-  let src = '';
-  try {
-    src = await resolveGalleryImage(entry);
-  } catch {
-    src = '';
-  }
-  if (token !== GALLERY.token || !GALLERY.open) return;
-  if (!src) {
-    setGalleryState(t('viewer.loadError'));
-    return;
-  }
-
-  const probe = new Image();
-  probe.onload = () => {
-    if (token !== GALLERY.token || !GALLERY.open) return;
-    img.src = src;
-    img.style.opacity = '';
-    setGalleryState('', true);
-  };
-  probe.onerror = () => {
-    if (token !== GALLERY.token || !GALLERY.open) return;
-    setGalleryState(t('viewer.loadError'));
-  };
-  probe.src = src;
-}
-
-function initGalleryViewer() {
-  const root = $('#galleryViewer');
-  if (!root) return;
-  const close = $('#galleryViewerClose');
-  if (close) close.addEventListener('click', closeGalleryViewer);
-  const prev = $('#galleryViewerPrev');
-  if (prev) prev.addEventListener('click', () => galleryStep(-1));
-  const next = $('#galleryViewerNext');
-  if (next) next.addEventListener('click', () => galleryStep(1));
-  root.addEventListener('click', (e) => {
-    if (e.target.closest('[data-gallery-close]')) closeGalleryViewer();
-  });
-  document.addEventListener('keydown', (e) => {
-    if (!GALLERY.open) return;
-    if (e.key === 'Escape') {
-      e.preventDefault();
-      e.stopPropagation();
-      closeGalleryViewer();
-    } else if (e.key === 'ArrowLeft') {
-      e.preventDefault();
-      e.stopPropagation();
-      galleryStep(-1);
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault();
-      e.stopPropagation();
-      galleryStep(1);
-    }
-  }, true);
 }
 
 // ---- Multi-selection helpers ----
@@ -3310,7 +3120,6 @@ async function init() {
 
   window.api.getUpdateState().then(renderUpdate);
   initSmartPanel();
-  initGalleryViewer();
 
   // ---- page navigation ----
   document.querySelectorAll('.navbtn').forEach((b) => {
