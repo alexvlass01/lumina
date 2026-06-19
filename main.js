@@ -59,6 +59,7 @@ const START_TS = Date.now();
 let mainWindow = null;
 let galleryWindow = null;
 let galleryWindowNormalBounds = null;
+let galleryWindowFullscreen = false; // tracked explicitly: enter/leave-full-screen events are unreliable for frameless windows on Windows
 let galleryPayload = { items: [], index: 0 };
 app.isQuitting = false;
 
@@ -852,15 +853,18 @@ function createGalleryWindow() {
   });
 
   galleryWindow.on('enter-full-screen', () => {
+    galleryWindowFullscreen = true;
     if (galleryWindow && !galleryWindow.isDestroyed()) galleryWindow.webContents.send('gallery-fullscreen-changed', true);
   });
   galleryWindow.on('leave-full-screen', () => {
+    galleryWindowFullscreen = false;
     if (galleryWindow && !galleryWindow.isDestroyed()) galleryWindow.webContents.send('gallery-fullscreen-changed', false);
   });
 
   galleryWindow.on('closed', () => {
     galleryWindow = null;
     galleryWindowNormalBounds = null;
+    galleryWindowFullscreen = false;
   });
 }
 
@@ -2106,14 +2110,20 @@ ipcMain.handle('gallery-close', (e) => {
 ipcMain.handle('gallery-toggle-fullscreen', (e) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (!win || win.isDestroyed()) return { ok: false };
-  const next = !win.isFullScreen();
-  if (!next) {
-    win.setFullScreen(false);
-    if (galleryWindowNormalBounds) win.setBounds(galleryWindowNormalBounds);
-  } else {
+  // Toggle off our own tracked flag, not win.isFullScreen() — the latter (and the
+  // enter/leave-full-screen events) are unreliable for frameless windows on Windows,
+  // which left the "exit fullscreen" click stuck.
+  const next = !galleryWindowFullscreen;
+  if (next) {
     if (!win.isFullScreen()) galleryWindowNormalBounds = win.getBounds();
     win.setFullScreen(true);
+  } else {
+    win.setFullScreen(false);
+    if (galleryWindowNormalBounds) win.setBounds(galleryWindowNormalBounds);
   }
+  galleryWindowFullscreen = next;
+  // Drive the renderer UI directly (the OS events may not fire on Windows).
+  if (win.webContents && !win.webContents.isDestroyed()) win.webContents.send('gallery-fullscreen-changed', next);
   return { ok: true, fullscreen: next };
 });
 

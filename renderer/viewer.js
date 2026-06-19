@@ -264,7 +264,10 @@ function initEvents() {
   if (close) close.addEventListener('click', () => window.viewerApi.close());
   const root = $('#viewerRoot');
   const fullscreen = $('#viewerFullscreen');
-  if (fullscreen) fullscreen.addEventListener('click', () => window.viewerApi.toggleFullscreen());
+  if (fullscreen) fullscreen.addEventListener('click', async () => {
+    const r = await window.viewerApi.toggleFullscreen();
+    if (r && typeof r.fullscreen === 'boolean') setFullscreenUi(r.fullscreen);
+  });
   const prev = $('#viewerPrev');
   if (prev) prev.addEventListener('click', () => step(-1));
   const next = $('#viewerNext');
