@@ -107,7 +107,16 @@ async function fullSource(entry, fallback = '') {
   }
   if (entry.kind === 'internet') {
     const item = entry.raw || {};
-    return String(item.full || '') || fallback;
+    const direct = String(item.full || '');
+    // Wallhaven loads directly; booru hosts (e.g. Gelbooru hotlink.php) need a Referer
+    // the renderer can't send, so fetch the full image through main as a data URL.
+    if (item.provider && item.provider !== 'wallhaven') {
+      try {
+        const r = await window.viewerApi.internetFull(item);
+        if (r && r.dataUrl) return r.dataUrl;
+      } catch {}
+    }
+    return direct || fallback;
   }
   return fallback || entry.previewUrl || '';
 }

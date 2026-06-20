@@ -1623,6 +1623,7 @@ const DANBOORU_PAGE_SIZE = 100;
 const INTERNET_USER_AGENT = `Lumina/${app.getVersion()} (https://github.com/alexvlass01/lumina)`;
 const INTERNET_THUMBNAIL_MAX_BYTES = 2 * 1024 * 1024;
 const INTERNET_THUMBNAIL_CACHE_SIZE = 200;
+const INTERNET_FULL_MAX_BYTES = 30 * 1024 * 1024; // viewer full image (wallpapers can be large)
 const INTERNET_TAG_SUGGEST_CACHE_SIZE = 200;
 const internetThumbnailCache = new Map();
 const internetTagSuggestCache = new Map();
@@ -1818,6 +1819,30 @@ async function fetchInternetThumbnail(item) {
 // Booru CDNs may reject direct Chromium requests. Fetch only validated preview
 // URLs in main and return a small data URL to renderer.
 ipcMain.handle('internet-thumbnail', (e, item) => fetchInternetThumbnail(item));
+
+// Full image for the viewer. Booru hosts (esp. Gelbooru's hotlink.php) need a Referer
+// the renderer can't send, so main fetches the validated full URL and returns a data
+// URL. Wallhaven loads directly in the viewer, so this is only used for booru items.
+async function fetchInternetFull(item) {
+  if (!online.allowedFullFetchUrl(item)) return { dataUrl: '', error: 'badItem' };
+  try {
+    const res = await fetch(item.full, {
+      headers: internetRequestHeaders(item),
+      signal: AbortSignal.timeout(30000),
+    });
+    if (!res.ok) return { dataUrl: '', error: String(res.status) };
+    const mime = online.thumbnailMime(res.headers.get('content-type'));
+    if (!mime) return { dataUrl: '', error: 'badImage' };
+    if ((Number(res.headers.get('content-length')) || 0) > INTERNET_FULL_MAX_BYTES) return { dataUrl: '', error: 'tooBig' };
+    const bytes = Buffer.from(await res.arrayBuffer());
+    if (bytes.length > INTERNET_FULL_MAX_BYTES) return { dataUrl: '', error: 'tooBig' };
+    const dataUrl = online.thumbnailDataUrl(bytes, mime);
+    return dataUrl ? { dataUrl, error: null } : { dataUrl: '', error: 'badImage' };
+  } catch (err) {
+    return { dataUrl: '', error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
+  }
+}
+ipcMain.handle('internet-full', (e, item) => fetchInternetFull(item));
 
 // Download a normalized provider item into the local pool. The renderer cannot
 // turn this into an arbitrary downloader: provider and CDN host must match.

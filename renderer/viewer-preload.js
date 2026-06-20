@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('viewerApi', {
   toggleFullscreen: () => ipcRenderer.invoke('gallery-toggle-fullscreen'),
   fileUrl: (p) => ipcRenderer.invoke('file-url', p),
   internetThumbnail: (item) => ipcRenderer.invoke('internet-thumbnail', item),
+  internetFull: (item) => ipcRenderer.invoke('internet-full', item),
   internetAdd: (item, query) => ipcRenderer.invoke('internet-add', item, query),
   cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
   onPayload: (cb) => ipcRenderer.on('gallery-payload', (_e, payload) => cb(payload)),

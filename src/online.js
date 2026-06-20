@@ -42,6 +42,25 @@ function allowedDownloadUrl(item) {
   }
 }
 
+// Hosts whose FULL image the main process may fetch (referer-gated) for the viewer.
+// Like allowedDownloadUrl but also accepts Gelbooru's apex hotlink.php endpoint.
+function allowedFullFetchUrl(item) {
+  if (!item || !item.full || !item.provider) return false;
+  try {
+    const url = new URL(item.full);
+    if (url.protocol !== 'https:' || url.username || url.password) return false;
+    if (item.provider === 'wallhaven') return url.hostname === 'w.wallhaven.cc';
+    if (item.provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
+    if (item.provider === 'gelbooru') {
+      return isGelbooruImageHost(url.hostname)
+        || ((url.hostname === 'gelbooru.com' || url.hostname === 'www.gelbooru.com') && url.pathname === '/hotlink.php');
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function allowedThumbnailUrl(item) {
   if (!item || !item.thumb) return false;
   try {
@@ -159,6 +178,7 @@ module.exports = {
   itemKeys,
   isGelbooruImageHost,
   allowedDownloadUrl,
+  allowedFullFetchUrl,
   allowedThumbnailUrl,
   allowedPageUrl,
   thumbnailMime,
