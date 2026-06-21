@@ -42,16 +42,17 @@ function allowedDownloadUrl(item) {
   }
 }
 
-// Hosts whose FULL image the main process may fetch (referer-gated) for the viewer.
-// Like allowedDownloadUrl but also accepts Gelbooru's apex hotlink.php endpoint.
-function allowedFullFetchUrl(item) {
-  if (!item || !item.full || !item.provider) return false;
+// Is this URL one whose image bytes the main process may fetch (referer-gated)
+// for the viewer? Same host rules for the sample and full tiers. Like
+// allowedDownloadUrl but also accepts Gelbooru's apex hotlink.php endpoint.
+function isAllowedProviderImageUrl(provider, target) {
+  if (!provider || !target) return false;
   try {
-    const url = new URL(item.full);
+    const url = new URL(target);
     if (url.protocol !== 'https:' || url.username || url.password) return false;
-    if (item.provider === 'wallhaven') return url.hostname === 'w.wallhaven.cc';
-    if (item.provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
-    if (item.provider === 'gelbooru') {
+    if (provider === 'wallhaven') return url.hostname === 'w.wallhaven.cc';
+    if (provider === 'danbooru') return url.hostname === 'cdn.donmai.us';
+    if (provider === 'gelbooru') {
       return isGelbooruImageHost(url.hostname)
         || ((url.hostname === 'gelbooru.com' || url.hostname === 'www.gelbooru.com') && url.pathname === '/hotlink.php');
     }
@@ -59,6 +60,14 @@ function allowedFullFetchUrl(item) {
   } catch {
     return false;
   }
+}
+
+function allowedFullFetchUrl(item) {
+  return !!item && isAllowedProviderImageUrl(item.provider, item.full);
+}
+
+function allowedSampleFetchUrl(item) {
+  return !!item && isAllowedProviderImageUrl(item.provider, item.sample);
 }
 
 function allowedThumbnailUrl(item) {
@@ -178,7 +187,9 @@ module.exports = {
   itemKeys,
   isGelbooruImageHost,
   allowedDownloadUrl,
+  isAllowedProviderImageUrl,
   allowedFullFetchUrl,
+  allowedSampleFetchUrl,
   allowedThumbnailUrl,
   allowedPageUrl,
   thumbnailMime,

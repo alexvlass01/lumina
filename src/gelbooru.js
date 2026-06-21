@@ -103,11 +103,16 @@ function mapItem(post) {
   if (!full) return null;
   const width = Number(post.width) || 0;
   const height = Number(post.height) || 0;
+  // Gelbooru generates a downscaled "sample" only when post.sample is set; use it
+  // as the viewer's intermediate tier (preview -> sample -> full).
+  const hasSample = post.sample === 1 || post.sample === '1' || post.sample === true;
+  const sample = hasSample && post.sample_url ? String(post.sample_url) : '';
   return {
     id: `gelbooru:${post.id}`,
     provider: 'gelbooru',
     page: `${POST_BASE}${post.id}`,
     full,
+    sample,
     thumb: post.preview_url || post.sample_url || full,
     resolution: width > 0 && height > 0 ? `${width}x${height}` : '',
     width,

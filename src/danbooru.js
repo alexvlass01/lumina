@@ -83,11 +83,15 @@ function mapItem(post) {
   const width = Number(post.image_width) || 0;
   const height = Number(post.image_height) || 0;
   const artist = String(post.tag_string_artist || '').split(/\s+/).find(Boolean) || '';
+  // Danbooru's large_file_url is the downscaled "sample"; use it as the viewer's
+  // intermediate tier when it actually differs from the original.
+  const sample = post.large_file_url && post.large_file_url !== full ? String(post.large_file_url) : '';
   return {
     id: `danbooru:${post.id}`,
     provider: 'danbooru',
     page: `${POST_BASE}/${post.id}`,
     full,
+    sample,
     thumb: post.preview_file_url || post.large_file_url || full,
     resolution: width > 0 && height > 0 ? `${width}x${height}` : '',
     width,

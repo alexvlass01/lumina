@@ -6,13 +6,14 @@ const I18N = { dict: {}, fallback: {} };
 const VIEWER = { items: [], index: 0, token: 0 };
 const POINTER = { x: 0, y: 0, t: 0, button: -1, blocked: false };
 
-// Resolved full-image sources keyed by item index, so prefetched neighbours show
-// instantly on navigation. For booru this holds a (large) data: URL, so we keep a
+// Resolved image sources keyed by item index, so prefetched neighbours show
+// instantly on navigation. Each entry holds { sample?, full? } (data: URLs for
+// booru). Prefetch grabs the cheap tier (sample where available), so we keep a
 // small radius and cap the cache, evicting the entries farthest from the current.
-const FULL_CACHE = new Map();
+const IMG_CACHE = new Map();
 const PREFETCHING = new Set();
 const PREFETCH_RADIUS = 2;
-const FULL_CACHE_MAX = 7;
+const IMG_CACHE_MAX = 7;
 
 function setHd(on) {
   const hd = $('#viewerHd');
@@ -64,22 +65,35 @@ function setStageAlt(text) {
   if (STAGE.back) STAGE.back.alt = text || '';
 }
 
-function showImage(src) {
-  const incoming = STAGE.back;
-  const outgoing = STAGE.front;
+// Crossfade a {front, back} layer pair to a new (already-decoded) src WITHOUT a
+// mid-transition dim: the incoming layer fades in ON TOP while the outgoing stays
+// fully opaque underneath, so on-screen coverage is always 100%. (Symmetric
+// opacity crossfades dip to ~75% coverage at the midpoint — the visible flicker.)
+function crossfadeTo(pair, src) {
+  const incoming = pair.back;
+  const outgoing = pair.front;
   if (!incoming) return;
+  incoming.style.transition = 'none';
+  incoming.style.opacity = '0';
+  incoming.style.zIndex = '2';
   incoming.src = src;
-  incoming.classList.add('is-visible');
-  if (outgoing) outgoing.classList.remove('is-visible');
-  STAGE.front = incoming;
-  STAGE.back = outgoing;
+  if (outgoing) outgoing.style.zIndex = '1'; // stays opaque beneath the fade
+  void incoming.offsetWidth;                 // commit opacity:0 before animating
+  incoming.style.transition = '';            // restore the CSS opacity transition
+  incoming.style.opacity = '1';
+  pair.front = incoming;
+  pair.back = outgoing;
+}
+
+function showImage(src) {
+  crossfadeTo(STAGE, src);
   updateBackgroundFromSrc(src);
 }
 
 function clearStage() {
   for (const layer of [STAGE.front, STAGE.back]) {
     if (!layer) continue;
-    layer.classList.remove('is-visible');
+    layer.style.opacity = '0';
     layer.removeAttribute('src');
   }
 }
@@ -98,7 +112,7 @@ function applyBackgroundMode(mode) {
   if (bgMode !== 'ambient') {
     for (const layer of [BG.front, BG.back]) {
       if (!layer) continue;
-      layer.classList.remove('is-visible');
+      layer.style.opacity = '0';
       layer.removeAttribute('src');
     }
   }
@@ -109,14 +123,7 @@ function applyBackgroundMode(mode) {
 function updateBackgroundFromSrc(src) {
   if (!src) return;
   if (bgMode === 'ambient') {
-    const incoming = BG.back;
-    const outgoing = BG.front;
-    if (!incoming) return;
-    incoming.src = src;
-    incoming.classList.add('is-visible');
-    if (outgoing) outgoing.classList.remove('is-visible');
-    BG.front = incoming;
-    BG.back = outgoing;
+    crossfadeTo(BG, src);
   } else if (bgMode === 'color') {
     applyDominantColor(src);
   }
@@ -211,7 +218,7 @@ function setPayload(payload) {
   const next = normalizePayload(payload);
   VIEWER.items = next.items;
   VIEWER.index = next.index;
-  FULL_CACHE.clear();
+  IMG_CACHE.clear();
   PREFETCHING.clear();
   if (payload && payload.background) applyBackgroundMode(payload.background);
   render();
@@ -270,6 +277,19 @@ async function fullSource(entry, fallback = '') {
   return fallback || entry.previewUrl || '';
 }
 
+// Intermediate "sample" tier — only booru items carry a same-host downscale.
+// Fetched through main (referer-gated) as a data URL, like the full image.
+async function sampleSource(entry) {
+  if (!entry || entry.kind !== 'internet') return '';
+  const item = entry.raw || {};
+  if (!item.sample || !item.provider || item.provider === 'wallhaven') return '';
+  try {
+    const r = await window.viewerApi.internetSample(item);
+    if (r && r.dataUrl) return r.dataUrl;
+  } catch {}
+  return '';
+}
+
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     if (!src) { reject(new Error('empty')); return; }
@@ -280,29 +300,51 @@ function loadImage(src) {
   });
 }
 
-function cacheFull(index, src) {
+// Decode then crossfade a resolved src onto the stage. Returns false on failure
+// or if the render was superseded (token changed), so callers can react.
+async function present(src, token, entry) {
+  try {
+    const loaded = await loadImage(src);
+    if (token !== VIEWER.token) return false;
+    showImage(loaded.src);
+    clearLoadingTimer();
+    setState('', true);
+    updateResolutionInSubtitle(loaded.width, loaded.height, entry);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function cacheTier(index, tier, src) {
   if (!src) return;
-  FULL_CACHE.set(index, src);
-  if (FULL_CACHE.size <= FULL_CACHE_MAX) return;
+  const entry = IMG_CACHE.get(index) || {};
+  entry[tier] = src;
+  IMG_CACHE.set(index, entry);
+  if (IMG_CACHE.size <= IMG_CACHE_MAX) return;
   const n = VIEWER.items.length || 1;
   const dist = (i) => { const d = Math.abs(i - index); return Math.min(d, n - d); };
   // Drop the entries farthest (cyclically) from the current index first.
-  const order = [...FULL_CACHE.keys()].sort((a, b) => dist(b) - dist(a));
+  const order = [...IMG_CACHE.keys()].sort((a, b) => dist(b) - dist(a));
   for (const key of order) {
-    if (FULL_CACHE.size <= FULL_CACHE_MAX) break;
-    if (key !== index) FULL_CACHE.delete(key);
+    if (IMG_CACHE.size <= IMG_CACHE_MAX) break;
+    if (key !== index) IMG_CACHE.delete(key);
   }
 }
 
 async function prefetchIndex(index) {
-  if (FULL_CACHE.has(index) || PREFETCHING.has(index)) return;
+  const cached = IMG_CACHE.get(index);
+  if ((cached && (cached.full || cached.sample)) || PREFETCHING.has(index)) return;
   const entry = VIEWER.items[index];
   if (!entry) return;
   PREFETCHING.add(index);
   try {
-    const src = await fullSource(entry, '');
+    // Prefer the cheap sample tier (booru); fall back to full (Wallhaven/local).
+    let tier = 'sample';
+    let src = await sampleSource(entry);
+    if (!src) { tier = 'full'; src = await fullSource(entry, ''); }
     if (!src) return;
-    cacheFull(index, src);
+    cacheTier(index, tier, src);
     const warm = new Image();
     warm.src = src;
     if (warm.decode) { try { await warm.decode(); } catch {} }
@@ -422,82 +464,53 @@ async function render() {
   // open there is nothing to keep, so show it immediately.
   scheduleLoadingPill(token, hadImage ? LOADING_PILL_DELAY : 0);
 
-  // Fast path: a prefetched full image is already cached for this slot. Show it
-  // directly (no preview flicker) and warm the neighbours again.
-  const cachedFull = FULL_CACHE.get(idx);
-  if (cachedFull) {
-    try {
-      const loaded = await loadImage(cachedFull);
+  const cached = IMG_CACHE.get(idx) || {};
+  let shown = false; // is a sample-or-better frame already on screen?
+
+  // 1) Show the best cached tier instantly (full preferred, else the sample).
+  if (cached.full) {
+    if (await present(cached.full, token, entry)) { prefetchNeighbors(idx); return; }
+    if (token !== VIEWER.token) return;
+    delete cached.full; // stale/broken — fall through and reload
+  }
+  if (cached.sample) {
+    if (await present(cached.sample, token, entry)) shown = true;
+    else { if (token !== VIEWER.token) return; delete cached.sample; }
+  }
+
+  // 2) Nothing decent cached: show the quick thumbnail, then the sample tier (booru).
+  if (!shown) {
+    let preview = '';
+    try { preview = await previewSource(entry); } catch {}
+    if (token !== VIEWER.token) return;
+    if (!preview || !(await present(preview, token, entry))) {
       if (token !== VIEWER.token) return;
-      showImage(loaded.src);
       clearLoadingTimer();
-      setState('', true);
-      updateResolutionInSubtitle(loaded.width, loaded.height, entry);
-      prefetchNeighbors(idx);
+      clearStage();
+      setState(t('viewer.loadError'));
       return;
-    } catch {
-      FULL_CACHE.delete(idx); // stale/broken cache entry — fall back to the normal load
     }
-  }
-
-  let preview = '';
-  try {
-    preview = await previewSource(entry);
-  } catch {
-    preview = '';
-  }
-  if (token !== VIEWER.token) return;
-  if (!preview) {
-    clearLoadingTimer();
-    clearStage();
-    setState(t('viewer.loadError'));
-    return;
-  }
-
-  try {
-    const loadedPreview = await loadImage(preview);
+    // Badge only while we're still on the low-res thumbnail; hide it once the
+    // sample (already good quality) is up — no badge during the sample->full swap.
+    if (entry.kind === 'internet') setHd(true);
+    let sample = '';
+    try { sample = await sampleSource(entry); } catch {}
     if (token !== VIEWER.token) return;
-    showImage(loadedPreview.src);
-    clearLoadingTimer();
-    setState('', true);
-    updateResolutionInSubtitle(loadedPreview.width, loadedPreview.height, entry);
-  } catch {
+    if (sample && await present(sample, token, entry)) {
+      cacheTier(idx, 'sample', sample);
+      shown = true;
+      if (token === VIEWER.token) setHd(false);
+    }
     if (token !== VIEWER.token) return;
-    clearLoadingTimer();
-    clearStage();
-    setState(t('viewer.loadError'));
-    return;
   }
-  if (token !== VIEWER.token) return;
 
-  // Internet/cloud cards upgrade the preview to a full image; flag that it's pending.
-  const expectsFull = entry.kind === 'internet' || entry.kind === 'cloud';
-  if (expectsFull) setHd(true);
-
+  // 3) Upgrade to the original full in the background — silent (crossfade hides it).
   let full = '';
-  try {
-    full = await fullSource(entry, preview);
-  } catch {
-    full = preview;
-  }
+  try { full = await fullSource(entry, ''); } catch {}
   if (token !== VIEWER.token) return;
-  if (!full || full === preview) {
-    setHd(false);
-    prefetchNeighbors(idx);
-    return;
-  }
-
-  try {
-    const loadedFull = await loadImage(full);
-    if (token !== VIEWER.token) return;
-    showImage(loadedFull.src);
-    updateResolutionInSubtitle(loadedFull.width, loadedFull.height, entry);
-    cacheFull(idx, full);
-  } catch {
-    // Keep the already visible preview if the provider blocks direct full-size loading.
-  } finally {
-    if (token === VIEWER.token) setHd(false);
-  }
+  const currentSrc = STAGE.front && STAGE.front.getAttribute('src');
+  if (full && full !== currentSrc && await present(full, token, entry)) cacheTier(idx, 'full', full);
+  if (token === VIEWER.token) setHd(false);
   prefetchNeighbors(idx);
 }
 

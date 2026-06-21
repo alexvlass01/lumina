@@ -36,12 +36,13 @@ body {
   height: 116%;
   object-fit: cover;
   opacity: 0;
-  transition: opacity 300ms ease;
+  transition: opacity 240ms ease;
   filter: blur(48px) brightness(0.5) saturate(1.25);
 }
 
-/* Ambient: a heavily blurred, dimmed copy of the current photo fills the frame. */
-.media-viewer.bg-ambient .media-bg-img.is-visible { opacity: 1; }
+/* Ambient: a heavily blurred, dimmed copy of the current photo fills the frame.
+   The two layers crossfade via the same on-top technique as the foreground
+   (crossfadeTo), so the backdrop never dims mid-swap. */
 
 /* Charcoal: deep near-black with a soft central lift and darkened edges (vignette). */
 .media-viewer.bg-charcoal .media-bg {
@@ -189,16 +190,13 @@ body {
   height: 100%;
   object-fit: contain;
   border-radius: 0;
-  /* Two stacked layers crossfade between frames (and preview->full) so swaps
-     dissolve instead of popping. Only the .is-visible layer is opaque. Kept
-     snappy (~90ms) — in line with desktop photo viewers' navigation fades. */
+  /* Two stacked layers crossfade between frames (and preview->full). The new
+     layer fades in ON TOP of the still-opaque old one (see crossfadeTo in
+     viewer.js), so there is never a <100% coverage moment that would dim the
+     image. Opacity/z-index are driven inline; this is just the resting state. */
   opacity: 0;
-  transition: opacity 90ms ease;
+  transition: opacity 70ms ease;
   will-change: opacity;
-}
-
-.media-image.is-visible {
-  opacity: 1;
 }
 
 .media-state {

@@ -31,6 +31,12 @@ ok('allowedFullFetchUrl: like download + Gelbooru apex hotlink.php', (() => {
     && !O.allowedFullFetchUrl({ provider: 'gelbooru', full: 'https://gelbooru.com/index.php?page=post' })
     && !O.allowedFullFetchUrl({ provider: 'wallhaven', full: 'https://example.com/a.jpg' });
 })());
+ok('allowedSampleFetchUrl: validates the sample URL by provider host', (() => {
+  return O.allowedSampleFetchUrl({ provider: 'gelbooru', sample: 'https://img3.gelbooru.com/samples/sample_a.jpg' })
+    && O.allowedSampleFetchUrl({ provider: 'danbooru', sample: 'https://cdn.donmai.us/sample/a.jpg' })
+    && !O.allowedSampleFetchUrl({ provider: 'gelbooru', sample: 'https://example.com/a.jpg' })
+    && !O.allowedSampleFetchUrl({ provider: 'gelbooru' });
+})());
 ok('allowedThumbnailUrl: accepts only booru CDN previews', (() => {
   return O.allowedThumbnailUrl({ provider: 'danbooru', thumb: 'https://cdn.donmai.us/180x180/a.jpg' })
     && O.allowedThumbnailUrl({ provider: 'gelbooru', thumb: 'https://img3.gelbooru.com/thumbnails/a.jpg' })

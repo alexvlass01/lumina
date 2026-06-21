@@ -1827,10 +1827,12 @@ ipcMain.handle('internet-thumbnail', (e, item) => fetchInternetThumbnail(item));
 // Full image for the viewer. Booru hosts (esp. Gelbooru's hotlink.php) need a Referer
 // the renderer can't send, so main fetches the validated full URL and returns a data
 // URL. Wallhaven loads directly in the viewer, so this is only used for booru items.
-async function fetchInternetFull(item) {
-  if (!online.allowedFullFetchUrl(item)) return { dataUrl: '', error: 'badItem' };
+// Shared referer-gated, size-capped fetch → data URL. Used for both the sample
+// (intermediate) and full (original) tiers; the viewer shows sample first and
+// upgrades to full in the background to keep navigation fast and frugal.
+async function fetchInternetImageUrl(item, url) {
   try {
-    const res = await fetch(item.full, {
+    const res = await fetch(url, {
       headers: internetRequestHeaders(item),
       signal: AbortSignal.timeout(30000),
     });
@@ -1846,7 +1848,19 @@ async function fetchInternetFull(item) {
     return { dataUrl: '', error: err && err.name === 'TimeoutError' ? 'timeout' : 'network' };
   }
 }
+
+async function fetchInternetFull(item) {
+  if (!online.allowedFullFetchUrl(item)) return { dataUrl: '', error: 'badItem' };
+  return fetchInternetImageUrl(item, item.full);
+}
 ipcMain.handle('internet-full', (e, item) => fetchInternetFull(item));
+
+// Intermediate "sample" tier (booru downscale). Same host/referer rules as full.
+async function fetchInternetSample(item) {
+  if (!online.allowedSampleFetchUrl(item)) return { dataUrl: '', error: 'badItem' };
+  return fetchInternetImageUrl(item, item.sample);
+}
+ipcMain.handle('internet-sample', (e, item) => fetchInternetSample(item));
 
 // Download a normalized provider item into the local pool. The renderer cannot
 // turn this into an arbitrary downloader: provider and CDN host must match.
