@@ -34,7 +34,7 @@
     "updateError": "Couldn't check for updates",
     "quit": "Quit application",
     "viewerBgTitle": "Viewer background",
-    "viewerBgSub": "Backdrop behind the photo in the fullscreen viewer"
+    "viewerBgSub": "Backdrop behind the photo in the viewer. More styles coming soon."
   },
   "lang": {
     "system": "System"
@@ -358,6 +358,7 @@
     "ambient": "Blurred photo",
     "charcoal": "Dark",
     "aurora": "Aurora",
-    "color": "Color from photo"
+    "color": "Color from photo",
+    "soon": "More coming soon"
   }
 }

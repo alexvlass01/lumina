@@ -190,9 +190,10 @@ body {
   object-fit: contain;
   border-radius: 0;
   /* Two stacked layers crossfade between frames (and preview->full) so swaps
-     dissolve instead of popping. Only the .is-visible layer is opaque. */
+     dissolve instead of popping. Only the .is-visible layer is opaque. Kept
+     snappy (~90ms) — in line with desktop photo viewers' navigation fades. */
   opacity: 0;
-  transition: opacity 180ms ease;
+  transition: opacity 90ms ease;
   will-change: opacity;
 }
 

@@ -682,7 +682,9 @@ async function renderConfig() {
   setSwitch($('#swTelemetry'), !!config.telemetry);
   setSwitch($('#swGameMode'), !!config.gameModeBlock);
   $('#selStyle').value = config.style || 'fill';
-  $('#selViewerBackground').value = config.viewerBackground || 'ambient';
+  const selVb = $('#selViewerBackground');
+  selVb.value = config.viewerBackground || 'ambient';
+  if (!selVb.value) selVb.value = 'ambient'; // a stored mode that isn't exposed yet → show ambient
   updateSingleWallRow();
   updateSlideshowControls();
   renderWallpaperSchedule();

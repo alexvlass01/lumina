@@ -45,10 +45,14 @@ function scheduleLoadingPill(token, delay) {
 // then fade it in over the visible (front) one, so frames dissolve smoothly
 // instead of popping — both between photos and on the preview->full upgrade.
 const STAGE = { front: null, back: null };
+// The ambient backdrop uses its own pair of crossfading layers (slower, calmer).
+const BG = { front: null, back: null };
 
 function initStage() {
   STAGE.front = $('#viewerImageA');
   STAGE.back = $('#viewerImageB');
+  BG.front = $('#viewerBgImgA');
+  BG.back = $('#viewerBgImgB');
 }
 
 function stageHasImage() {
@@ -90,11 +94,13 @@ function applyBackgroundMode(mode) {
   const root = $('#viewerRoot');
   if (root) for (const m of BG_MODES) root.classList.toggle('bg-' + m, m === bgMode);
   const bg = $('#viewerBg');
-  const bgImg = $('#viewerBgImg');
   if (bg) bg.style.background = '';            // drop any inline color-mode gradient
-  if (bgImg && bgMode !== 'ambient') {
-    bgImg.classList.remove('is-visible');
-    bgImg.removeAttribute('src');
+  if (bgMode !== 'ambient') {
+    for (const layer of [BG.front, BG.back]) {
+      if (!layer) continue;
+      layer.classList.remove('is-visible');
+      layer.removeAttribute('src');
+    }
   }
   const current = STAGE.front && STAGE.front.getAttribute('src');
   if (current) updateBackgroundFromSrc(current); // live switch while a photo is shown
@@ -103,8 +109,14 @@ function applyBackgroundMode(mode) {
 function updateBackgroundFromSrc(src) {
   if (!src) return;
   if (bgMode === 'ambient') {
-    const bgImg = $('#viewerBgImg');
-    if (bgImg) { bgImg.src = src; bgImg.classList.add('is-visible'); }
+    const incoming = BG.back;
+    const outgoing = BG.front;
+    if (!incoming) return;
+    incoming.src = src;
+    incoming.classList.add('is-visible');
+    if (outgoing) outgoing.classList.remove('is-visible');
+    BG.front = incoming;
+    BG.back = outgoing;
   } else if (bgMode === 'color') {
     applyDominantColor(src);
   }
