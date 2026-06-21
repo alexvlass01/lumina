@@ -65,14 +65,23 @@ function setStageAlt(text) {
   if (STAGE.back) STAGE.back.alt = text || '';
 }
 
+// Crossfade durations (ms) — must match the CSS opacity transition on
+// .media-image / .media-bg-img so the outgoing layer is hidden only after the
+// incoming has fully covered it.
+const FG_FADE_MS = 105;
+const BG_FADE_MS = 240;
+
 // Crossfade a {front, back} layer pair to a new (already-decoded) src WITHOUT a
 // mid-transition dim: the incoming layer fades in ON TOP while the outgoing stays
 // fully opaque underneath, so on-screen coverage is always 100%. (Symmetric
 // opacity crossfades dip to ~75% coverage at the midpoint — the visible flicker.)
-function crossfadeTo(pair, src) {
+// Once the incoming has fully faded in, the now-occluded outgoing is hidden, so it
+// can't show through the new image's letterbox margins when aspect ratios differ.
+function crossfadeTo(pair, src, fadeMs) {
   const incoming = pair.back;
   const outgoing = pair.front;
   if (!incoming) return;
+  if (pair.hideTimer) { clearTimeout(pair.hideTimer); pair.hideTimer = null; }
   incoming.style.transition = 'none';
   incoming.style.opacity = '0';
   incoming.style.zIndex = '2';
@@ -83,10 +92,16 @@ function crossfadeTo(pair, src) {
   incoming.style.opacity = '1';
   pair.front = incoming;
   pair.back = outgoing;
+  if (outgoing) {
+    pair.hideTimer = setTimeout(() => {
+      pair.hideTimer = null;
+      if (pair.back === outgoing) outgoing.style.opacity = '0'; // not re-promoted by a newer swap
+    }, fadeMs + 40);
+  }
 }
 
 function showImage(src) {
-  crossfadeTo(STAGE, src);
+  crossfadeTo(STAGE, src, FG_FADE_MS);
   updateBackgroundFromSrc(src);
 }
 
@@ -123,7 +138,7 @@ function applyBackgroundMode(mode) {
 function updateBackgroundFromSrc(src) {
   if (!src) return;
   if (bgMode === 'ambient') {
-    crossfadeTo(BG, src);
+    crossfadeTo(BG, src, BG_FADE_MS);
   } else if (bgMode === 'color') {
     applyDominantColor(src);
   }

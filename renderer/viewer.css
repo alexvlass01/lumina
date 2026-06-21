@@ -195,7 +195,7 @@ body {
      viewer.js), so there is never a <100% coverage moment that would dim the
      image. Opacity/z-index are driven inline; this is just the resting state. */
   opacity: 0;
-  transition: opacity 70ms ease;
+  transition: opacity 105ms ease;
   will-change: opacity;
 }
 
