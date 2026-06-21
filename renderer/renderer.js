@@ -682,6 +682,7 @@ async function renderConfig() {
   setSwitch($('#swTelemetry'), !!config.telemetry);
   setSwitch($('#swGameMode'), !!config.gameModeBlock);
   $('#selStyle').value = config.style || 'fill';
+  $('#selViewerBackground').value = config.viewerBackground || 'ambient';
   updateSingleWallRow();
   updateSlideshowControls();
   renderWallpaperSchedule();
@@ -3334,6 +3335,11 @@ async function init() {
     renderHome();
     const res = await window.api.applyNow();
     if (res.ok) toast(t('toast.styleUpdated'));
+  });
+
+  // viewer background select — live (the open viewer, if any, updates via gallery-background)
+  $('#selViewerBackground').addEventListener('change', async (e) => {
+    config = await window.api.setConfig({ viewerBackground: e.target.value });
   });
 
   // slideshow controls (live)

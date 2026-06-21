@@ -181,5 +181,12 @@ ok('bad onlineSort → date_added; all-off purity → sfw forced on', (() => {
   return c.onlineSort === 'date_added' && c.onlinePurity.sfw === true;
 })());
 
+// viewerBackground: fresh default is ambient; valid values pass; bad → ambient
+ok('fresh default: viewerBackground ambient', fresh.viewerBackground === 'ambient');
+fs.writeFileSync(p('viewerbg_ok.json'), JSON.stringify({ viewerBackground: 'aurora' }));
+ok('valid viewerBackground passes through', C.load(p('viewerbg_ok.json')).viewerBackground === 'aurora');
+fs.writeFileSync(p('viewerbg_bad.json'), JSON.stringify({ viewerBackground: 'banana' }));
+ok('bad viewerBackground → ambient', C.load(p('viewerbg_bad.json')).viewerBackground === 'ambient');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

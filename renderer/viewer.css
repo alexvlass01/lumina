@@ -16,11 +16,57 @@ body {
   position: fixed;
   inset: 0;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 18% 12%, rgba(53, 132, 228, 0.16), transparent 34%),
-    radial-gradient(circle at 86% 88%, rgba(192, 97, 203, 0.12), transparent 38%),
-    #050505;
+  background: #050505;
 }
+
+/* Backdrop behind the (contained) photo. The mode is set as a bg-* class on the
+   viewer root; the photo layers sit above this via .media-stage z-index. */
+.media-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  background: #050505;
+}
+
+.media-bg-img {
+  position: absolute;
+  inset: -8%;
+  width: 116%;
+  height: 116%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 300ms ease;
+  filter: blur(48px) brightness(0.5) saturate(1.25);
+}
+
+/* Ambient: a heavily blurred, dimmed copy of the current photo fills the frame. */
+.media-viewer.bg-ambient .media-bg-img.is-visible { opacity: 1; }
+
+/* Charcoal: deep near-black with a soft central lift and darkened edges (vignette). */
+.media-viewer.bg-charcoal .media-bg {
+  background: radial-gradient(circle at 50% 42%, #16161c 0%, #0b0b0e 56%, #050506 100%);
+}
+
+/* Aurora: dark base with a slow, faint blue→purple accent glow (app palette). */
+.media-viewer.bg-aurora .media-bg { background: #07070f; }
+.media-viewer.bg-aurora .media-bg::before {
+  content: "";
+  position: absolute;
+  inset: -25%;
+  background:
+    radial-gradient(40% 50% at 22% 24%, rgba(53, 132, 228, 0.24), transparent 60%),
+    radial-gradient(46% 56% at 80% 78%, rgba(192, 97, 203, 0.22), transparent 62%);
+  filter: blur(46px);
+  animation: media-aurora 20s ease-in-out infinite alternate;
+}
+
+@keyframes media-aurora {
+  from { transform: translate(0, 0) scale(1); }
+  to { transform: translate(4%, -3%) scale(1.12); }
+}
+
+/* Color: JS sets an inline gradient from the photo's dominant color on #viewerBg. */
 
 .media-topbar {
   position: absolute;
@@ -125,6 +171,7 @@ body {
 .media-stage {
   position: absolute;
   inset: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -132,17 +179,25 @@ body {
 }
 
 .media-image {
+  position: absolute;
+  inset: 0;
   display: block;
-  max-width: 100vw;
-  max-height: 100vh;
+  /* Always fill the stage and contain the photo by its own aspect ratio, so a
+     low-res preview occupies the exact same rectangle as the full image will.
+     The thumbnail->full swap then reads as "sharpen", not a size jump. */
+  width: 100%;
+  height: 100%;
   object-fit: contain;
   border-radius: 0;
-  box-shadow: 0 16px 54px rgba(0, 0, 0, 0.45);
+  /* Two stacked layers crossfade between frames (and preview->full) so swaps
+     dissolve instead of popping. Only the .is-visible layer is opaque. */
+  opacity: 0;
+  transition: opacity 180ms ease;
+  will-change: opacity;
 }
 
-.media-image:not([src]),
-.media-image[src=""] {
-  opacity: 0;
+.media-image.is-visible {
+  opacity: 1;
 }
 
 .media-state {
@@ -163,6 +218,44 @@ body {
 
 .media-state[hidden] {
   display: none;
+}
+
+/* Subtle "still loading full quality" badge shown while a low-res preview is on
+   screen and the full image is still being fetched/decoded. */
+.media-hd {
+  position: absolute;
+  z-index: 9;
+  left: 50%;
+  top: 88px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 13px 7px 11px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.5);
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  backdrop-filter: blur(16px);
+  pointer-events: none;
+}
+
+.media-hd[hidden] {
+  display: none;
+}
+
+.media-hd .spin {
+  width: 13px;
+  height: 13px;
+  border: 2px solid rgba(255, 255, 255, 0.25);
+  border-top-color: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  animation: media-spin 0.7s linear infinite;
+}
+
+@keyframes media-spin {
+  to { transform: rotate(360deg); }
 }
 
 .media-nav {

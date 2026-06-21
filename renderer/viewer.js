@@ -6,6 +6,138 @@ const I18N = { dict: {}, fallback: {} };
 const VIEWER = { items: [], index: 0, token: 0 };
 const POINTER = { x: 0, y: 0, t: 0, button: -1, blocked: false };
 
+// Resolved full-image sources keyed by item index, so prefetched neighbours show
+// instantly on navigation. For booru this holds a (large) data: URL, so we keep a
+// small radius and cap the cache, evicting the entries farthest from the current.
+const FULL_CACHE = new Map();
+const PREFETCHING = new Set();
+const PREFETCH_RADIUS = 2;
+const FULL_CACHE_MAX = 7;
+
+function setHd(on) {
+  const hd = $('#viewerHd');
+  if (hd) hd.hidden = !on;
+}
+
+const LOADING_PILL_DELAY = 350;
+let loadingTimer = null;
+
+function clearLoadingTimer() {
+  if (loadingTimer) { clearTimeout(loadingTimer); loadingTimer = null; }
+}
+
+// Show the "Loading…" pill only if the load is actually slow, so quick swaps
+// (and prefetched neighbours) never flash the text. delay <= 0 shows it at once
+// (used on first open, where there is no previous frame to keep on screen).
+function scheduleLoadingPill(token, delay) {
+  clearLoadingTimer();
+  if (delay <= 0) {
+    if (token === VIEWER.token) setState(t('viewer.loading'));
+    return;
+  }
+  loadingTimer = setTimeout(() => {
+    loadingTimer = null;
+    if (token === VIEWER.token) setState(t('viewer.loading'));
+  }, delay);
+}
+
+// Two crossfading <img> layers. We only ever set src on the hidden (back) layer,
+// then fade it in over the visible (front) one, so frames dissolve smoothly
+// instead of popping — both between photos and on the preview->full upgrade.
+const STAGE = { front: null, back: null };
+
+function initStage() {
+  STAGE.front = $('#viewerImageA');
+  STAGE.back = $('#viewerImageB');
+}
+
+function stageHasImage() {
+  return !!(STAGE.front && STAGE.front.getAttribute('src'));
+}
+
+function setStageAlt(text) {
+  if (STAGE.front) STAGE.front.alt = text || '';
+  if (STAGE.back) STAGE.back.alt = text || '';
+}
+
+function showImage(src) {
+  const incoming = STAGE.back;
+  const outgoing = STAGE.front;
+  if (!incoming) return;
+  incoming.src = src;
+  incoming.classList.add('is-visible');
+  if (outgoing) outgoing.classList.remove('is-visible');
+  STAGE.front = incoming;
+  STAGE.back = outgoing;
+  updateBackgroundFromSrc(src);
+}
+
+function clearStage() {
+  for (const layer of [STAGE.front, STAGE.back]) {
+    if (!layer) continue;
+    layer.classList.remove('is-visible');
+    layer.removeAttribute('src');
+  }
+}
+
+// Backdrop behind the photo. 'ambient'/'color' derive from the current image;
+// 'charcoal'/'aurora' are pure CSS (set by the bg-* class on the viewer root).
+const BG_MODES = ['ambient', 'charcoal', 'aurora', 'color'];
+let bgMode = 'ambient';
+
+function applyBackgroundMode(mode) {
+  bgMode = BG_MODES.includes(mode) ? mode : 'ambient';
+  const root = $('#viewerRoot');
+  if (root) for (const m of BG_MODES) root.classList.toggle('bg-' + m, m === bgMode);
+  const bg = $('#viewerBg');
+  const bgImg = $('#viewerBgImg');
+  if (bg) bg.style.background = '';            // drop any inline color-mode gradient
+  if (bgImg && bgMode !== 'ambient') {
+    bgImg.classList.remove('is-visible');
+    bgImg.removeAttribute('src');
+  }
+  const current = STAGE.front && STAGE.front.getAttribute('src');
+  if (current) updateBackgroundFromSrc(current); // live switch while a photo is shown
+}
+
+function updateBackgroundFromSrc(src) {
+  if (!src) return;
+  if (bgMode === 'ambient') {
+    const bgImg = $('#viewerBgImg');
+    if (bgImg) { bgImg.src = src; bgImg.classList.add('is-visible'); }
+  } else if (bgMode === 'color') {
+    applyDominantColor(src);
+  }
+}
+
+function applyDominantColor(src) {
+  const bg = $('#viewerBg');
+  if (!bg) return;
+  const probe = new Image();
+  probe.onload = () => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 16;
+      c.height = 16;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(probe, 0, 0, 16, 16);
+      const { data } = ctx.getImageData(0, 0, 16, 16);
+      let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < data.length; i += 4) {
+        if (data[i + 3] < 16) continue;
+        r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+      }
+      if (!n) return;
+      r = Math.round(r / n); g = Math.round(g / n); b = Math.round(b / n);
+      bg.style.background = `radial-gradient(circle at 50% 38%, rgba(${r}, ${g}, ${b}, 0.55), #060608 72%)`;
+    } catch {
+      // Tainted canvas (cross-origin direct image, e.g. Wallhaven) — neutral dark fallback.
+      bg.style.background = 'radial-gradient(circle at 50% 42%, #16161c 0%, #0b0b0e 56%, #050506 100%)';
+    }
+  };
+  probe.src = src;
+}
+
 function setFullscreenUi(on) {
   const root = $('#viewerRoot');
   if (root) root.classList.toggle('is-fullscreen', !!on);
@@ -49,6 +181,8 @@ async function loadI18n() {
     next.title = t('viewer.next');
     next.setAttribute('aria-label', t('viewer.next'));
   }
+  const hdText = $('#viewerHdText');
+  if (hdText) hdText.textContent = t('viewer.loadingFull');
   setFullscreenUi(false);
 }
 
@@ -65,6 +199,9 @@ function setPayload(payload) {
   const next = normalizePayload(payload);
   VIEWER.items = next.items;
   VIEWER.index = next.index;
+  FULL_CACHE.clear();
+  PREFETCHING.clear();
+  if (payload && payload.background) applyBackgroundMode(payload.background);
   render();
 }
 
@@ -129,6 +266,48 @@ function loadImage(src) {
     probe.onerror = () => reject(new Error('load'));
     probe.src = src;
   });
+}
+
+function cacheFull(index, src) {
+  if (!src) return;
+  FULL_CACHE.set(index, src);
+  if (FULL_CACHE.size <= FULL_CACHE_MAX) return;
+  const n = VIEWER.items.length || 1;
+  const dist = (i) => { const d = Math.abs(i - index); return Math.min(d, n - d); };
+  // Drop the entries farthest (cyclically) from the current index first.
+  const order = [...FULL_CACHE.keys()].sort((a, b) => dist(b) - dist(a));
+  for (const key of order) {
+    if (FULL_CACHE.size <= FULL_CACHE_MAX) break;
+    if (key !== index) FULL_CACHE.delete(key);
+  }
+}
+
+async function prefetchIndex(index) {
+  if (FULL_CACHE.has(index) || PREFETCHING.has(index)) return;
+  const entry = VIEWER.items[index];
+  if (!entry) return;
+  PREFETCHING.add(index);
+  try {
+    const src = await fullSource(entry, '');
+    if (!src) return;
+    cacheFull(index, src);
+    const warm = new Image();
+    warm.src = src;
+    if (warm.decode) { try { await warm.decode(); } catch {} }
+  } catch {
+    // Prefetch is best-effort; failures just mean a normal load on navigation.
+  } finally {
+    PREFETCHING.delete(index);
+  }
+}
+
+function prefetchNeighbors(center) {
+  const n = VIEWER.items.length;
+  if (n <= 1) return;
+  for (let d = 1; d <= PREFETCH_RADIUS && d * 2 < n + 1; d++) {
+    prefetchIndex((center + d) % n);
+    prefetchIndex((center - d + n) % n);
+  }
 }
 
 function markAdded(entry) {
@@ -209,7 +388,6 @@ async function render() {
   const title = $('#viewerTitle');
   const subtitle = $('#viewerSubtitle');
   const footer = $('#viewerFooter');
-  const img = $('#viewerImage');
   const prev = $('#viewerPrev');
   const next = $('#viewerNext');
 
@@ -222,10 +400,33 @@ async function render() {
   if (next) next.disabled = VIEWER.items.length <= 1;
   renderActions(entry);
 
-  if (!img) return;
-  img.alt = (entry && entry.title) || '';
-  img.removeAttribute('src');
-  setState(t('viewer.loading'));
+  if (!STAGE.front) return;
+  const idx = VIEWER.index;
+  const hadImage = stageHasImage();
+  setStageAlt(entry && entry.title);
+  setHd(false);
+  // Keep the previous frame on screen while the next one decodes (no black flash),
+  // and only surface the "Loading…" pill if the load is actually slow. On first
+  // open there is nothing to keep, so show it immediately.
+  scheduleLoadingPill(token, hadImage ? LOADING_PILL_DELAY : 0);
+
+  // Fast path: a prefetched full image is already cached for this slot. Show it
+  // directly (no preview flicker) and warm the neighbours again.
+  const cachedFull = FULL_CACHE.get(idx);
+  if (cachedFull) {
+    try {
+      const loaded = await loadImage(cachedFull);
+      if (token !== VIEWER.token) return;
+      showImage(loaded.src);
+      clearLoadingTimer();
+      setState('', true);
+      updateResolutionInSubtitle(loaded.width, loaded.height, entry);
+      prefetchNeighbors(idx);
+      return;
+    } catch {
+      FULL_CACHE.delete(idx); // stale/broken cache entry — fall back to the normal load
+    }
+  }
 
   let preview = '';
   try {
@@ -235,21 +436,31 @@ async function render() {
   }
   if (token !== VIEWER.token) return;
   if (!preview) {
+    clearLoadingTimer();
+    clearStage();
     setState(t('viewer.loadError'));
     return;
   }
 
   try {
     const loadedPreview = await loadImage(preview);
-    img.src = loadedPreview.src;
+    if (token !== VIEWER.token) return;
+    showImage(loadedPreview.src);
+    clearLoadingTimer();
     setState('', true);
     updateResolutionInSubtitle(loadedPreview.width, loadedPreview.height, entry);
   } catch {
     if (token !== VIEWER.token) return;
+    clearLoadingTimer();
+    clearStage();
     setState(t('viewer.loadError'));
     return;
   }
   if (token !== VIEWER.token) return;
+
+  // Internet/cloud cards upgrade the preview to a full image; flag that it's pending.
+  const expectsFull = entry.kind === 'internet' || entry.kind === 'cloud';
+  if (expectsFull) setHd(true);
 
   let full = '';
   try {
@@ -257,15 +468,25 @@ async function render() {
   } catch {
     full = preview;
   }
-  if (!full || full === preview || token !== VIEWER.token) return;
+  if (token !== VIEWER.token) return;
+  if (!full || full === preview) {
+    setHd(false);
+    prefetchNeighbors(idx);
+    return;
+  }
 
   try {
     const loadedFull = await loadImage(full);
-    img.src = loadedFull.src;
+    if (token !== VIEWER.token) return;
+    showImage(loadedFull.src);
     updateResolutionInSubtitle(loadedFull.width, loadedFull.height, entry);
+    cacheFull(idx, full);
   } catch {
     // Keep the already visible preview if the provider blocks direct full-size loading.
+  } finally {
+    if (token === VIEWER.token) setHd(false);
   }
+  prefetchNeighbors(idx);
 }
 
 function initEvents() {
@@ -274,13 +495,15 @@ function initEvents() {
   const root = $('#viewerRoot');
   const fullscreen = $('#viewerFullscreen');
   if (fullscreen) fullscreen.addEventListener('click', async () => {
+    // Drop focus so the next arrow-key press doesn't paint a focus ring on the button.
+    fullscreen.blur();
     const r = await window.viewerApi.toggleFullscreen();
     if (r && typeof r.fullscreen === 'boolean') setFullscreenUi(r.fullscreen);
   });
   const prev = $('#viewerPrev');
-  if (prev) prev.addEventListener('click', () => step(-1));
+  if (prev) prev.addEventListener('click', () => { step(-1); prev.blur(); });
   const next = $('#viewerNext');
-  if (next) next.addEventListener('click', () => step(1));
+  if (next) next.addEventListener('click', () => { step(1); next.blur(); });
   if (root) {
     root.addEventListener('pointerdown', (e) => {
       POINTER.x = e.clientX;
@@ -311,9 +534,11 @@ function initEvents() {
   });
   window.viewerApi.onPayload((payload) => setPayload(payload));
   window.viewerApi.onFullscreenChanged(setFullscreenUi);
+  window.viewerApi.onBackgroundChanged(applyBackgroundMode);
 }
 
 async function init() {
+  initStage();
   await loadI18n();
   initEvents();
   setPayload(await window.viewerApi.getPayload());

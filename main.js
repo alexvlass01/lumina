@@ -870,6 +870,7 @@ function createGalleryWindow() {
 
 function openGalleryWindow(payload) {
   galleryPayload = sanitizeGalleryPayload(payload);
+  galleryPayload.background = config.viewerBackground || 'ambient';
   if (!galleryPayload.items.length) return { ok: false, error: 'empty' };
   if (!galleryWindow || galleryWindow.isDestroyed()) {
     createGalleryWindow();
@@ -1351,6 +1352,9 @@ ipcMain.handle('set-config', async (e, patch) => {
   trayCtl.refresh();
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   if (patch && 'hotkeys' in patch) registerShortcut();
+  if (patch && 'viewerBackground' in patch && galleryWindow && !galleryWindow.isDestroyed()) {
+    galleryWindow.webContents.send('gallery-background', config.viewerBackground);
+  }
   if (patch && 'separateThemes' in patch) {
     // переключили парадигму слотов → сразу применить обои из актуального слота (GNOME: без «Сохранить»)
     clearWallpaperTimer();

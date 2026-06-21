@@ -48,6 +48,10 @@ const DEFAULT_CONFIG = {
   // purity = the SFW/Sketchy/NSFW content filter.
   onlineSort: 'date_added',
   onlinePurity: { sfw: true, sketchy: true, nsfw: false },
+  // Fullscreen gallery viewer backdrop behind the (contained) photo.
+  // 'ambient' = blurred copy of the photo, 'charcoal' = deep dark + vignette,
+  // 'aurora' = subtle animated accent glow, 'color' = gradient from the photo's dominant color.
+  viewerBackground: 'ambient',
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -147,6 +151,8 @@ function normalize(cfg) {
   cfg.onlinePurity.nsfw = !!cfg.onlinePurity.nsfw;
   // Keep at least one purity on (the UI enforces the same).
   if (!cfg.onlinePurity.sfw && !cfg.onlinePurity.sketchy && !cfg.onlinePurity.nsfw) cfg.onlinePurity.sfw = true;
+
+  if (!['ambient', 'charcoal', 'aurora', 'color'].includes(cfg.viewerBackground)) cfg.viewerBackground = 'ambient';
 
   return cfg;
 }

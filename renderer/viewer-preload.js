@@ -14,4 +14,5 @@ contextBridge.exposeInMainWorld('viewerApi', {
   cloudAdd: (item) => ipcRenderer.invoke('cloud-add', item),
   onPayload: (cb) => ipcRenderer.on('gallery-payload', (_e, payload) => cb(payload)),
   onFullscreenChanged: (cb) => ipcRenderer.on('gallery-fullscreen-changed', (_e, on) => cb(on)),
+  onBackgroundChanged: (cb) => ipcRenderer.on('gallery-background', (_e, mode) => cb(mode)),
 });

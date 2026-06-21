@@ -32,7 +32,9 @@
     "updateReady": "Update ready — restart to install",
     "updateNone": "You're up to date",
     "updateError": "Couldn't check for updates",
-    "quit": "Quit application"
+    "quit": "Quit application",
+    "viewerBgTitle": "Viewer background",
+    "viewerBgSub": "Backdrop behind the photo in the fullscreen viewer"
   },
   "lang": {
     "system": "System"
@@ -168,6 +170,7 @@
     "local": "Local library",
     "localFolder": "Folder image",
     "loading": "Loading image...",
+    "loadingFull": "Loading full quality…",
     "loadError": "Could not open this image",
     "counter": "{current} of {total}",
     "close": "Close preview",
@@ -350,5 +353,11 @@
       "Assign a folder in the Library. If you add new photos to that folder, your slideshow will update automatically.",
       "Set the theme schedule to 'By sun', and Lumina will switch the light and dark themes exactly at sunrise and sunset."
     ]
+  },
+  "viewerBg": {
+    "ambient": "Blurred photo",
+    "charcoal": "Dark",
+    "aurora": "Aurora",
+    "color": "Color from photo"
   }
 }

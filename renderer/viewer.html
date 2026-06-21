@@ -8,7 +8,10 @@
   <link rel="stylesheet" href="viewer.css" />
 </head>
 <body>
-  <main class="media-viewer" id="viewerRoot">
+  <main class="media-viewer bg-ambient" id="viewerRoot">
+    <div class="media-bg" id="viewerBg" aria-hidden="true">
+      <img class="media-bg-img" id="viewerBgImg" alt="" draggable="false" />
+    </div>
     <div class="media-topbar">
       <div class="media-titlebox">
         <div class="media-title" id="viewerTitle"></div>
@@ -24,9 +27,14 @@
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10 3.5 5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
     <section class="media-stage" id="viewerStage">
-      <img class="media-image" id="viewerImage" alt="" draggable="false" />
+      <img class="media-image" id="viewerImageA" alt="" draggable="false" />
+      <img class="media-image" id="viewerImageB" alt="" draggable="false" />
       <div class="media-state" id="viewerState" hidden></div>
     </section>
+    <div class="media-hd" id="viewerHd" hidden>
+      <span class="spin" aria-hidden="true"></span>
+      <span id="viewerHdText"></span>
+    </div>
     <button class="media-nav next" id="viewerNext" type="button" aria-label="Next image" title="Next image">
       <svg viewBox="0 0 16 16" aria-hidden="true"><path d="m6 3.5 4.5 4.5L6 12.5" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
     </button>
