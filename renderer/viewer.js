@@ -65,43 +65,33 @@ function setStageAlt(text) {
   if (STAGE.back) STAGE.back.alt = text || '';
 }
 
-// Crossfade durations (ms) — must match the CSS opacity transition on
-// .media-image / .media-bg-img so the outgoing layer is hidden only after the
-// incoming has fully covered it.
-const FG_FADE_MS = 105;
-const BG_FADE_MS = 240;
-
-// Crossfade a {front, back} layer pair to a new (already-decoded) src WITHOUT a
-// mid-transition dim: the incoming layer fades in ON TOP while the outgoing stays
-// fully opaque underneath, so on-screen coverage is always 100%. (Symmetric
-// opacity crossfades dip to ~75% coverage at the midpoint — the visible flicker.)
-// Once the incoming has fully faded in, the now-occluded outgoing is hidden, so it
-// can't show through the new image's letterbox margins when aspect ratios differ.
-function crossfadeTo(pair, src, fadeMs) {
-  const incoming = pair.back;
-  const outgoing = pair.front;
+// Crossfade a {front, back} layer pair to a new (already-decoded) src. The NEW
+// image is placed at the bottom at full opacity instantly; the OLD one fades OUT
+// on top to reveal it. So coverage is always 100% (no mid-fade dim), AND the old
+// image is gone the instant its fade-out ends — it can never linger in the new
+// image's letterbox margins. (The earlier "fade the new in on top" approach left
+// the old fully opaque underneath, showing through the margins until it was
+// hidden/reused — that was the lingering-previous-image bug.)
+function crossfadeTo(pair, src) {
+  const incoming = pair.back;   // new image — revealed instantly at the bottom
+  const outgoing = pair.front;  // current image — fades out on top to uncover the new
   if (!incoming) return;
-  if (pair.hideTimer) { clearTimeout(pair.hideTimer); pair.hideTimer = null; }
   incoming.style.transition = 'none';
-  incoming.style.opacity = '0';
-  incoming.style.zIndex = '2';
+  incoming.style.zIndex = '1';
   incoming.src = src;
-  if (outgoing) outgoing.style.zIndex = '1'; // stays opaque beneath the fade
-  void incoming.offsetWidth;                 // commit opacity:0 before animating
-  incoming.style.transition = '';            // restore the CSS opacity transition
   incoming.style.opacity = '1';
+  if (outgoing) {
+    outgoing.style.transition = ''; // CSS opacity transition drives the fade-out
+    outgoing.style.zIndex = '2';
+    void outgoing.offsetWidth;      // commit current opacity/transition before fading
+    outgoing.style.opacity = '0';
+  }
   pair.front = incoming;
   pair.back = outgoing;
-  if (outgoing) {
-    pair.hideTimer = setTimeout(() => {
-      pair.hideTimer = null;
-      if (pair.back === outgoing) outgoing.style.opacity = '0'; // not re-promoted by a newer swap
-    }, fadeMs + 40);
-  }
 }
 
 function showImage(src) {
-  crossfadeTo(STAGE, src, FG_FADE_MS);
+  crossfadeTo(STAGE, src);
   updateBackgroundFromSrc(src);
 }
 
@@ -138,7 +128,7 @@ function applyBackgroundMode(mode) {
 function updateBackgroundFromSrc(src) {
   if (!src) return;
   if (bgMode === 'ambient') {
-    crossfadeTo(BG, src, BG_FADE_MS);
+    crossfadeTo(BG, src);
   } else if (bgMode === 'color') {
     applyDominantColor(src);
   }
