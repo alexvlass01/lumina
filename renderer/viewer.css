@@ -196,7 +196,8 @@ body {
      image. Opacity/z-index are driven inline; this is just the resting state. */
   opacity: 0;
   transition: opacity 70ms ease;
-  will-change: opacity;
+  transform-origin: center center;
+  will-change: opacity, transform;
 }
 
 .media-state {

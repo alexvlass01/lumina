@@ -5,6 +5,7 @@ const $ = (sel) => document.querySelector(sel);
 const I18N = { dict: {}, fallback: {} };
 const VIEWER = { items: [], index: 0, token: 0 };
 const POINTER = { x: 0, y: 0, t: 0, button: -1, blocked: false };
+const PAN = { active: false, x: 0, y: 0, moved: false };
 
 // Resolved image sources keyed by item index, so prefetched neighbours show
 // instantly on navigation. Each entry holds { sample?, full? } (data: URLs for
@@ -90,8 +91,55 @@ function crossfadeTo(pair, src) {
   pair.back = outgoing;
 }
 
+// --- Zoom & pan (applies to the currently shown photo layer only) ---
+const ZOOM = { scale: 1, x: 0, y: 0 };
+const ZOOM_MAX = 6;
+
+function applyZoom() {
+  if (STAGE.front) STAGE.front.style.transform = `translate(${ZOOM.x}px, ${ZOOM.y}px) scale(${ZOOM.scale})`;
+  const stage = $('#viewerStage');
+  if (stage) stage.style.cursor = ZOOM.scale > 1 ? 'grab' : '';
+}
+
+function resetZoom() {
+  ZOOM.scale = 1;
+  ZOOM.x = 0;
+  ZOOM.y = 0;
+}
+
+// Keep the (scaled) image from being dragged past its own edges.
+function clampPan() {
+  const stage = $('#viewerStage');
+  if (!stage) return;
+  const r = stage.getBoundingClientRect();
+  const maxX = Math.max(0, (r.width * ZOOM.scale - r.width) / 2);
+  const maxY = Math.max(0, (r.height * ZOOM.scale - r.height) / 2);
+  ZOOM.x = Math.max(-maxX, Math.min(maxX, ZOOM.x));
+  ZOOM.y = Math.max(-maxY, Math.min(maxY, ZOOM.y));
+}
+
+// Zoom by `factor`, keeping the point under (clientX, clientY) fixed on screen.
+function zoomAt(clientX, clientY, factor) {
+  const stage = $('#viewerStage');
+  if (!stage) return;
+  const prev = ZOOM.scale;
+  const next = Math.max(1, Math.min(ZOOM_MAX, prev * factor));
+  if (next === prev) return;
+  if (next === 1) { resetZoom(); applyZoom(); return; }
+  const r = stage.getBoundingClientRect();
+  const cx = clientX - r.left - r.width / 2;
+  const cy = clientY - r.top - r.height / 2;
+  const ratio = next / prev;
+  ZOOM.x = cx * (1 - ratio) + ZOOM.x * ratio;
+  ZOOM.y = cy * (1 - ratio) + ZOOM.y * ratio;
+  ZOOM.scale = next;
+  clampPan();
+  applyZoom();
+}
+
 function showImage(src) {
   crossfadeTo(STAGE, src);
+  applyZoom(); // carry the current zoom/pan onto the freshly shown layer
   updateBackgroundFromSrc(src);
 }
 
@@ -462,6 +510,7 @@ async function render() {
   if (!STAGE.front) return;
   const idx = VIEWER.index;
   const hadImage = stageHasImage();
+  resetZoom(); // each photo opens fit-to-screen; showImage re-applies on the new layer
   setStageAlt(entry && entry.title);
   setHd(false);
   // Keep the previous frame on screen while the next one decodes (no black flash),
@@ -535,19 +584,61 @@ function initEvents() {
   const next = $('#viewerNext');
   if (next) next.addEventListener('click', () => { step(1); next.blur(); });
   if (root) {
+    root.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.18 : 1 / 1.18);
+    }, { passive: false });
     root.addEventListener('pointerdown', (e) => {
       POINTER.x = e.clientX;
       POINTER.y = e.clientY;
       POINTER.t = Date.now();
       POINTER.button = e.button;
       POINTER.blocked = !!e.target.closest('button');
+      // Start panning when the photo is zoomed in (but not when pressing a control).
+      if (e.button === 0 && !POINTER.blocked && ZOOM.scale > 1) {
+        PAN.active = true;
+        PAN.x = e.clientX;
+        PAN.y = e.clientY;
+        PAN.moved = false;
+        const stage = $('#viewerStage');
+        if (stage) stage.style.cursor = 'grabbing';
+        try { root.setPointerCapture(e.pointerId); } catch {}
+      }
+    });
+    root.addEventListener('pointermove', (e) => {
+      if (!PAN.active) return;
+      const dx = e.clientX - PAN.x;
+      const dy = e.clientY - PAN.y;
+      PAN.x = e.clientX;
+      PAN.y = e.clientY;
+      if (dx || dy) PAN.moved = true;
+      ZOOM.x += dx;
+      ZOOM.y += dy;
+      clampPan();
+      applyZoom();
+    });
+    root.addEventListener('pointercancel', () => {
+      if (!PAN.active) return;
+      PAN.active = false;
+      const stage = $('#viewerStage');
+      if (stage) stage.style.cursor = ZOOM.scale > 1 ? 'grab' : '';
     });
     root.addEventListener('pointerup', (e) => {
+      const panned = PAN.active && PAN.moved;
+      if (PAN.active) {
+        PAN.active = false;
+        try { root.releasePointerCapture(e.pointerId); } catch {}
+        const stage = $('#viewerStage');
+        if (stage) stage.style.cursor = ZOOM.scale > 1 ? 'grab' : '';
+      }
       if (POINTER.button !== 0 || POINTER.blocked || e.button !== 0 || e.target.closest('button')) return;
       const dx = Math.abs(e.clientX - POINTER.x);
       const dy = Math.abs(e.clientY - POINTER.y);
       const dt = Date.now() - POINTER.t;
-      if (dx <= 4 && dy <= 4 && dt < 350) window.viewerApi.close();
+      if (dx <= 4 && dy <= 4 && dt < 350 && !panned) {
+        if (ZOOM.scale > 1) { resetZoom(); applyZoom(); } // click while zoomed → fit
+        else window.viewerApi.close();                    // click while fit → close
+      }
     });
   }
   document.addEventListener('keydown', (e) => {
