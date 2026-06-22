@@ -63,6 +63,19 @@ ok('paths outside the folder are ignored', outside.images.length === 0 && outsid
 const removedFolder = F.removeFolder(result.state, 'folder-1');
 ok('explicit folder removal prunes state', removedFolder.removed && !removedFolder.state.folders['folder-1']);
 
+const listed = F.listImages(result.state, ['folder-1']);
+ok('listImages exposes persisted discovery metadata', listed.length === 3
+  && listed.find((x) => x.path === b).addedAt === 13000
+  && listed.every((x) => x.folderId === 'folder-1'));
+
+const sanitized = F.normalizeState({ version: 1, folders: { bad: { rootPath: root, files: {
+  '../escape.jpg': { firstSeenAt: 1 },
+  'C:/absolute.jpg': { firstSeenAt: 2 },
+  'safe.jpg': { firstSeenAt: 3 },
+} } } });
+ok('stored traversal and absolute paths are rejected', Object.keys(sanitized.folders.bad.files).length === 1
+  && sanitized.folders.bad.files['safe.jpg'].firstSeenAt === 3);
+
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-folder-state-'));
 const statePath = path.join(temp, 'folder-state.json');
 try {

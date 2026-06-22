@@ -141,6 +141,28 @@ function flattenImages(library, scanDeep) {
   return out;
 }
 
+// Metadata-rich counterpart for folder-state results. Pool images are omitted
+// because renderer already owns their full metadata; duplicate folder paths keep
+// the earliest discovery time so adding an overlapping source does not make them new.
+function ephemeralFolderImages(library, folderImages) {
+  const poolIds = new Set(Object.values(library || {})
+    .filter((it) => it && it.type === 'image' && it.path)
+    .map((it) => idFor(it.path)));
+  const byId = new Map();
+  for (const image of (Array.isArray(folderImages) ? folderImages : [])) {
+    if (!image || !image.path) continue;
+    const id = idFor(image.path);
+    if (poolIds.has(id)) continue;
+    const addedAt = Number.isFinite(Number(image.addedAt)) ? Number(image.addedAt) : 0;
+    const modifiedAt = Number.isFinite(Number(image.modifiedAt)) ? Number(image.modifiedAt) : 0;
+    const current = byId.get(id);
+    if (!current || addedAt < current.addedAt) {
+      byId.set(id, { id, path: image.path, addedAt, modifiedAt });
+    }
+  }
+  return Array.from(byId.values());
+}
+
 // The GC keep-set: every file the config still references (normalized lowercase paths).
 // The pool is self-sufficient — an image stays referenced even when assigned to no monitor
 // (that's the point of the library) — so ALL image paths are kept, plus the legacy globals.
@@ -261,5 +283,5 @@ function migrateConfig(cfg) {
 module.exports = {
   idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
-  resolveIds, flattenImages, findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
+  resolveIds, flattenImages, ephemeralFolderImages, findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
 };

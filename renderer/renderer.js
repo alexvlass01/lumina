@@ -822,13 +822,26 @@ function libTagCounts() {
 // Сортировка массива на месте по LIB.sort (added/name/size/shuffle). `get` — аксессоры,
 // чтобы одна логика работала и для элементов пула, и для записей плоского «Все» ({path,item,id}).
 function sortItems(arr, get) {
-  const g = get || { path: (x) => x.path, added: (x) => x.addedAt || 0, size: (x) => x.size || 0, id: (x) => x.id };
+  const g = {
+    path: (x) => x.path,
+    added: (x) => x.addedAt || 0,
+    modified: (x) => x.modifiedAt || 0,
+    size: (x) => x.size || 0,
+    id: (x) => x.id,
+    ...(get || {}),
+  };
+  const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+  const byName = (a, b) => baseName(g.path(a)).localeCompare(baseName(g.path(b)));
   if (LIB.sort === 'name') arr.sort((a, b) => baseName(g.path(a)).localeCompare(baseName(g.path(b))));
   else if (LIB.sort === 'size') arr.sort((a, b) => g.size(b) - g.size(a));
   else if (LIB.sort === 'shuffle') {
     arr.forEach((x) => { const id = g.id(x); if (LIB.shuffleRank[id] === undefined) LIB.shuffleRank[id] = Math.random(); });
     arr.sort((a, b) => LIB.shuffleRank[g.id(a)] - LIB.shuffleRank[g.id(b)]);
-  } else arr.sort((a, b) => g.added(b) - g.added(a));
+  } else {
+    arr.sort((a, b) => number(g.added(b)) - number(g.added(a))
+      || number(g.modified(b)) - number(g.modified(a))
+      || byName(a, b));
+  }
 }
 
 function libList() {
@@ -1277,12 +1290,19 @@ async function renderAllView(tok) {
   // entries: pool items (with metadata) + ephemeral folder images (no overlap — expand
   // excludes anything already in the pool by content id)
   let entries = poolImgs.map((it) => ({ path: it.path, item: it, id: it.id }))
-    .concat(folderImgs.map((fi) => ({ path: fi.path, item: null, id: fi.id })));
+    .concat(folderImgs.map((fi) => ({
+      path: fi.path,
+      item: null,
+      id: fi.id,
+      addedAt: fi.addedAt,
+      modifiedAt: fi.modifiedAt,
+    })));
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
   sortItems(entries, {
     path: (x) => x.path,
-    added: (x) => (x.item && x.item.addedAt) || 0,
+    added: (x) => x.item ? x.item.addedAt : x.addedAt,
+    modified: (x) => x.item ? x.item.modifiedAt : x.modifiedAt,
     size: (x) => (x.item && x.item.size) || 0,
     id: (x) => x.id,
   });

@@ -178,6 +178,16 @@ ok('flattenImages: folder items themselves excluded', !flat.some((x) => x.path =
 ok('flattenImages: no scanDeep -> pool images only',
   L.flattenImages(lib5, null).every((x) => x.inPool) && L.flattenImages(lib5, null).length === 1);
 
+const ephemeral = L.ephemeralFolderImages(lib5, [
+  { path: 'C:/photos/a.jpg', addedAt: 500, modifiedAt: 50 }, // pool wins -> omitted
+  { path: 'C:/photos/new.jpg', addedAt: 300, modifiedAt: 30 },
+  { path: 'c:\\PHOTOS\\NEW.JPG', addedAt: 200, modifiedAt: 20 }, // same normalized path, earlier discovery wins
+]);
+ok('ephemeralFolderImages: pool wins and duplicate keeps earliest discovery', ephemeral.length === 1
+  && ephemeral[0].id === L.idFor('C:/photos/new.jpg')
+  && ephemeral[0].addedAt === 200
+  && ephemeral[0].modifiedAt === 20);
+
 // ---- findMissingIds: pool entries whose path no longer exists (refresh sanity check) ----
 const lib6 = {};
 const okId = L.addPath(lib6, 'image', 'C:/exists.jpg');

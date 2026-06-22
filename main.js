@@ -145,6 +145,8 @@ let liveFolderState = folderState.emptyState();
 let folderStateDirty = false;
 let folderStateSaveTimer = null;
 let folderRefreshQueue = Promise.resolve();
+const folderScanFreshAt = new Map();
+const FOLDER_SCAN_FRESH_MS = 5000;
 
 function loadLiveFolderState() {
   try {
@@ -180,19 +182,22 @@ function scheduleLiveFolderStateSave() {
 function forgetLiveFolder(id) {
   const result = folderState.removeFolder(liveFolderState, id);
   liveFolderState = result.state;
+  folderScanFreshAt.delete(id);
   if (result.removed) scheduleLiveFolderStateSave();
 }
 
 // Serialize scans globally. Besides avoiding duplicate disk work, this prevents
 // two async scans from reconciling against stale copies of the same state object.
-function refreshLiveFolders(folderIds = null) {
+function refreshLiveFolders(folderIds = null, force = false) {
   const requested = Array.isArray(folderIds) ? new Set(folderIds) : null;
   const run = async () => {
     const items = Object.values(config.library || {}).filter((it) => it && it.type === 'folder'
       && (!requested || requested.has(it.id)));
     const summaries = [];
     for (const item of items) {
+      if (!force && Date.now() - (folderScanFreshAt.get(item.id) || 0) < FOLDER_SCAN_FRESH_MS) continue;
       const scan = await folderState.scanFolderTree(item.path, { imageExts: playlist.IMG_EXTS });
+      folderScanFreshAt.set(item.id, Date.now());
       // The folder may have been removed while the asynchronous scan was running.
       const current = library.getItem(config.library, item.id);
       if (!current || current.type !== 'folder' || current.path !== item.path) continue;
@@ -1660,7 +1665,7 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
 // Refresh discovery metadata and drop missing standalone images. Folder sources are
 // never removed merely because a disk is currently offline or access is denied.
 ipcMain.handle('library-refresh', async () => {
-  await refreshLiveFolders();
+  await refreshLiveFolders(null, true);
   const dead = library.findMissingIds(config.library, (p) => {
     try { return fs.existsSync(p); } catch { return false; }
   }).filter((id) => {
@@ -2067,12 +2072,14 @@ ipcMain.handle('folder-entries', (e, dir) => {
   } catch { return { folders: [], images: [], count: 0 }; }
 });
 
-// Плоский разворот всех папок-источников в картинки (рекурсивно, с лимитами) для вкладки «Все».
-// Возвращает ТОЛЬКО эфемерные (не в пуле) — pool-картинки у renderer уже есть в config.library.
-ipcMain.handle('expand-folders', () => {
+// Metadata-rich flat expansion for the "All" view. Pool images are omitted because
+// renderer already has their full records; live-folder entries carry discovery dates.
+ipcMain.handle('expand-folders', async () => {
+  try { await refreshLiveFolders(); }
+  catch (err) { console.error('expand-folders scan:', err); }
   try {
-    const flat = library.flattenImages(config.library, (d) => playlist.scanFolderImagesDeep(d));
-    return { images: flat.filter((x) => !x.inPool).map((x) => ({ path: x.path, id: x.id })) };
+    const indexed = folderState.listImages(liveFolderState);
+    return { images: library.ephemeralFolderImages(config.library, indexed) };
   } catch (err) { console.error('expand-folders:', err); return { images: [] }; }
 });
 

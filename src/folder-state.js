@@ -27,6 +27,12 @@ function normalizeRelativePath(value) {
     .replace(/\/+$/, '');
 }
 
+function isSafeRelativePath(value) {
+  const relativePath = normalizeRelativePath(value);
+  if (!relativePath || relativePath.split('/').includes('..')) return false;
+  return !path.isAbsolute(relativePath.replace(/\//g, path.sep));
+}
+
 function relativeEntry(rootPath, filePath) {
   if (!rootPath || !filePath) return null;
   const relative = path.relative(path.resolve(rootPath), path.resolve(filePath));
@@ -54,7 +60,7 @@ function normalizeState(raw) {
     for (const [rawKey, file] of Object.entries(inputFiles)) {
       if (!file || typeof file !== 'object') continue;
       const relativePath = normalizeRelativePath(file.relativePath || rawKey);
-      if (!relativePath) continue;
+      if (!isSafeRelativePath(relativePath)) continue;
       const key = relativePath.toLowerCase();
       files[key] = {
         relativePath,
@@ -147,6 +153,25 @@ function removeFolder(rawState, folderId) {
   const removed = !!(folderId && state.folders[folderId]);
   if (removed) delete state.folders[folderId];
   return { state, removed };
+}
+
+function listImages(rawState, folderIds = null) {
+  const state = normalizeState(rawState);
+  const requested = Array.isArray(folderIds) ? new Set(folderIds) : null;
+  const images = [];
+  for (const [folderId, folder] of Object.entries(state.folders)) {
+    if (requested && !requested.has(folderId)) continue;
+    for (const file of Object.values(folder.files)) {
+      images.push({
+        folderId,
+        path: path.resolve(folder.rootPath, file.relativePath),
+        firstSeenAt: file.firstSeenAt,
+        addedAt: file.firstSeenAt,
+        modifiedAt: file.modifiedAt,
+      });
+    }
+  }
+  return images;
 }
 
 // Recursive, status-aware scan used for the library view and discovery index.
@@ -264,10 +289,12 @@ module.exports = {
   VERSION,
   emptyState,
   normalizeRelativePath,
+  isSafeRelativePath,
   relativeEntry,
   normalizeState,
   reconcileFolder,
   removeFolder,
+  listImages,
   scanFolderTree,
   loadState,
   saveState,
