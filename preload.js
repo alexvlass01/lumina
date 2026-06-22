@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('api', {
   libraryMaterialize: (p, type) => ipcRenderer.invoke('library-materialize', p, type),
   expandFolders: () => ipcRenderer.invoke('expand-folders'),
   libraryRecent: (limit) => ipcRenderer.invoke('library-recent', limit),
+  pollLiveFolders: () => ipcRenderer.invoke('poll-live-folders'),
   libraryEnsureSizes: () => ipcRenderer.invoke('library-ensure-sizes'),
 
   // Lumina Cloud (C2): safe capability state only (environment/available/reason).

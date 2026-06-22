@@ -218,7 +218,13 @@ function refreshLiveFolders(folderIds = null, force = false) {
       });
       liveFolderState = result.state;
       if (result.changed) scheduleLiveFolderStateSave();
-      summaries.push({ id: item.id, status: scan.status, added: result.added, removed: result.removed });
+      summaries.push({
+        id: item.id,
+        status: scan.status,
+        changed: result.changed,
+        added: result.added,
+        removed: result.removed,
+      });
     }
     return summaries;
   };
@@ -2135,6 +2141,19 @@ ipcMain.handle('library-recent', async (e, limit) => {
   } catch (err) {
     console.error('library-recent:', err);
     return { items: library.recentImages(config.library, [], limit) };
+  }
+});
+
+// Renderer polls only while Home or Library is visible. The serialized scanner
+// and its freshness window keep this request from overlapping or duplicating a
+// scan already started by expand-folders/library-recent.
+ipcMain.handle('poll-live-folders', async () => {
+  try {
+    const summaries = await refreshLiveFolders();
+    return { changed: summaries.some((summary) => summary.changed) };
+  } catch (err) {
+    console.error('poll-live-folders:', err);
+    return { changed: false, error: true };
   }
 });
 
