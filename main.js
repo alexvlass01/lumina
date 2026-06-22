@@ -167,6 +167,7 @@ const folderScanFreshAt = new Map();
 const FOLDER_SCAN_FRESH_MS = 5000;
 const FOLDER_STATE_SAVE_DEBOUNCE_MS = 5000;
 let liveFolderWatcher = null;
+const liveFolderWatcherRetryTimers = new Map();
 let liveFolderFullScanTimer = null;
 let liveFolderLastFullScanAt = 0;
 const LIVE_FOLDER_FULL_SCAN_MS = 60 * 60 * 1000;
@@ -272,6 +273,7 @@ function refreshLiveFolders(folderIds = null, force = false) {
         onBatch: async (entries) => { reconcile('partial', entries, true); },
       });
       folderScanFreshAt.set(item.id, Date.now());
+      if (scan.status === 'unavailable' && liveFolderWatcher) liveFolderWatcher.restart(item.id);
       const finalResult = reconcile(scan.status, scan.entries);
       if (!finalResult) continue;
       summaries.push({
@@ -305,7 +307,14 @@ function startLiveFolderWatchers() {
     },
     onError: (folderId, err) => {
       console.warn(`[LiveFolders] watcher unavailable for ${folderId}:`, err && (err.message || err));
-      const retry = setTimeout(syncLiveFolderWatchers, 60000);
+      if (liveFolderWatcherRetryTimers.has(folderId)) return;
+      const retry = setTimeout(() => {
+        liveFolderWatcherRetryTimers.delete(folderId);
+        syncLiveFolderWatchers();
+        refreshLiveFolders([folderId], true)
+          .catch((scanErr) => console.error(`[LiveFolders] retry scan failed for ${folderId}:`, scanErr));
+      }, 15000);
+      liveFolderWatcherRetryTimers.set(folderId, retry);
       if (retry && typeof retry.unref === 'function') retry.unref();
     },
   });
@@ -2660,6 +2669,8 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
   if (liveFolderFullScanTimer) clearTimeout(liveFolderFullScanTimer);
   liveFolderFullScanTimer = null;
+  for (const retry of liveFolderWatcherRetryTimers.values()) clearTimeout(retry);
+  liveFolderWatcherRetryTimers.clear();
   flushLiveFolderState();
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
   wpHost.dispose();

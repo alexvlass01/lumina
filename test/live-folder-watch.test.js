@@ -63,8 +63,11 @@ async function run() {
   const retried = ctl.sync([{ id: 'a', path: 'C:/B' }]);
   ok('later sync retries a failed watcher', retried.watched === 1 && rt.watches.length === 3);
 
+  ok('explicit restart replaces a stale watcher', ctl.restart('a')
+    && rt.watches.length === 4 && rt.watches[2].closed && !rt.watches[3].closed);
+
   ctl.sync([]);
-  ok('removing folder closes its watcher', rt.watches[2].closed);
+  ok('removing folder closes its watcher', rt.watches[3].closed);
   ctl.closeAll();
 
   const rt2 = fakeRuntime();

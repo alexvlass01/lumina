@@ -122,13 +122,20 @@ function createController(options = {}) {
     return true;
   }
 
+  function restart(folderId) {
+    const record = records.get(folderId);
+    if (!record || disposed) return false;
+    closeWatcher(record);
+    return startWatcher(record);
+  }
+
   function closeAll() {
     disposed = true;
     for (const record of records.values()) closeRecord(record);
     records.clear();
   }
 
-  return { sync, trigger, closeAll };
+  return { sync, trigger, restart, closeAll };
 }
 
 module.exports = { createController };
