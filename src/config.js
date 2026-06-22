@@ -53,6 +53,10 @@ const DEFAULT_CONFIG = {
   // 'ambient' = blurred copy of the photo, 'charcoal' = deep dark + vignette,
   // 'aurora' = subtle animated accent glow, 'color' = gradient from the photo's dominant color.
   viewerBackground: 'ambient',
+  // Random, anonymised install id for Lumina Cloud usage stats (anonymous users).
+  // Generated once in main when empty; never contains personal data. Sent as the
+  // X-Lumina-Anon-Id header on cloud requests; the server only stores a hash.
+  anonId: '',
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
@@ -165,6 +169,10 @@ function normalize(cfg) {
   if (!cfg.onlinePurity.sfw && !cfg.onlinePurity.sketchy && !cfg.onlinePurity.nsfw) cfg.onlinePurity.sfw = true;
 
   if (!['ambient', 'charcoal', 'aurora', 'color'].includes(cfg.viewerBackground)) cfg.viewerBackground = 'ambient';
+
+  // Anonymous install id: keep only a well-formed value; anything else resets to ''
+  // so main re-generates a fresh one.
+  if (typeof cfg.anonId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(cfg.anonId)) cfg.anonId = '';
 
   return cfg;
 }

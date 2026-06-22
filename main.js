@@ -142,6 +142,15 @@ function saveConfig() {
   broadcastConfig();
 }
 
+// Stable, anonymised install id for Lumina Cloud usage stats (anonymous users).
+// Generated once (32 hex chars), persisted in config; never contains personal data.
+// Written directly (no broadcast) — it is main-only and the renderer never reads it.
+function ensureAnonId() {
+  if (/^[A-Za-z0-9_-]{8,128}$/.test(config.anonId || '')) return;
+  config.anonId = crypto.randomBytes(16).toString('hex');
+  configMod.save(config, CONFIG_PATH);
+}
+
 function persistSlideshowPosition() {
   if (!slideshowPositionDirty) return;
   configMod.save(config, CONFIG_PATH);
@@ -1355,7 +1364,7 @@ let _cloudClient = null;
 function cloudClient() {
   const base = cloudCapability().apiBase;
   if (!base) return null; // unavailable → no client, no requests
-  if (!_cloudClient) _cloudClient = cloudClientMod.createClient({ baseUrl: base });
+  if (!_cloudClient) _cloudClient = cloudClientMod.createClient({ baseUrl: base, anonId: config.anonId });
   return _cloudClient;
 }
 
@@ -2493,6 +2502,7 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   loadConfig();
+  ensureAnonId(); // generate the anonymous install id once, before any cloud request
   loadLiveFolderState();
   _cloudToken = loadStoredToken(); // restore a previous Lumina Cloud session (validated on first use)
   registerShortcut();

@@ -63,6 +63,13 @@ ok('toQueryString: stable for multiple params', (() => {
 // ---------------------------------------------------------------------------
 ok('authHeaders: empty without token', Object.keys(CL.authHeaders()).length === 0);
 ok('authHeaders: Bearer with token', CL.authHeaders('TOK').Authorization === 'Bearer TOK');
+ok('anonHeaders: header for a well-formed id', CL.anonHeaders('0123456789abcdef0123456789abcdef')['X-Lumina-Anon-Id'] === '0123456789abcdef0123456789abcdef');
+ok('anonHeaders: empty for missing/short/garbage id', (() => {
+  return Object.keys(CL.anonHeaders()).length === 0
+    && Object.keys(CL.anonHeaders('')).length === 0
+    && Object.keys(CL.anonHeaders('short')).length === 0
+    && Object.keys(CL.anonHeaders('has spaces!!')).length === 0;
+})());
 ok('buildGoogleStartUrl: path + port + challenge', (() => {
   const u = CL.buildGoogleStartUrl(BASE, { port: 51789, challenge: 'CHAL' });
   return u.startsWith(BASE + C.API_PATHS.authGoogleStart) && u.includes('port=51789') && u.includes('challenge=CHAL');
@@ -147,6 +154,20 @@ ok('createClient: throws without a fetch', (() => {
     ok('client.getCatalog: query assembled', url.includes('rating=suggestive') && url.includes('limit=24') && url.includes('tag=space') && url.includes('cursor=CUR'));
     ok('client.getCatalog: bearer header when token given', ff.calls[0].init.headers.Authorization === 'Bearer TOK');
     ok('client.getCatalog: parsed CatalogPage', r.ok === true && r.data.items.length === 1 && r.data.next_cursor === 'NEXT');
+  }
+
+  // anon id: sent on requests when the client is created with one (even anonymously)
+  {
+    const ff = fakeFetch({ status: 200, body: { items: [], next_cursor: null } });
+    const client = CL.createClient({ baseUrl: BASE, fetchImpl: ff, anonId: '0123456789abcdef0123456789abcdef' });
+    await client.getCatalog({});
+    ok('client: X-Lumina-Anon-Id sent when configured', ff.calls[0].init.headers['X-Lumina-Anon-Id'] === '0123456789abcdef0123456789abcdef');
+  }
+  {
+    const ff = fakeFetch({ status: 200, body: { items: [], next_cursor: null } });
+    const client = CL.createClient({ baseUrl: BASE, fetchImpl: ff });
+    await client.getCatalog({});
+    ok('client: no anon header when not configured', !('X-Lumina-Anon-Id' in ff.calls[0].init.headers));
   }
 
   // catalog: invalid rating short-circuits BEFORE fetch

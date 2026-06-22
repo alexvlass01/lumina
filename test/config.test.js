@@ -196,5 +196,12 @@ ok('valid viewerBackground passes through', C.load(p('viewerbg_ok.json')).viewer
 fs.writeFileSync(p('viewerbg_bad.json'), JSON.stringify({ viewerBackground: 'banana' }));
 ok('bad viewerBackground → ambient', C.load(p('viewerbg_bad.json')).viewerBackground === 'ambient');
 
+// anonId: fresh default empty; well-formed passes; garbage/non-string → '' (main regenerates)
+ok('fresh default: anonId empty', fresh.anonId === '');
+fs.writeFileSync(p('anon_ok.json'), JSON.stringify({ anonId: '0123456789abcdef0123456789abcdef' }));
+ok('valid anonId passes through', C.load(p('anon_ok.json')).anonId === '0123456789abcdef0123456789abcdef');
+fs.writeFileSync(p('anon_bad.json'), JSON.stringify({ anonId: 'short!!' }));
+ok('garbage anonId → empty', C.load(p('anon_bad.json')).anonId === '');
+
 fs.rmSync(tmp, { recursive: true, force: true });
 console.log('\nAll ' + passed + ' config tests passed.');

@@ -72,6 +72,14 @@ function authHeaders(token) {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+// X-Lumina-Anon-Id header — only for a well-formed id, so we never send junk. The
+// server records anonymous installs by a hash of this (throttled); signed-in users
+// are counted by session, so it is harmless to always include it.
+const ANON_ID_RE = /^[A-Za-z0-9_-]{8,128}$/;
+function anonHeaders(anonId) {
+  return typeof anonId === 'string' && ANON_ID_RE.test(anonId) ? { 'X-Lumina-Anon-Id': anonId } : {};
+}
+
 // Google sign-in start URL (opened in the system browser by C4, not fetched here).
 function buildGoogleStartUrl(baseUrl, { port, challenge } = {}) {
   return buildUrl(baseUrl, C.API_PATHS.authGoogleStart, { port, challenge });
@@ -155,7 +163,7 @@ async function readBody(res) {
   return null;
 }
 
-function createClient({ baseUrl, fetchImpl } = {}) {
+function createClient({ baseUrl, fetchImpl, anonId } = {}) {
   if (!baseUrl) throw new TypeError('createClient: baseUrl is required');
   const doFetch = fetchImpl || (typeof globalThis !== 'undefined' ? globalThis.fetch : undefined);
   if (typeof doFetch !== 'function') throw new TypeError('createClient: a fetch implementation is required');
@@ -167,7 +175,7 @@ function createClient({ baseUrl, fetchImpl } = {}) {
       return requestError('missing_token', 'This action requires a signed-in session.');
     }
     const url = buildUrl(baseUrl, path, query);
-    const headers = { Accept: 'application/json', ...authHeaders(token) };
+    const headers = { Accept: 'application/json', ...anonHeaders(anonId), ...authHeaders(token) };
     const init = { method, headers };
     if (json !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -241,6 +249,7 @@ module.exports = {
   toQueryString,
   buildUrl,
   authHeaders,
+  anonHeaders,
   buildGoogleStartUrl,
   validateCatalogParams,
   catalogQuery,
