@@ -93,6 +93,10 @@ if (!window.api) {
     folderInfo: async () => ({ count: 0, subfolders: 0, previews: [] }),
     folderEntries: async () => ({ folders: [], images: [], count: 0 }),
     expandFolders: async () => ({ images: [] }),
+    libraryRecent: async (limit) => ({ items: Object.values(mock.library || {})
+      .filter((item) => item && item.type === 'image' && item.path)
+      .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
+      .slice(0, Number(limit) || 5) }),
     libraryEnsureSizes: async () => mock,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
@@ -3011,7 +3015,9 @@ let homeRecentRenderVersion = 0;
 function homeRecentItems() {
   return Object.values((config && config.library) || {})
     .filter((item) => item && item.type === 'image' && item.path)
-    .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
+    .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0)
+      || (Number(b.modifiedAt) || 0) - (Number(a.modifiedAt) || 0)
+      || baseName(a.path).localeCompare(baseName(b.path)))
     .slice(0, HOME_RECENT_LIMIT);
 }
 
@@ -3047,13 +3053,11 @@ function openRecentLibrary() {
   if (page) page.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-function renderHomeRecent() {
+function renderHomeRecentItems(items, version) {
   const grid = $('#homeRecentGrid');
   const empty = $('#homeRecentEmpty');
   const all = $('#homeRecentAll');
   if (!grid || !empty || !all) return;
-  const version = ++homeRecentRenderVersion;
-  const items = homeRecentItems();
   grid.innerHTML = '';
   grid.hidden = items.length === 0;
   empty.hidden = items.length > 0;
@@ -3064,6 +3068,7 @@ function renderHomeRecent() {
     card.type = 'button';
     card.className = 'home-recent-card';
     card.title = t('home.recentAssignHint');
+    card.dataset.pathKey = normPathKey(item.path);
 
     const preview = document.createElement('span');
     preview.className = 'home-recent-preview';
@@ -3080,7 +3085,18 @@ function renderHomeRecent() {
     date.textContent = homeRecentDate(item.addedAt);
     copy.append(title, date);
     card.append(preview, copy);
-    card.addEventListener('click', () => openAssignMenu(item, card));
+    card.addEventListener('click', async () => {
+      if (!item.ephemeral) { openAssignMenu(item, card); return; }
+      const res = await window.api.libraryMaterialize(item.path, 'image');
+      config = (res && res.config) || config;
+      const materialized = res && res.id ? config.library[res.id] : null;
+      if (!materialized) return;
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const key = normPathKey(item.path);
+      const anchor = Array.from(document.querySelectorAll('#homeRecentGrid .home-recent-card'))
+        .find((candidate) => candidate.dataset.pathKey === key) || card;
+      openAssignMenu(materialized, anchor);
+    });
     grid.appendChild(card);
 
     window.api.thumb(item.path, 360, 220).then((url) => {
@@ -3089,6 +3105,16 @@ function renderHomeRecent() {
       preview.classList.add('loaded');
     }).catch(() => {});
   });
+}
+
+function renderHomeRecent() {
+  const version = ++homeRecentRenderVersion;
+  renderHomeRecentItems(homeRecentItems(), version);
+  if (typeof window.api.libraryRecent !== 'function') return;
+  window.api.libraryRecent(HOME_RECENT_LIMIT).then((res) => {
+    if (version !== homeRecentRenderVersion) return;
+    renderHomeRecentItems((res && Array.isArray(res.items)) ? res.items : homeRecentItems(), version);
+  }).catch(() => {});
 }
 
 // ---------------------------------------------------------------------------

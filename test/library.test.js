@@ -188,6 +188,18 @@ ok('ephemeralFolderImages: pool wins and duplicate keeps earliest discovery', ep
   && ephemeral[0].addedAt === 200
   && ephemeral[0].modifiedAt === 20);
 
+const recentLib = {};
+L.addItem(recentLib, L.makeItem('image', 'C:/pool.jpg', { addedAt: 150 }));
+const recent = L.recentImages(recentLib, [
+  { path: 'C:/pool.jpg', addedAt: 999, modifiedAt: 999 }, // pool metadata wins
+  { path: 'C:/folder-old.jpg', addedAt: 100, modifiedAt: 10 },
+  { path: 'C:/folder-new.jpg', addedAt: 300, modifiedAt: 30 },
+], 3);
+ok('recentImages: combines pool and folders in discovery order', recent.length === 3
+  && recent.map((x) => x.path).join('|') === 'C:/folder-new.jpg|C:/pool.jpg|C:/folder-old.jpg');
+ok('recentImages: marks only folder records ephemeral', recent[0].ephemeral === true
+  && recent[1].ephemeral === false);
+
 // ---- findMissingIds: pool entries whose path no longer exists (refresh sanity check) ----
 const lib6 = {};
 const okId = L.addPath(lib6, 'image', 'C:/exists.jpg');

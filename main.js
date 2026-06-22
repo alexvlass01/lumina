@@ -2083,6 +2083,18 @@ ipcMain.handle('expand-folders', async () => {
   } catch (err) { console.error('expand-folders:', err); return { images: [] }; }
 });
 
+ipcMain.handle('library-recent', async (e, limit) => {
+  try { await refreshLiveFolders(); }
+  catch (err) { console.error('library-recent scan:', err); }
+  try {
+    const indexed = folderState.listImages(liveFolderState);
+    return { items: library.recentImages(config.library, indexed, limit) };
+  } catch (err) {
+    console.error('library-recent:', err);
+    return { items: library.recentImages(config.library, [], limit) };
+  }
+});
+
 // «Материализация» картинки/папки из живого источника в пул — БЕЗ копирования (по ссылке на
 // оригинальный путь, как и сама папка-источник живёт по оригиналу). Нужно, чтобы назначить/★
 // картинку из открытой папки: получаем настоящий id, дальше работают обычные library-assign/

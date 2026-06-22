@@ -163,6 +163,21 @@ function ephemeralFolderImages(library, folderImages) {
   return Array.from(byId.values());
 }
 
+function recentImages(library, folderImages, limit = 5) {
+  const pool = Object.values(library || {})
+    .filter((it) => it && it.type === 'image' && it.path)
+    .map((it) => ({ ...it, ephemeral: false }));
+  const ephemeral = ephemeralFolderImages(library, folderImages)
+    .map((it) => ({ ...it, type: 'image', ephemeral: true }));
+  const number = (value) => Number.isFinite(Number(value)) ? Number(value) : 0;
+  const count = Math.min(100, Math.max(0, Math.floor(Number(limit) || 0)));
+  return pool.concat(ephemeral)
+    .sort((a, b) => number(b.addedAt) - number(a.addedAt)
+      || number(b.modifiedAt) - number(a.modifiedAt)
+      || baseName(a.path).localeCompare(baseName(b.path)))
+    .slice(0, count);
+}
+
 // The GC keep-set: every file the config still references (normalized lowercase paths).
 // The pool is self-sufficient — an image stays referenced even when assigned to no monitor
 // (that's the point of the library) — so ALL image paths are kept, plus the legacy globals.
@@ -283,5 +298,6 @@ function migrateConfig(cfg) {
 module.exports = {
   idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
-  resolveIds, flattenImages, ephemeralFolderImages, findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
+  resolveIds, flattenImages, ephemeralFolderImages, recentImages,
+  findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
 };
