@@ -37,6 +37,7 @@ const DEFAULT_CONFIG = {
   // Слайдшоу: кадр меняют выбранные триггеры. order: 'sequential' | 'shuffle'
   slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' },
   slideshowIndex: {},     // { [deviceId]: { light: idx, dark: idx } } — текущий кадр
+  slideshowCurrentPath: {}, // { [deviceId]: { light: path, dark: path } } — стабильная позиция при живых папках
   hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
   gameModeBlock: false,
   triggers: { onStartup: false, onWakeup: false, stealth: false },
@@ -55,7 +56,7 @@ const DEFAULT_CONFIG = {
 };
 
 // Independent deep copy of the defaults — avoids sharing nested objects (monitors,
-// slideshowIndex) with DEFAULT_CONFIG, which previously could leak runtime state.
+// slideshowIndex/slideshowCurrentPath) with DEFAULT_CONFIG, which previously could leak runtime state.
 function freshDefaults() {
   return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 }
@@ -101,6 +102,17 @@ function normalize(cfg) {
   cfg.slideshow.intervalMin = Math.floor(+cfg.slideshow.intervalMin);
   if (cfg.slideshow.order !== 'shuffle') cfg.slideshow.order = 'sequential';
   if (!cfg.slideshowIndex || typeof cfg.slideshowIndex !== 'object') cfg.slideshowIndex = {};
+  const rawCurrentPaths = cfg.slideshowCurrentPath && typeof cfg.slideshowCurrentPath === 'object'
+    ? cfg.slideshowCurrentPath
+    : {};
+  cfg.slideshowCurrentPath = {};
+  for (const [monitorId, paths] of Object.entries(rawCurrentPaths)) {
+    if (!paths || typeof paths !== 'object') continue;
+    cfg.slideshowCurrentPath[monitorId] = {
+      light: typeof paths.light === 'string' ? paths.light : '',
+      dark: typeof paths.dark === 'string' ? paths.dark : '',
+    };
+  }
 
   cfg.hotkeys = {
     nextWallpaper: { enabled: false, shortcut: '' },

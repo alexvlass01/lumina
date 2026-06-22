@@ -23,9 +23,10 @@ ok('load missing file -> defaults', d.autoSwitch === true && d.wallpaperSchedule
 // freshDefaults must be independent (no shared nested objects)
 const a = C.freshDefaults();
 const b = C.freshDefaults();
-a.monitors.X = 1; a.slideshowIndex.Y = 2;
+a.monitors.X = 1; a.slideshowIndex.Y = 2; a.slideshowCurrentPath.Z = { light: 'C:/x.jpg' };
 ok('freshDefaults are independent copies',
-  b.monitors.X === undefined && b.slideshowIndex.Y === undefined && C.DEFAULT_CONFIG.monitors.X === undefined);
+  b.monitors.X === undefined && b.slideshowIndex.Y === undefined && b.slideshowCurrentPath.Z === undefined
+  && C.DEFAULT_CONFIG.monitors.X === undefined);
 
 // legacy migration: string slot -> { items: [...] }, slideshow sanitized
 fs.writeFileSync(p('legacy.json'), JSON.stringify({
@@ -44,6 +45,13 @@ fs.writeFileSync(p('interval_off.json'), JSON.stringify({ slideshow: { enabled: 
 const intervalOff = C.load(p('interval_off.json'));
 ok('explicitly disabled slideshow interval survives load',
   intervalOff.slideshow.enabled === true && intervalOff.slideshow.intervalEnabled === false && intervalOff.slideshow.intervalMin === 15);
+fs.writeFileSync(p('slideshow_paths.json'), JSON.stringify({
+  slideshowCurrentPath: { M1: { light: 'C:/light.jpg', dark: 42 }, bad: 'junk' },
+}));
+const slideshowPaths = C.load(p('slideshow_paths.json'));
+ok('slideshow current paths are normalized safely', slideshowPaths.slideshowCurrentPath.M1.light === 'C:/light.jpg'
+  && slideshowPaths.slideshowCurrentPath.M1.dark === ''
+  && slideshowPaths.slideshowCurrentPath.bad === undefined);
 
 // save + reload round-trip (atomic write)
 const cfg = C.freshDefaults();

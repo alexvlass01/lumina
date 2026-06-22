@@ -129,6 +129,7 @@ const BUNDLED_GELBOORU_CREDENTIALS = loadBundledGelbooruCredentials();
 
 // Дефолты + load/migrate/save вынесены в ./src/config.js (тестируется: test/config.test.js).
 let config = configMod.freshDefaults();
+let slideshowPositionDirty = false;
 
 function loadConfig() {
   config = configMod.load(CONFIG_PATH);
@@ -136,7 +137,14 @@ function loadConfig() {
 
 function saveConfig() {
   configMod.save(config, CONFIG_PATH);
+  slideshowPositionDirty = false;
   broadcastConfig();
+}
+
+function persistSlideshowPosition() {
+  if (!slideshowPositionDirty) return;
+  configMod.save(config, CONFIG_PATH);
+  slideshowPositionDirty = false;
 }
 
 // Discovery history is intentionally separate from config.json: a folder may
@@ -656,12 +664,41 @@ function slotFor(monitorId, theme) {
   return slot && Array.isArray(slot.itemIds) ? slot : { itemIds: [] };
 }
 
-// Текущая картинка плейлиста монитора (по сохранённому индексу слайдшоу).
+function ensureSlideshowPosition(monitorId) {
+  if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
+  if (!config.slideshowCurrentPath[monitorId]) config.slideshowCurrentPath[monitorId] = { light: '', dark: '' };
+}
+
+function storeSlideshowPosition(monitorId, theme, position) {
+  ensureSlideshowPosition(monitorId);
+  const index = Number.isFinite(position.index) ? position.index : 0;
+  const p = typeof position.path === 'string' ? position.path : '';
+  if (config.slideshowIndex[monitorId][theme] !== index || config.slideshowCurrentPath[monitorId][theme] !== p) {
+    config.slideshowIndex[monitorId][theme] = index;
+    config.slideshowCurrentPath[monitorId][theme] = p;
+    slideshowPositionDirty = true;
+  }
+}
+
+function resolveSlideshowPosition(monitorId, theme, options = {}) {
+  const list = playlist.resolveSlot(slotFor(monitorId, theme), config.library, {
+    forceFolderScan: !!options.forceFolderScan,
+  });
+  if (!list.length) return { list, index: 0, path: '' };
+  ensureSlideshowPosition(monitorId);
+  const position = playlist.reconcilePosition(
+    list,
+    config.slideshowCurrentPath[monitorId][theme],
+    config.slideshowIndex[monitorId][theme],
+    options
+  );
+  storeSlideshowPosition(monitorId, theme, position);
+  return { list, ...position };
+}
+
+// Current path follows the saved path first and uses the legacy index only as fallback.
 function currentImageFor(monitorId, theme) {
-  const list = playlist.resolveSlot(slotFor(monitorId, theme), config.library);
-  const si = config.slideshowIndex[monitorId];
-  const idx = si && Number.isFinite(si[theme]) ? si[theme] : 0;
-  return playlist.pickCurrent(list, idx);
+  return resolveSlideshowPosition(monitorId, theme).path;
 }
 
 // Все файлы, на которые ссылается БИБЛИОТЕКА (+ легаси-глобалы) — keep-набор для GC.
@@ -722,6 +759,7 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
       const p = wallpaperFor(m.id, theme);
       if (p && fs.existsSync(p)) items.push({ id: m.id, path: p });
     }
+    persistSlideshowPosition();
     if (!items.length) return { ok: false, reason: 'no-wallpaper', theme };
     const pos = COM_POS[config.style] != null ? COM_POS[config.style] : 4;
     try {
@@ -760,16 +798,19 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
 let slideshowTimer = null;
 function clearSlideshowTimer() { if (slideshowTimer) { clearTimeout(slideshowTimer); slideshowTimer = null; } }
 
-// Сдвинуть текущий кадр каждого монитора (в рамках темы); пропускаем плейлисты < 2 картинок.
+// Advance from the saved path in a freshly scanned playlist. If the current file
+// disappeared, reconcilePosition keeps its old index as the successor position.
 function advanceIndices(theme, targetMonitors = null) {
   const shuffle = config.slideshow.order === 'shuffle';
-  for (const m of monitorsCache) {
-    if (targetMonitors && !targetMonitors.includes(m.id)) continue;
-    const len = playlist.resolveSlot(slotFor(m.id, theme), config.library).length;
-    if (len < 2) continue;
-    if (!config.slideshowIndex[m.id]) config.slideshowIndex[m.id] = { light: 0, dark: 0 };
-    const cur = Number.isFinite(config.slideshowIndex[m.id][theme]) ? config.slideshowIndex[m.id][theme] : 0;
-    config.slideshowIndex[m.id][theme] = playlist.nextIndex(cur, len, shuffle);
+  const primary = config.singleWallpaper ? primaryMonitorId() : null;
+  const sources = primary ? monitorsCache.filter((m) => m.id === primary) : monitorsCache;
+  for (const m of sources) {
+    if (!config.singleWallpaper && targetMonitors && !targetMonitors.includes(m.id)) continue;
+    resolveSlideshowPosition(m.id, theme, {
+      advance: true,
+      shuffle,
+      forceFolderScan: true,
+    });
   }
 }
 
@@ -1991,7 +2032,9 @@ ipcMain.handle('internet-add', async (e, item, query) => {
 ipcMain.handle('current-image', (e, monitorId, which) => {
   const theme = which === 'dark' ? 'dark' : 'light';
   const id = config.singleWallpaper ? primaryMonitorId() : monitorId;
-  return currentImageFor(id, theme);
+  const p = currentImageFor(id, theme);
+  persistSlideshowPosition();
+  return p;
 });
 
 // Превью папки для библиотеки: число картинок внутри + N подпапок + первые превью
@@ -2155,8 +2198,9 @@ ipcMain.handle('next-wallpaper', async (e, monitorId) => {
 ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
   if (!monitorId) return config;
   const t = theme === 'dark' ? 'dark' : 'light';
-  if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
-  config.slideshowIndex[monitorId][t] = index;
+  const list = playlist.resolveSlot(slotFor(monitorId, t), config.library, { forceFolderScan: true });
+  if (!list.length) return config;
+  storeSlideshowPosition(monitorId, t, playlist.reconcilePosition(list, '', Number(index)));
   saveConfig();
   if (t === wallpaperThemeName()) await applyForTheme(t, true);
   return config;
@@ -2168,10 +2212,10 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
 ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
   if (!monitorId || !p) return config;
   const t = theme === 'dark' ? 'dark' : 'light';
-  const idx = playlist.resolvedIndexOf(slotFor(monitorId, t), config.library, p);
+  const list = playlist.resolveSlot(slotFor(monitorId, t), config.library, { forceFolderScan: true });
+  const idx = list.findIndex((candidate) => String(candidate).toLowerCase() === String(p).toLowerCase());
   if (idx < 0) return config; // путь не в развёрнутом плейлисте (исключён/файла нет)
-  if (!config.slideshowIndex[monitorId]) config.slideshowIndex[monitorId] = { light: 0, dark: 0 };
-  config.slideshowIndex[monitorId][t] = idx;
+  storeSlideshowPosition(monitorId, t, { index: idx, path: list[idx] });
   saveConfig();
   if (t === wallpaperThemeName()) await applyForTheme(t, true);
   return config;
@@ -2432,8 +2476,11 @@ app.whenReady().then(async () => {
           if (toApply.length > 0) {
             console.log(`[StealthTrigger] Desktop covered for:`, toApply, `Triggering ${reason}.`);
             const theme = wallpaperThemeName();
-            advanceIndices(theme, toApply);
-            saveConfig();
+            if (!config.singleWallpaper || !tryStealth.singleAdvanced) {
+              advanceIndices(theme, toApply);
+              saveConfig();
+              if (config.singleWallpaper) tryStealth.singleAdvanced = true;
+            }
             applyForTheme(theme, true, toApply);
           }
           

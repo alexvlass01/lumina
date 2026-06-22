@@ -36,6 +36,25 @@ ok('nextIndex: shuffle never repeats current', (() => {
   return true;
 })());
 ok('nextIndex: shuffle deterministic with rnd', P.nextIndex(0, 3, true, () => 0.99) === 2); // floor(0.99*3)=2
+ok('reconcilePosition: insertion before current advances from saved path', (() => {
+  const pos = P.reconcilePosition(['A', 'AA', 'B', 'C'], 'B', 1, { advance: true });
+  return pos.index === 3 && pos.path === 'C';
+})());
+ok('reconcilePosition: removed current uses old index as successor', (() => {
+  const pos = P.reconcilePosition(['A', 'C', 'D'], 'B', 1, { advance: true });
+  return pos.index === 1 && pos.path === 'C';
+})());
+ok('reconcilePosition: removal before current does not skip', (() => {
+  const pos = P.reconcilePosition(['B', 'C', 'D'], 'C', 2, { advance: true });
+  return pos.index === 2 && pos.path === 'D';
+})());
+ok('reconcilePosition: legacy config keeps index semantics', (() => {
+  const current = P.reconcilePosition(['A', 'B', 'C'], '', 1);
+  const next = P.reconcilePosition(['A', 'B', 'C'], '', 1, { advance: true });
+  return current.path === 'B' && next.path === 'C';
+})());
+ok('reconcilePosition: shuffle never repeats an existing current path',
+  P.reconcilePosition(['A', 'B', 'C'], 'B', 1, { advance: true, shuffle: true, rnd: () => 0.99 }).path === 'C');
 ok('usesInterval: legacy slideshow stays enabled unless explicitly disabled',
   P.usesInterval({ enabled: true }) === true
   && P.usesInterval({ enabled: true, intervalEnabled: false }) === false
@@ -57,6 +76,11 @@ ok('resolveSlot: excludes missing files', !list.includes(missing));
 ok('resolveSlot: excludes non-images (.txt)', !list.some((p) => p.endsWith('.txt')));
 ok('resolveSlot: de-dups folder vs explicit', list.filter((p) => p === realImg).length === 1);
 ok('resolveSlot: includes folder images', list.some((p) => p.endsWith('a.png')) && list.some((p) => p.endsWith('b.jpg')));
+fs.writeFileSync(path.join(dir, 'c.gif'), 'x');
+ok('resolveSlot: ordinary call keeps short folder cache',
+  !P.resolveSlot({ items: [{ type: 'folder', path: dir }] }).some((p) => p.endsWith('c.gif')));
+ok('resolveSlot: forced folder scan sees immediate changes',
+  P.resolveSlot({ items: [{ type: 'folder', path: dir }] }, null, { forceFolderScan: true }).some((p) => p.endsWith('c.gif')));
 
 // ---- resolveSlot via library pool (new model: { itemIds } + library) ----
 const L = require('../src/library');

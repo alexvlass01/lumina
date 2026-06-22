@@ -23,9 +23,9 @@ function normalizeSlot(slot) {
 // List image files in a folder (sorted by name), cached for a few seconds so a
 // rotating slideshow doesn't re-read the directory on every tick.
 const folderScanCache = new Map(); // dir -> { at, files }
-function scanFolder(dir) {
+function scanFolder(dir, opts = {}) {
   const cached = folderScanCache.get(dir);
-  if (cached && Date.now() - cached.at < 5000) return cached.files;
+  if (!opts.force && cached && Date.now() - cached.at < 5000) return cached.files;
   let files = [];
   try {
     files = fs.readdirSync(dir)
@@ -90,7 +90,7 @@ function scanFolderImagesDeep(dir, opts = {}) {
 // New model: slot = { itemIds:[…] } + a `library` pool → items are resolved by id.
 // Backward compatible: called as resolveSlot(slot) on a legacy { items:[…] } slot
 // (no library) it behaves exactly as before. (Library model lands fully in Этап B.)
-function resolveSlot(slot, library) {
+function resolveSlot(slot, library, opts = {}) {
   const out = [];
   const seen = new Set();
   let items;
@@ -101,7 +101,7 @@ function resolveSlot(slot, library) {
   }
   for (const it of items) {
     if (!it || !it.path) continue;
-    const paths = it.type === 'folder' ? scanFolder(it.path) : [it.path];
+    const paths = it.type === 'folder' ? scanFolder(it.path, { force: !!opts.forceFolderScan }) : [it.path];
     for (const p of paths) {
       const k = p.toLowerCase();
       if (!seen.has(k) && fs.existsSync(p)) { seen.add(k); out.push(p); }
@@ -114,9 +114,9 @@ function resolveSlot(slot, library) {
 // slideshow index addresses the expanded list (a folder is one strip item but many
 // resolved paths), so "apply this exact thumbnail" must map a path → expanded index
 // rather than trusting the strip's item index. Case-insensitive match.
-function resolvedIndexOf(slot, library, p) {
+function resolvedIndexOf(slot, library, p, opts = {}) {
   if (!p) return -1;
-  const list = resolveSlot(slot, library);
+  const list = resolveSlot(slot, library, opts);
   const key = String(p).toLowerCase();
   return list.findIndex((x) => String(x).toLowerCase() === key);
 }
@@ -139,6 +139,38 @@ function nextIndex(cur, len, shuffle, rnd = Math.random) {
   return n;
 }
 
+function wrappedIndex(index, len) {
+  if (!len) return 0;
+  let value = (Number.isFinite(index) ? index : 0) % len;
+  if (value < 0) value += len;
+  return value;
+}
+
+// Reconcile a saved path/index against a freshly resolved playlist. A removed
+// current path uses its old index as the successor position (without another +1).
+function reconcilePosition(list, currentPath, oldIndex, options = {}) {
+  if (!Array.isArray(list) || !list.length) return { index: 0, path: '' };
+  const advance = !!options.advance;
+  const shuffle = !!options.shuffle;
+  const rnd = typeof options.rnd === 'function' ? options.rnd : Math.random;
+  const savedPath = typeof currentPath === 'string' ? currentPath : '';
+  const found = savedPath
+    ? list.findIndex((p) => String(p).toLowerCase() === savedPath.toLowerCase())
+    : -1;
+  let index;
+
+  if (found >= 0) {
+    index = advance ? nextIndex(found, list.length, shuffle, rnd) : found;
+  } else if (savedPath) {
+    if (advance && shuffle) index = Math.min(list.length - 1, Math.floor(rnd() * list.length));
+    else index = wrappedIndex(oldIndex, list.length);
+  } else {
+    const legacy = wrappedIndex(oldIndex, list.length);
+    index = advance ? nextIndex(legacy, list.length, shuffle, rnd) : legacy;
+  }
+  return { index, path: list[index] };
+}
+
 // Existing configs predate the interval toggle, so only an explicit false disables it.
 function usesInterval(slideshow) {
   return !!(slideshow && slideshow.enabled && slideshow.intervalEnabled !== false);
@@ -146,5 +178,5 @@ function usesInterval(slideshow) {
 
 module.exports = {
   IMG_EXTS, normalizeSlot, scanFolder, scanFolderEntries, scanFolderImagesDeep,
-  resolveSlot, resolvedIndexOf, pickCurrent, nextIndex, usesInterval,
+  resolveSlot, resolvedIndexOf, pickCurrent, nextIndex, reconcilePosition, usesInterval,
 };
