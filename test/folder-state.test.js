@@ -81,4 +81,41 @@ try {
   fs.rmSync(temp, { recursive: true, force: true });
 }
 
-console.log('\nAll ' + passed + ' folder-state tests passed.');
+async function testScanner() {
+  const tree = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-folder-scan-'));
+  try {
+    fs.writeFileSync(path.join(tree, 'top.jpg'), 'x');
+    fs.writeFileSync(path.join(tree, 'ignore.txt'), 'x');
+    const nested = path.join(tree, 'nested');
+    fs.mkdirSync(nested);
+    fs.writeFileSync(path.join(nested, 'deep.png'), 'x');
+
+    const complete = await F.scanFolderTree(tree);
+    ok('recursive scanner returns supported images', complete.status === 'complete'
+      && complete.entries.length === 2
+      && complete.entries.every((x) => Number.isFinite(x.modifiedAt)));
+
+    const shallow = await F.scanFolderTree(tree, { maxDepth: 0 });
+    ok('depth limit produces a conservative partial result', shallow.status === 'partial'
+      && shallow.entries.length === 1
+      && shallow.entries[0].path.endsWith('top.jpg'));
+
+    const capped = await F.scanFolderTree(tree, { cap: 1 });
+    ok('file cap produces a conservative partial result', capped.status === 'partial'
+      && capped.entries.length === 1);
+
+    const unavailable = await F.scanFolderTree(path.join(tree, 'missing'));
+    ok('missing root is unavailable, not an empty complete folder', unavailable.status === 'unavailable'
+      && unavailable.entries.length === 0);
+
+    const emptyRoot = await F.scanFolderTree('');
+    ok('empty root never scans the process working directory', emptyRoot.status === 'unavailable'
+      && emptyRoot.entries.length === 0);
+  } finally {
+    fs.rmSync(tree, { recursive: true, force: true });
+  }
+}
+
+testScanner()
+  .then(() => console.log('\nAll ' + passed + ' folder-state tests passed.'))
+  .catch((err) => { console.error(err); process.exitCode = 1; });

@@ -9,6 +9,7 @@ const path = require('path');
 
 const VERSION = 1;
 const VALID_SCAN_STATUSES = new Set(['complete', 'partial', 'unavailable']);
+const DEFAULT_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
 
 function emptyState() {
   return { version: VERSION, folders: {} };
@@ -148,6 +149,74 @@ function removeFolder(rawState, folderId) {
   return { state, removed };
 }
 
+// Recursive, status-aware scan used for the library view and discovery index.
+// A partial result may add confirmed files but must never prove that unseen files
+// were deleted. The scan is async so large folders do not block Electron's main loop.
+async function scanFolderTree(rootPath, options = {}) {
+  const requestedRoot = String(rootPath || '').trim();
+  if (!requestedRoot) return { status: 'unavailable', entries: [] };
+  const root = path.resolve(requestedRoot);
+  const maxDepth = Number.isFinite(options.maxDepth) ? Math.max(0, Math.floor(options.maxDepth)) : 8;
+  const cap = Number.isFinite(options.cap) ? Math.max(0, Math.floor(options.cap)) : 10000;
+  const imageExts = options.imageExts instanceof Set ? options.imageExts : DEFAULT_IMAGE_EXTS;
+
+  try {
+    const stat = await fs.promises.stat(root);
+    if (!stat.isDirectory()) return { status: 'unavailable', entries: [] };
+  } catch {
+    return { status: 'unavailable', entries: [] };
+  }
+
+  const entries = [];
+  const seenDirs = new Set();
+  const stack = [{ dir: root, depth: 0 }];
+  let partial = false;
+
+  scan: while (stack.length) {
+    const current = stack.pop();
+    let real;
+    try { real = (await fs.promises.realpath(current.dir)).toLowerCase(); }
+    catch {
+      if (current.depth === 0) return { status: 'unavailable', entries: [] };
+      partial = true;
+      continue;
+    }
+    if (seenDirs.has(real)) continue;
+    seenDirs.add(real);
+
+    let children;
+    try {
+      children = await fs.promises.readdir(current.dir, { withFileTypes: true });
+    } catch {
+      if (current.depth === 0) return { status: 'unavailable', entries: [] };
+      partial = true;
+      continue;
+    }
+    children.sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const child of children) {
+      const full = path.join(current.dir, child.name);
+      if (child.isDirectory()) {
+        if (current.depth < maxDepth) stack.push({ dir: full, depth: current.depth + 1 });
+        else partial = true;
+        continue;
+      }
+      if (!child.isFile() || !imageExts.has(path.extname(child.name).toLowerCase())) continue;
+      if (entries.length >= cap) {
+        partial = true;
+        break scan;
+      }
+      try {
+        const stat = await fs.promises.stat(full);
+        entries.push({ path: full, modifiedAt: finiteTime(stat.mtimeMs) });
+      } catch { partial = true; }
+    }
+  }
+
+  entries.sort((a, b) => a.path.localeCompare(b.path));
+  return { status: partial ? 'partial' : 'complete', entries };
+}
+
 function validateStoredState(raw) {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw)
     && raw.version === VERSION
@@ -199,6 +268,7 @@ module.exports = {
   normalizeState,
   reconcileFolder,
   removeFolder,
+  scanFolderTree,
   loadState,
   saveState,
 };

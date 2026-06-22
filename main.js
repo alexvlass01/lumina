@@ -10,6 +10,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
+const folderState = require('./src/folder-state'); // persistent firstSeenAt для файлов живых папок
 const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
 const gelbooru = require('./src/gelbooru'); // Gelbooru: основной booru-провайдер
 const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
@@ -68,6 +69,7 @@ app.isQuitting = false;
 // ---------------------------------------------------------------------------
 const CONFIG_PATH = path.join(app.getPath('userData'), 'config.json');
 const WALLPAPERS_DIR = path.join(app.getPath('userData'), 'wallpapers');
+const FOLDER_STATE_PATH = path.join(app.getPath('userData'), 'folder-state.json');
 
 // Copy a chosen image into the app's own data dir so it survives app updates and
 // the original being moved/deleted. Content-addressed name (wp-<md5>) → identical
@@ -135,6 +137,84 @@ function loadConfig() {
 function saveConfig() {
   configMod.save(config, CONFIG_PATH);
   broadcastConfig();
+}
+
+// Discovery history is intentionally separate from config.json: a folder may
+// contain thousands of paths, while config remains small user-facing settings.
+let liveFolderState = folderState.emptyState();
+let folderStateDirty = false;
+let folderStateSaveTimer = null;
+let folderRefreshQueue = Promise.resolve();
+
+function loadLiveFolderState() {
+  try {
+    const loaded = folderState.loadState(FOLDER_STATE_PATH);
+    liveFolderState = loaded.state;
+    if (loaded.recovered) {
+      console.warn('folder-state.json повреждён; создан безопасный новый индекс.', loaded.brokenPath || '');
+    }
+  } catch (err) {
+    liveFolderState = folderState.emptyState();
+    console.error('Не удалось загрузить folder-state.json:', err);
+  }
+}
+
+function flushLiveFolderState() {
+  if (folderStateSaveTimer) { clearTimeout(folderStateSaveTimer); folderStateSaveTimer = null; }
+  if (!folderStateDirty) return;
+  try {
+    liveFolderState = folderState.saveState(FOLDER_STATE_PATH, liveFolderState);
+    folderStateDirty = false;
+  } catch (err) {
+    console.error('Не удалось сохранить folder-state.json:', err);
+  }
+}
+
+function scheduleLiveFolderStateSave() {
+  folderStateDirty = true;
+  if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
+  folderStateSaveTimer = setTimeout(flushLiveFolderState, 300);
+  if (folderStateSaveTimer && typeof folderStateSaveTimer.unref === 'function') folderStateSaveTimer.unref();
+}
+
+function forgetLiveFolder(id) {
+  const result = folderState.removeFolder(liveFolderState, id);
+  liveFolderState = result.state;
+  if (result.removed) scheduleLiveFolderStateSave();
+}
+
+// Serialize scans globally. Besides avoiding duplicate disk work, this prevents
+// two async scans from reconciling against stale copies of the same state object.
+function refreshLiveFolders(folderIds = null) {
+  const requested = Array.isArray(folderIds) ? new Set(folderIds) : null;
+  const run = async () => {
+    const items = Object.values(config.library || {}).filter((it) => it && it.type === 'folder'
+      && (!requested || requested.has(it.id)));
+    const summaries = [];
+    for (const item of items) {
+      const scan = await folderState.scanFolderTree(item.path, { imageExts: playlist.IMG_EXTS });
+      // The folder may have been removed while the asynchronous scan was running.
+      const current = library.getItem(config.library, item.id);
+      if (!current || current.type !== 'folder' || current.path !== item.path) continue;
+      const result = folderState.reconcileFolder(liveFolderState, {
+        folderId: item.id,
+        rootPath: item.path,
+        folderAddedAt: item.addedAt,
+        status: scan.status,
+        entries: scan.entries,
+      });
+      liveFolderState = result.state;
+      if (result.changed) scheduleLiveFolderStateSave();
+      summaries.push({ id: item.id, status: scan.status, added: result.added, removed: result.removed });
+    }
+    return summaries;
+  };
+  folderRefreshQueue = folderRefreshQueue.then(run, run);
+  return folderRefreshQueue;
+}
+
+function requestLiveFolderRefresh(folderIds = null) {
+  refreshLiveFolders(folderIds).catch((err) => console.error('Не удалось обновить индекс живых папок:', err));
 }
 
 // ---------------------------------------------------------------------------
@@ -1403,6 +1483,7 @@ function assignToSlot(slot, type, srcPath) {
 
 // Удалить элемент из пула И из всех слотов, которые на него ссылаются (без висячих id).
 function removeFromLibrary(id) {
+  const item = library.getItem(config.library, id);
   if (!library.removeItem(config.library, id)) return false;
   for (const m of Object.values(config.monitors || {})) {
     for (const th of ['light', 'dark']) {
@@ -1411,6 +1492,7 @@ function removeFromLibrary(id) {
       }
     }
   }
+  if (item && item.type === 'folder') forgetLiveFolder(id);
   return true;
 }
 
@@ -1448,6 +1530,7 @@ ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
   const slot = ensureSlot(monitorId, which);
   assignToSlot(slot, 'folder', dir);
   saveConfig();
+  requestLiveFolderRefresh([library.idFor(dir)]);
   return { config, added: 1 };
 });
 
@@ -1456,11 +1539,13 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
   if (!monitorId || !Array.isArray(paths)) return { config, added: 0 };
   const slot = ensureSlot(monitorId, which);
   let added = 0;
+  const folderIds = [];
   for (const src of paths) {
     try {
       const stats = fs.statSync(src);
       if (stats.isDirectory()) {
         if (assignToSlot(slot, 'folder', src)) added++;
+        folderIds.push(library.idFor(src));
       } else if (stats.isFile()) {
         const ext = path.extname(src).toLowerCase();
         if (playlist.IMG_EXTS.has(ext)) {
@@ -1476,6 +1561,7 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
     saveConfig();
     trayCtl.refresh();
   }
+  if (folderIds.length) requestLiveFolderRefresh(folderIds);
   return { config, added };
 });
 
@@ -1525,9 +1611,10 @@ ipcMain.handle('library-add-folder', async () => {
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };
   const before = Object.keys(config.library).length;
-  library.addPath(config.library, 'folder', res.filePaths[0]);
+  const id = library.addPath(config.library, 'folder', res.filePaths[0]);
   const added = Object.keys(config.library).length - before;
   if (added) saveConfig();
+  if (id) requestLiveFolderRefresh([id]);
   return { config, added };
 });
 
@@ -1535,11 +1622,13 @@ ipcMain.handle('library-add-folder', async () => {
 ipcMain.handle('library-add-paths', async (e, paths) => {
   if (!Array.isArray(paths)) return { config, added: 0 };
   const before = Object.keys(config.library).length;
+  const folderIds = [];
   for (const src of paths) {
     try {
       const stats = fs.statSync(src);
       if (stats.isDirectory()) {
-        library.addPath(config.library, 'folder', src);
+        const id = library.addPath(config.library, 'folder', src);
+        if (id) folderIds.push(id);
       } else if (stats.isFile() && playlist.IMG_EXTS.has(path.extname(src).toLowerCase())) {
         library.addPath(config.library, 'image', await importWallpaper(src));
       }
@@ -1547,6 +1636,7 @@ ipcMain.handle('library-add-paths', async (e, paths) => {
   }
   const added = Object.keys(config.library).length - before;
   if (added) saveConfig();
+  if (folderIds.length) requestLiveFolderRefresh(folderIds);
   return { config, added };
 });
 
@@ -1567,12 +1657,15 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
   return config;
 });
 
-// Refresh / sanity check: drop pool ENTRIES whose backing file/folder no longer exists on
-// disk (user deleted/moved/renamed it in Windows). Never touches files — only the config.
-// Returns the count so the renderer can decide whether to re-apply.
-ipcMain.handle('library-refresh', () => {
+// Refresh discovery metadata and drop missing standalone images. Folder sources are
+// never removed merely because a disk is currently offline or access is denied.
+ipcMain.handle('library-refresh', async () => {
+  await refreshLiveFolders();
   const dead = library.findMissingIds(config.library, (p) => {
     try { return fs.existsSync(p); } catch { return false; }
+  }).filter((id) => {
+    const item = library.getItem(config.library, id);
+    return item && item.type === 'image';
   });
   let removed = 0;
   for (const id of dead) { if (removeFromLibrary(id)) removed++; }
@@ -1989,8 +2082,10 @@ ipcMain.handle('expand-folders', () => {
 // toggle-favorite/assign-меню. id = idFor(origPath) → совпадает с pool-item ⇒ нет дублей в «Все».
 ipcMain.handle('library-materialize', (e, p, type) => {
   if (!p || typeof p !== 'string') return { config, id: null };
-  const id = library.addPath(config.library, type === 'folder' ? 'folder' : 'image', p);
+  const itemType = type === 'folder' ? 'folder' : 'image';
+  const id = library.addPath(config.library, itemType, p);
   if (id) saveConfig();
+  if (id && itemType === 'folder') requestLiveFolderRefresh([id]);
   return { config, id };
 });
 
@@ -2221,6 +2316,7 @@ app.on('second-instance', () => {
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   loadConfig();
+  loadLiveFolderState();
   _cloudToken = loadStoredToken(); // restore a previous Lumina Cloud session (validated on first use)
   registerShortcut();
   ensurePsScript();
@@ -2234,6 +2330,7 @@ app.whenReady().then(async () => {
 
   createWindow();
   trayCtl.create();
+  requestLiveFolderRefresh();
 
   // refresh monitor list when displays change (added/removed/resolution/rotation)
   for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
@@ -2366,8 +2463,11 @@ app.whenReady().then(async () => {
   });
 });
 
-// dispose the persistent PowerShell host on quit (don't leave an orphan process)
-app.on('before-quit', () => wpHost.dispose());
+// Flush discovery metadata and dispose the persistent PowerShell host on quit.
+app.on('before-quit', () => {
+  flushLiveFolderState();
+  wpHost.dispose();
+});
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
