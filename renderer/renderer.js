@@ -97,7 +97,6 @@ if (!window.api) {
       .filter((item) => item && item.type === 'image' && item.path)
       .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
       .slice(0, Number(limit) || 5) }),
-    pollLiveFolders: async () => ({ changed: false }),
     libraryEnsureSizes: async () => mock,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
@@ -167,6 +166,7 @@ if (!window.api) {
     onTheme: () => {},
     onWallpaperTheme: () => {},
     onConfig: () => {},
+    onLiveFoldersChanged: () => {},
     onMonitors: () => {},
     onUpdate: () => {},
   };
@@ -2639,51 +2639,6 @@ function buildInternetCard(item) {
 // ---------------------------------------------------------------------------
 // Page navigation (Home / Settings)
 // ---------------------------------------------------------------------------
-const LIVE_FOLDER_POLL_MS = 30000;
-let liveFolderPollTimer = null;
-let liveFolderPollGeneration = 0;
-
-function visibleLiveFolderPage() {
-  if (document.hidden) return '';
-  const home = $('#viewHome');
-  if (home && !home.hidden) return 'home';
-  const library = $('#viewLibrary');
-  if (library && !library.hidden) return 'library';
-  return '';
-}
-
-function stopLiveFolderPolling() {
-  liveFolderPollGeneration++;
-  if (liveFolderPollTimer) clearTimeout(liveFolderPollTimer);
-  liveFolderPollTimer = null;
-}
-
-async function runLiveFolderPoll(generation) {
-  liveFolderPollTimer = null;
-  const page = visibleLiveFolderPage();
-  if (generation !== liveFolderPollGeneration || !page) return;
-
-  let result = null;
-  try { result = await window.api.pollLiveFolders(); } catch {}
-  if (generation !== liveFolderPollGeneration || visibleLiveFolderPage() !== page) return;
-
-  if (result && result.changed) {
-    if (page === 'home') renderHomeRecent();
-    else renderLibrary();
-  }
-
-  if (generation === liveFolderPollGeneration && visibleLiveFolderPage() === page) {
-    liveFolderPollTimer = setTimeout(() => runLiveFolderPoll(generation), LIVE_FOLDER_POLL_MS);
-  }
-}
-
-function updateLiveFolderPolling(delay = LIVE_FOLDER_POLL_MS) {
-  stopLiveFolderPolling();
-  if (!visibleLiveFolderPage() || typeof window.api.pollLiveFolders !== 'function') return;
-  const generation = liveFolderPollGeneration;
-  liveFolderPollTimer = setTimeout(() => runLiveFolderPoll(generation), Math.max(0, delay));
-}
-
 function showPage(name) {
   const views = { home: 'viewHome', library: 'viewLibrary', design: 'viewDesign', prefs: 'viewPrefs' };
   const target = views[name] || 'viewHome';
@@ -2708,14 +2663,12 @@ function showPage(name) {
     renderPreviews();   // reflect current config
     layoutMonitors();   // stages just became visible — refit thumbnails
   }
-  updateLiveFolderPolling();
 }
 
 // First-run welcome screen (one-time).
 function enterFirstRun() {
   document.body.classList.add('first-run');
   document.querySelectorAll('.view').forEach((v) => { v.hidden = v.id !== 'viewWelcome'; });
-  stopLiveFolderPolling();
   $('#welcomeLang').value = config.language || 'system';
   setSwitch($('#welcomeAuto'), !!(config.wallpaperSchedule && config.wallpaperSchedule.mode !== 'off'));
   setSwitch($('#welcomeStartup'), config.autostart);
@@ -3225,11 +3178,6 @@ async function init() {
     b.addEventListener('click', () => { showPage(b.dataset.page); b.blur(); });
   });
   $('#btnPrefs').addEventListener('click', (e) => { showPage('prefs'); e.currentTarget.blur(); });
-  document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopLiveFolderPolling();
-    else updateLiveFolderPolling(0);
-  });
-  window.addEventListener('beforeunload', stopLiveFolderPolling);
 
   // ---- home: switch to the next wallpaper now ----
   const btnNextWall = $('#btnNextWall');
@@ -3559,6 +3507,18 @@ async function init() {
       applyThemeToUI(currentTheme);
       renderHome();
     });
+  });
+
+  window.api.onLiveFoldersChanged(() => {
+    if (document.hidden) return;
+    if (!$('#viewHome').hidden) renderHomeRecent();
+    else if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
+  });
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (!$('#viewHome').hidden) renderHomeRecent();
+    else if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
   });
 
   window.api.onMonitors((list) => {

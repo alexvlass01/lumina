@@ -11,6 +11,7 @@ const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
 const folderState = require('./src/folder-state'); // persistent firstSeenAt для файлов живых папок
+const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.watch lifecycle + debounce
 const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
 const gelbooru = require('./src/gelbooru'); // Gelbooru: основной booru-провайдер
 const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
@@ -155,6 +156,7 @@ let folderStateSaveTimer = null;
 let folderRefreshQueue = Promise.resolve();
 const folderScanFreshAt = new Map();
 const FOLDER_SCAN_FRESH_MS = 5000;
+let liveFolderWatcher = null;
 
 function loadLiveFolderState() {
   try {
@@ -194,6 +196,23 @@ function forgetLiveFolder(id) {
   if (result.removed) scheduleLiveFolderStateSave();
 }
 
+function liveFolderItems() {
+  return Object.values(config.library || {}).filter((item) => item && item.type === 'folder' && item.id && item.path);
+}
+
+function syncLiveFolderWatchers() {
+  if (!liveFolderWatcher) return { watched: 0, failed: 0 };
+  return liveFolderWatcher.sync(liveFolderItems());
+}
+
+function broadcastLiveFolderChanges(summaries) {
+  const changed = (Array.isArray(summaries) ? summaries : []).filter((summary) => summary && summary.changed);
+  if (!changed.length || !mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('live-folders-changed', {
+    folderIds: changed.map((summary) => summary.id),
+  });
+}
+
 // Serialize scans globally. Besides avoiding duplicate disk work, this prevents
 // two async scans from reconciling against stale copies of the same state object.
 function refreshLiveFolders(folderIds = null, force = false) {
@@ -226,6 +245,7 @@ function refreshLiveFolders(folderIds = null, force = false) {
         removed: result.removed,
       });
     }
+    broadcastLiveFolderChanges(summaries);
     return summaries;
   };
   folderRefreshQueue = folderRefreshQueue.then(run, run);
@@ -234,6 +254,20 @@ function refreshLiveFolders(folderIds = null, force = false) {
 
 function requestLiveFolderRefresh(folderIds = null) {
   refreshLiveFolders(folderIds).catch((err) => console.error('Не удалось обновить индекс живых папок:', err));
+}
+
+function startLiveFolderWatchers() {
+  if (liveFolderWatcher) liveFolderWatcher.closeAll();
+  liveFolderWatcher = liveFolderWatch.createController({
+    debounceMs: 1500,
+    onChange: async (folderId) => {
+      await refreshLiveFolders([folderId], true);
+    },
+    onError: (folderId, err) => {
+      console.warn(`[LiveFolders] watcher unavailable for ${folderId}:`, err && (err.message || err));
+    },
+  });
+  return syncLiveFolderWatchers();
 }
 
 // ---------------------------------------------------------------------------
@@ -1545,6 +1579,7 @@ function removeFromLibrary(id) {
     }
   }
   if (item && item.type === 'folder') forgetLiveFolder(id);
+  if (item && item.type === 'folder') syncLiveFolderWatchers();
   return true;
 }
 
@@ -1582,6 +1617,7 @@ ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
   const slot = ensureSlot(monitorId, which);
   assignToSlot(slot, 'folder', dir);
   saveConfig();
+  syncLiveFolderWatchers();
   requestLiveFolderRefresh([library.idFor(dir)]);
   return { config, added: 1 };
 });
@@ -1613,6 +1649,7 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
     saveConfig();
     trayCtl.refresh();
   }
+  if (folderIds.length) syncLiveFolderWatchers();
   if (folderIds.length) requestLiveFolderRefresh(folderIds);
   return { config, added };
 });
@@ -1666,6 +1703,7 @@ ipcMain.handle('library-add-folder', async () => {
   const id = library.addPath(config.library, 'folder', res.filePaths[0]);
   const added = Object.keys(config.library).length - before;
   if (added) saveConfig();
+  if (id) syncLiveFolderWatchers();
   if (id) requestLiveFolderRefresh([id]);
   return { config, added };
 });
@@ -1688,6 +1726,7 @@ ipcMain.handle('library-add-paths', async (e, paths) => {
   }
   const added = Object.keys(config.library).length - before;
   if (added) saveConfig();
+  if (folderIds.length) syncLiveFolderWatchers();
   if (folderIds.length) requestLiveFolderRefresh(folderIds);
   return { config, added };
 });
@@ -2124,8 +2163,6 @@ ipcMain.handle('folder-entries', (e, dir) => {
 // Metadata-rich flat expansion for the "All" view. Pool images are omitted because
 // renderer already has their full records; live-folder entries carry discovery dates.
 ipcMain.handle('expand-folders', async () => {
-  try { await refreshLiveFolders(); }
-  catch (err) { console.error('expand-folders scan:', err); }
   try {
     const indexed = folderState.listImages(liveFolderState);
     return { images: library.ephemeralFolderImages(config.library, indexed) };
@@ -2133,27 +2170,12 @@ ipcMain.handle('expand-folders', async () => {
 });
 
 ipcMain.handle('library-recent', async (e, limit) => {
-  try { await refreshLiveFolders(); }
-  catch (err) { console.error('library-recent scan:', err); }
   try {
     const indexed = folderState.listImages(liveFolderState);
     return { items: library.recentImages(config.library, indexed, limit) };
   } catch (err) {
     console.error('library-recent:', err);
     return { items: library.recentImages(config.library, [], limit) };
-  }
-});
-
-// Renderer polls only while Home or Library is visible. The serialized scanner
-// and its freshness window keep this request from overlapping or duplicating a
-// scan already started by expand-folders/library-recent.
-ipcMain.handle('poll-live-folders', async () => {
-  try {
-    const summaries = await refreshLiveFolders();
-    return { changed: summaries.some((summary) => summary.changed) };
-  } catch (err) {
-    console.error('poll-live-folders:', err);
-    return { changed: false, error: true };
   }
 });
 
@@ -2166,7 +2188,10 @@ ipcMain.handle('library-materialize', (e, p, type) => {
   const itemType = type === 'folder' ? 'folder' : 'image';
   const id = library.addPath(config.library, itemType, p);
   if (id) saveConfig();
-  if (id && itemType === 'folder') requestLiveFolderRefresh([id]);
+  if (id && itemType === 'folder') {
+    syncLiveFolderWatchers();
+    requestLiveFolderRefresh([id]);
+  }
   return { config, id };
 });
 
@@ -2412,6 +2437,7 @@ app.whenReady().then(async () => {
 
   createWindow();
   trayCtl.create();
+  startLiveFolderWatchers();
   requestLiveFolderRefresh();
 
   // refresh monitor list when displays change (added/removed/resolution/rotation)
@@ -2532,6 +2558,8 @@ app.whenReady().then(async () => {
 
   // Switch wallpaper when the computer wakes from sleep/hibernate
   powerMonitor.on('resume', () => {
+    syncLiveFolderWatchers();
+    requestLiveFolderRefresh();
     if (config.wallpaperSchedule && (config.wallpaperSchedule.mode === 'time' || config.wallpaperSchedule.mode === 'sun')) {
       applyWallpaperSchedule(false, true);
     }
@@ -2551,6 +2579,7 @@ app.whenReady().then(async () => {
 // Flush discovery metadata and dispose the persistent PowerShell host on quit.
 app.on('before-quit', () => {
   flushLiveFolderState();
+  if (liveFolderWatcher) liveFolderWatcher.closeAll();
   wpHost.dispose();
 });
 

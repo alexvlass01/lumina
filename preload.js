@@ -33,7 +33,6 @@ contextBridge.exposeInMainWorld('api', {
   libraryMaterialize: (p, type) => ipcRenderer.invoke('library-materialize', p, type),
   expandFolders: () => ipcRenderer.invoke('expand-folders'),
   libraryRecent: (limit) => ipcRenderer.invoke('library-recent', limit),
-  pollLiveFolders: () => ipcRenderer.invoke('poll-live-folders'),
   libraryEnsureSizes: () => ipcRenderer.invoke('library-ensure-sizes'),
 
   // Lumina Cloud (C2): safe capability state only (environment/available/reason).
@@ -83,6 +82,7 @@ contextBridge.exposeInMainWorld('api', {
   onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
   onWallpaperTheme: (cb) => ipcRenderer.on('wallpaper-theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
+  onLiveFoldersChanged: (cb) => ipcRenderer.on('live-folders-changed', (_e, change) => cb(change)),
   onMonitors: (cb) => ipcRenderer.on('monitors-changed', (_e, d) => cb(d)),
   onUpdate: (cb) => ipcRenderer.on('update-status', (_e, st) => cb(st)),
 });
