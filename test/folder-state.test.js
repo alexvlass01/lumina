@@ -19,7 +19,7 @@ let result = F.reconcileFolder(F.emptyState(), {
   entries: [{ path: a, modifiedAt: 100 }, { path: b, modifiedAt: 200 }],
 });
 ok('baseline inherits folder addedAt', result.added === 2
-  && result.images.every((x) => x.firstSeenAt === 1000));
+  && result.contentChanged && result.images.every((x) => x.firstSeenAt === 1000));
 ok('baseline preserves initial modifiedAt', result.images.find((x) => x.path === b).modifiedAt === 200);
 
 result = F.reconcileFolder(result.state, {
@@ -29,6 +29,7 @@ result = F.reconcileFolder(result.state, {
 ok('later file receives discovery time', result.added === 1
   && result.images.find((x) => x.path === c).firstSeenAt === 10000);
 ok('known file keeps original metadata', result.images.find((x) => x.path === a).modifiedAt === 100);
+ok('completed baseline is marked in state', result.state.folders['folder-1'].baselineComplete === true);
 
 const beforePartial = result.state;
 result = F.reconcileFolder(beforePartial, {
@@ -74,11 +75,44 @@ const sanitized = F.normalizeState({ version: 1, folders: { bad: { rootPath: roo
   'safe.jpg': { firstSeenAt: 3 },
 } } } });
 ok('stored traversal and absolute paths are rejected', Object.keys(sanitized.folders.bad.files).length === 1
-  && sanitized.folders.bad.files['safe.jpg'].firstSeenAt === 3);
+  && sanitized.folders.bad.files['safe.jpg'].firstSeenAt === 3
+  && sanitized.folders.bad.baselineComplete === false);
+ok('version 1 state migrates without losing discovery history', sanitized.version === F.VERSION);
+ok('knownPathKeys returns normalized absolute paths', F.knownPathKeys(result.state, 'folder-1').has(a.toLowerCase()));
+
+let progressive = F.reconcileFolder(F.emptyState(), {
+  folderId: 'progress', rootPath: root, folderAddedAt: 500, now: 9000, status: 'partial',
+  entries: [{ path: a, modifiedAt: 1 }],
+});
+ok('partial baseline remains unfinished', progressive.state.folders.progress.baselineComplete === false
+  && progressive.images[0].firstSeenAt === 500);
+progressive = F.reconcileFolder(progressive.state, {
+  folderId: 'progress', rootPath: root, folderAddedAt: 500, now: 10000, status: 'partial',
+  entries: [{ path: b, modifiedAt: 2 }],
+});
+ok('later baseline batch still inherits folder addedAt', progressive.images[0].firstSeenAt === 500);
+progressive = F.reconcileFolder(progressive.state, {
+  folderId: 'progress', rootPath: root, folderAddedAt: 500, now: 11000, status: 'complete',
+  entries: [{ path: a }, { path: b }],
+});
+ok('complete progressive scan closes baseline', progressive.state.folders.progress.baselineComplete === true);
+const emptyBaseline = F.reconcileFolder(F.emptyState(), {
+  folderId: 'empty', rootPath: root, folderAddedAt: 500, now: 12000, status: 'complete', entries: [],
+});
+ok('baseline completion without files is metadata-only', emptyBaseline.changed && !emptyBaseline.contentChanged);
 
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'lumina-folder-state-'));
 const statePath = path.join(temp, 'folder-state.json');
 try {
+  fs.writeFileSync(statePath, JSON.stringify({ version: 1, folders: {
+    legacy: { rootPath: root, files: { 'a.jpg': { relativePath: 'a.jpg', firstSeenAt: 7, modifiedAt: 8 } } },
+  } }), 'utf8');
+  const migrated = F.loadState(statePath);
+  ok('version 1 file loads as resumable version 2 state', !migrated.recovered
+    && migrated.state.version === F.VERSION
+    && migrated.state.folders.legacy.files['a.jpg'].firstSeenAt === 7
+    && migrated.state.folders.legacy.baselineComplete === false);
+
   const saved = F.saveState(statePath, result.state);
   const loaded = F.loadState(statePath);
   ok('state round-trips through disk', !loaded.recovered
@@ -116,6 +150,37 @@ async function testScanner() {
     const capped = await F.scanFolderTree(tree, { cap: 1 });
     ok('file cap produces a conservative partial result', capped.status === 'partial'
       && capped.entries.length === 1);
+
+    const batches = [];
+    let yields = 0;
+    const batched = await F.scanFolderTree(tree, {
+      batchSize: 1,
+      onBatch: async (entries, progress) => batches.push({ entries, progress }),
+      yieldFn: async () => { yields++; },
+    });
+    ok('default scanner has no total cap', batched.status === 'complete' && batched.entries.length === 2);
+    ok('scanner reports full batches and yields between them', batches.length === 2
+      && batches[0].entries.length === 1 && batches[1].progress.processed === 2 && yields === 2);
+
+    const virtualCount = 10005;
+    const virtualRoot = path.resolve('C:\\VirtualWallpapers');
+    const virtualChildren = Array.from({ length: virtualCount }, (_, i) => ({
+      name: `image-${String(i).padStart(5, '0')}.jpg`,
+      isDirectory: () => false,
+      isFile: () => true,
+    }));
+    const virtualBatches = [];
+    const virtual = await F.scanFolderTree(virtualRoot, {
+      fsPromises: {
+        stat: async (p) => p === virtualRoot ? { isDirectory: () => true } : { mtimeMs: 1 },
+        realpath: async (p) => p,
+        readdir: async () => virtualChildren,
+      },
+      onBatch: async (entries) => virtualBatches.push(entries.length),
+      yieldFn: async () => {},
+    });
+    ok('scanner indexes beyond the former 10k ceiling', virtual.status === 'complete'
+      && virtual.entries.length === virtualCount && virtualBatches.join(',') === '10000');
 
     const unavailable = await F.scanFolderTree(path.join(tree, 'missing'));
     ok('missing root is unavailable, not an empty complete folder', unavailable.status === 'unavailable'

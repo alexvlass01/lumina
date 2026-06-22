@@ -156,7 +156,11 @@ let folderStateSaveTimer = null;
 let folderRefreshQueue = Promise.resolve();
 const folderScanFreshAt = new Map();
 const FOLDER_SCAN_FRESH_MS = 5000;
+const FOLDER_STATE_SAVE_DEBOUNCE_MS = 5000;
 let liveFolderWatcher = null;
+let liveFolderFullScanTimer = null;
+let liveFolderLastFullScanAt = 0;
+const LIVE_FOLDER_FULL_SCAN_MS = 60 * 60 * 1000;
 
 function loadLiveFolderState() {
   try {
@@ -185,7 +189,7 @@ function flushLiveFolderState() {
 function scheduleLiveFolderStateSave() {
   folderStateDirty = true;
   if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
-  folderStateSaveTimer = setTimeout(flushLiveFolderState, 300);
+  folderStateSaveTimer = setTimeout(flushLiveFolderState, FOLDER_STATE_SAVE_DEBOUNCE_MS);
   if (folderStateSaveTimer && typeof folderStateSaveTimer.unref === 'function') folderStateSaveTimer.unref();
 }
 
@@ -223,29 +227,56 @@ function refreshLiveFolders(folderIds = null, force = false) {
     const summaries = [];
     for (const item of items) {
       if (!force && Date.now() - (folderScanFreshAt.get(item.id) || 0) < FOLDER_SCAN_FRESH_MS) continue;
-      const scan = await folderState.scanFolderTree(item.path, { imageExts: playlist.IMG_EXTS });
-      folderScanFreshAt.set(item.id, Date.now());
-      // The folder may have been removed while the asynchronous scan was running.
-      const current = library.getItem(config.library, item.id);
-      if (!current || current.type !== 'folder' || current.path !== item.path) continue;
-      const result = folderState.reconcileFolder(liveFolderState, {
-        folderId: item.id,
-        rootPath: item.path,
-        folderAddedAt: item.addedAt,
-        status: scan.status,
-        entries: scan.entries,
+      const scanNow = Date.now();
+      let changed = false;
+      let added = 0;
+      let removed = 0;
+      let batchNotified = false;
+
+      const reconcile = (status, entries, notify = false) => {
+        const current = library.getItem(config.library, item.id);
+        if (!current || current.type !== 'folder' || current.path !== item.path) return null;
+        const result = folderState.reconcileFolder(liveFolderState, {
+          folderId: item.id,
+          rootPath: item.path,
+          folderAddedAt: item.addedAt,
+          now: scanNow,
+          status,
+          entries,
+        });
+        liveFolderState = result.state;
+        if (result.changed) scheduleLiveFolderStateSave();
+        changed = changed || result.contentChanged;
+        added += result.added;
+        removed += result.removed;
+        if (notify && result.contentChanged) {
+          broadcastLiveFolderChanges([{ id: item.id, changed: true }]);
+          batchNotified = true;
+        }
+        return result;
+      };
+
+      const scan = await folderState.scanFolderTree(item.path, {
+        imageExts: playlist.IMG_EXTS,
+        batchSize: 10000,
+        knownPaths: folderState.knownPathKeys(liveFolderState, item.id),
+        onBatch: async (entries) => { reconcile('partial', entries, true); },
       });
-      liveFolderState = result.state;
-      if (result.changed) scheduleLiveFolderStateSave();
+      folderScanFreshAt.set(item.id, Date.now());
+      const finalResult = reconcile(scan.status, scan.entries);
+      if (!finalResult) continue;
       summaries.push({
         id: item.id,
         status: scan.status,
-        changed: result.changed,
-        added: result.added,
-        removed: result.removed,
+        changed,
+        added,
+        removed,
+        // Full batches have already notified the renderer. A final remainder or
+        // deletion still needs one notification after the completed scan.
+        notified: batchNotified && !finalResult.contentChanged,
       });
     }
-    broadcastLiveFolderChanges(summaries);
+    broadcastLiveFolderChanges(summaries.filter((summary) => !summary.notified));
     return summaries;
   };
   folderRefreshQueue = folderRefreshQueue.then(run, run);
@@ -265,9 +296,44 @@ function startLiveFolderWatchers() {
     },
     onError: (folderId, err) => {
       console.warn(`[LiveFolders] watcher unavailable for ${folderId}:`, err && (err.message || err));
+      const retry = setTimeout(syncLiveFolderWatchers, 60000);
+      if (retry && typeof retry.unref === 'function') retry.unref();
     },
   });
   return syncLiveFolderWatchers();
+}
+
+function liveFolderWindowVisible() {
+  return !!(mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized());
+}
+
+function scheduleLiveFolderFullScan(reason, delayMs) {
+  if (liveFolderFullScanTimer) clearTimeout(liveFolderFullScanTimer);
+  liveFolderFullScanTimer = setTimeout(async () => {
+    liveFolderFullScanTimer = null;
+    const visibleOnly = reason === 'hourly' || reason === 'window-visible';
+    if (visibleOnly && !liveFolderWindowVisible()) {
+      scheduleLiveFolderFullScan('hourly', LIVE_FOLDER_FULL_SCAN_MS);
+      return;
+    }
+    syncLiveFolderWatchers();
+    try {
+      await refreshLiveFolders(null, true);
+      liveFolderLastFullScanAt = Date.now();
+    } catch (err) {
+      console.error(`[LiveFolders] ${reason} reconciliation failed:`, err);
+    } finally {
+      scheduleLiveFolderFullScan('hourly', LIVE_FOLDER_FULL_SCAN_MS);
+    }
+  }, Math.max(0, Number(delayMs) || 0));
+  if (liveFolderFullScanTimer && typeof liveFolderFullScanTimer.unref === 'function') {
+    liveFolderFullScanTimer.unref();
+  }
+}
+
+function reconcileLiveFoldersIfStale() {
+  if (Date.now() - liveFolderLastFullScanAt < LIVE_FOLDER_FULL_SCAN_MS) return;
+  scheduleLiveFolderFullScan('window-visible', 2000);
 }
 
 // ---------------------------------------------------------------------------
@@ -919,6 +985,8 @@ function createWindow() {
   mainWindow.once('ready-to-show', () => {
     if (!STARTED_HIDDEN) mainWindow.show();
   });
+
+  mainWindow.on('show', reconcileLiveFoldersIfStale);
 
   mainWindow.on('close', (e) => {
     if (!app.isQuitting) {
@@ -1752,6 +1820,8 @@ ipcMain.handle('library-toggle-favorite', (e, id) => {
 // never removed merely because a disk is currently offline or access is denied.
 ipcMain.handle('library-refresh', async () => {
   await refreshLiveFolders(null, true);
+  liveFolderLastFullScanAt = Date.now();
+  scheduleLiveFolderFullScan('hourly', LIVE_FOLDER_FULL_SCAN_MS);
   const dead = library.findMissingIds(config.library, (p) => {
     try { return fs.existsSync(p); } catch { return false; }
   }).filter((id) => {
@@ -2438,7 +2508,7 @@ app.whenReady().then(async () => {
   createWindow();
   trayCtl.create();
   startLiveFolderWatchers();
-  requestLiveFolderRefresh();
+  scheduleLiveFolderFullScan('startup', 3000);
 
   // refresh monitor list when displays change (added/removed/resolution/rotation)
   for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) {
@@ -2559,7 +2629,7 @@ app.whenReady().then(async () => {
   // Switch wallpaper when the computer wakes from sleep/hibernate
   powerMonitor.on('resume', () => {
     syncLiveFolderWatchers();
-    requestLiveFolderRefresh();
+    scheduleLiveFolderFullScan('resume', 5000);
     if (config.wallpaperSchedule && (config.wallpaperSchedule.mode === 'time' || config.wallpaperSchedule.mode === 'sun')) {
       applyWallpaperSchedule(false, true);
     }
@@ -2578,6 +2648,8 @@ app.whenReady().then(async () => {
 
 // Flush discovery metadata and dispose the persistent PowerShell host on quit.
 app.on('before-quit', () => {
+  if (liveFolderFullScanTimer) clearTimeout(liveFolderFullScanTimer);
+  liveFolderFullScanTimer = null;
   flushLiveFolderState();
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
   wpHost.dispose();

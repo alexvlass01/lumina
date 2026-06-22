@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = 1;
+const VERSION = 2;
 const VALID_SCAN_STATUSES = new Set(['complete', 'partial', 'unavailable']);
 const DEFAULT_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
 
@@ -68,7 +68,13 @@ function normalizeState(raw) {
         modifiedAt: finiteTime(file.modifiedAt),
       };
     }
-    out.folders[folderId] = { rootPath: folder.rootPath, files };
+    out.folders[folderId] = {
+      rootPath: folder.rootPath,
+      files,
+      // Version 1 did not persist whether the 10k-limited scan was complete.
+      // Continue it as a baseline so an old unseen tail is not labelled "new".
+      baselineComplete: raw.version === 1 ? false : folder.baselineComplete !== false,
+    };
   }
   return out;
 }
@@ -89,17 +95,19 @@ function reconcileFolder(rawState, options = {}) {
   const scanEntries = Array.isArray(options.entries) ? options.entries : [];
 
   if (!folderId || !rootPath || status === 'unavailable') {
-    return { state, images: [], changed: false, added: 0, removed: 0 };
+    return { state, images: [], changed: false, contentChanged: false, added: 0, removed: 0 };
   }
 
   let folder = state.folders[folderId];
   let changed = false;
+  let contentChanged = false;
   const isBaseline = !folder || !sameRoot(folder.rootPath, rootPath);
   if (isBaseline) {
-    folder = { rootPath, files: {} };
+    folder = { rootPath, files: {}, baselineComplete: false };
     state.folders[folderId] = folder;
     changed = true;
   }
+  const baselinePending = folder.baselineComplete === false;
 
   const seen = new Set();
   const images = [];
@@ -114,16 +122,18 @@ function reconcileFolder(rawState, options = {}) {
     if (!metadata) {
       metadata = {
         relativePath: rel.relativePath,
-        firstSeenAt: isBaseline ? baselineAt : now,
+        firstSeenAt: baselinePending ? baselineAt : now,
         modifiedAt: finiteTime(entry && entry.modifiedAt),
       };
       folder.files[rel.key] = metadata;
       added++;
       changed = true;
+      contentChanged = true;
     } else if (metadata.relativePath !== rel.relativePath) {
       // Preserve discovery time for case-only renames on Windows.
       metadata.relativePath = rel.relativePath;
       changed = true;
+      contentChanged = true;
     }
 
     images.push({
@@ -141,11 +151,16 @@ function reconcileFolder(rawState, options = {}) {
         delete folder.files[key];
         removed++;
         changed = true;
+        contentChanged = true;
       }
+    }
+    if (!folder.baselineComplete) {
+      folder.baselineComplete = true;
+      changed = true;
     }
   }
 
-  return { state, images, changed, added, removed };
+  return { state, images, changed, contentChanged, added, removed };
 }
 
 function removeFolder(rawState, folderId) {
@@ -174,6 +189,15 @@ function listImages(rawState, folderIds = null) {
   return images;
 }
 
+function knownPathKeys(rawState, folderId) {
+  const state = normalizeState(rawState);
+  const folder = state.folders[folderId];
+  if (!folder) return new Set();
+  return new Set(Object.values(folder.files).map((file) => (
+    path.resolve(folder.rootPath, file.relativePath).toLowerCase()
+  )));
+}
+
 // Recursive, status-aware scan used for the library view and discovery index.
 // A partial result may add confirmed files but must never prove that unseen files
 // were deleted. The scan is async so large folders do not block Electron's main loop.
@@ -181,18 +205,30 @@ async function scanFolderTree(rootPath, options = {}) {
   const requestedRoot = String(rootPath || '').trim();
   if (!requestedRoot) return { status: 'unavailable', entries: [] };
   const root = path.resolve(requestedRoot);
-  const maxDepth = Number.isFinite(options.maxDepth) ? Math.max(0, Math.floor(options.maxDepth)) : 8;
-  const cap = Number.isFinite(options.cap) ? Math.max(0, Math.floor(options.cap)) : 10000;
+  const maxDepth = Number.isFinite(options.maxDepth) ? Math.max(0, Math.floor(options.maxDepth)) : Infinity;
+  // cap is retained only for explicit callers/tests. Production scans are
+  // unlimited and yield/persist in batches instead of silently truncating.
+  const cap = Number.isFinite(options.cap) ? Math.max(0, Math.floor(options.cap)) : Infinity;
+  const batchSize = Number.isFinite(options.batchSize) ? Math.max(1, Math.floor(options.batchSize)) : 10000;
+  const onBatch = typeof options.onBatch === 'function' ? options.onBatch : null;
+  const yieldFn = typeof options.yieldFn === 'function'
+    ? options.yieldFn
+    : () => new Promise((resolve) => setImmediate(resolve));
+  const knownPaths = options.knownPaths instanceof Set
+    ? new Set(Array.from(options.knownPaths, (p) => path.resolve(String(p)).toLowerCase()))
+    : new Set();
   const imageExts = options.imageExts instanceof Set ? options.imageExts : DEFAULT_IMAGE_EXTS;
+  const io = options.fsPromises && typeof options.fsPromises === 'object' ? options.fsPromises : fs.promises;
 
   try {
-    const stat = await fs.promises.stat(root);
+    const stat = await io.stat(root);
     if (!stat.isDirectory()) return { status: 'unavailable', entries: [] };
   } catch {
     return { status: 'unavailable', entries: [] };
   }
 
   const entries = [];
+  let batch = [];
   const seenDirs = new Set();
   const stack = [{ dir: root, depth: 0 }];
   let partial = false;
@@ -200,7 +236,7 @@ async function scanFolderTree(rootPath, options = {}) {
   scan: while (stack.length) {
     const current = stack.pop();
     let real;
-    try { real = (await fs.promises.realpath(current.dir)).toLowerCase(); }
+    try { real = (await io.realpath(current.dir)).toLowerCase(); }
     catch {
       if (current.depth === 0) return { status: 'unavailable', entries: [] };
       partial = true;
@@ -211,7 +247,7 @@ async function scanFolderTree(rootPath, options = {}) {
 
     let children;
     try {
-      children = await fs.promises.readdir(current.dir, { withFileTypes: true });
+      children = await io.readdir(current.dir, { withFileTypes: true });
     } catch {
       if (current.depth === 0) return { status: 'unavailable', entries: [] };
       partial = true;
@@ -232,8 +268,16 @@ async function scanFolderTree(rootPath, options = {}) {
         break scan;
       }
       try {
-        const stat = await fs.promises.stat(full);
-        entries.push({ path: full, modifiedAt: finiteTime(stat.mtimeMs) });
+        const key = path.resolve(full).toLowerCase();
+        const modifiedAt = knownPaths.has(key) ? 0 : finiteTime((await io.stat(full)).mtimeMs);
+        const entry = { path: full, modifiedAt };
+        entries.push(entry);
+        batch.push(entry);
+        if (batch.length >= batchSize) {
+          if (onBatch) await onBatch(batch.slice(), { processed: entries.length });
+          batch = [];
+          await yieldFn();
+        }
       } catch { partial = true; }
     }
   }
@@ -244,7 +288,7 @@ async function scanFolderTree(rootPath, options = {}) {
 
 function validateStoredState(raw) {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw)
-    && raw.version === VERSION
+    && (raw.version === 1 || raw.version === VERSION)
     && raw.folders && typeof raw.folders === 'object' && !Array.isArray(raw.folders);
 }
 
@@ -295,6 +339,7 @@ module.exports = {
   reconcileFolder,
   removeFolder,
   listImages,
+  knownPathKeys,
   scanFolderTree,
   loadState,
   saveState,
