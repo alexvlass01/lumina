@@ -1135,12 +1135,14 @@ function renderBreadcrumbs() {
   const assignBtn = document.createElement('button');
   assignBtn.className = 'pill lib-assign-folder';
   assignBtn.textContent = t('library.assignThisFolder');
-  assignBtn.addEventListener('click', async (e) => {
+  assignBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    const res = await window.api.libraryMaterialize(LIB.folderPath, 'folder');
-    config = (res && res.config) || config;
-    const it = res && res.id && config.library[res.id];
-    if (it) openAssignMenu(it, assignBtn);
+    // Materialize the folder into the pool only once the user picks a slot in the menu.
+    openAssignMenu(null, assignBtn, async () => {
+      const res = await window.api.libraryMaterialize(LIB.folderPath, 'folder');
+      config = (res && res.config) || config;
+      return res && res.id ? config.library[res.id] : null;
+    });
   });
   bar.appendChild(assignBtn);
 }
@@ -1242,12 +1244,15 @@ function buildSubfolderCard(f) {
   menu.className = 'lib-menu-btn';
   menu.textContent = '⋯';
   menu.title = t('library.assign');
-  menu.addEventListener('click', async (e) => {
+  menu.addEventListener('click', (e) => {
     e.stopPropagation();
-    const res = await window.api.libraryMaterialize(f.path, 'folder');
-    config = (res && res.config) || config;
-    const it = res && res.id && config.library[res.id];
-    if (it) openAssignMenu(it, menu);
+    // Don't add the subfolder to the pool just for opening its menu — only if the
+    // user actually assigns it as a source.
+    openAssignMenu(null, menu, async () => {
+      const res = await window.api.libraryMaterialize(f.path, 'folder');
+      config = (res && res.config) || config;
+      return res && res.id ? config.library[res.id] : null;
+    });
   });
   card.appendChild(menu);
   card.addEventListener('mouseenter', () => setLibStatus(f.path));
@@ -1294,11 +1299,9 @@ function buildEphemeralImageCard(p) {
   menu.className = 'lib-menu-btn';
   menu.textContent = '⋯';
   menu.title = t('library.assign');
-  const open = async () => {
-    const it = await materialize();
-    if (it) openAssignMenu(it, menu); // menu anchor is still in the DOM (no re-render yet)
-  };
-  menu.addEventListener('click', (e) => { e.stopPropagation(); open(); });
+  // Open the menu WITHOUT materializing; it is added to the pool only if the user
+  // actually assigns/tags/removes inside the menu (materialize passed as callback).
+  menu.addEventListener('click', (e) => { e.stopPropagation(); openAssignMenu(null, menu, materialize); });
   card.appendChild(menu);
 
   card.addEventListener('mouseenter', () => setLibStatus(baseName(p)));
@@ -1603,14 +1606,25 @@ function onDocClosePopup(e) {
 }
 
 // Floating popup: assign this item to a monitor×theme, or remove it from the library.
-function openAssignMenu(it, anchor) {
+function openAssignMenu(it, anchor, materializeFn) {
   closeLibPopup();
+  // `it` may be null: an ephemeral folder image not yet in the pool. We add it to
+  // the pool (materialize, by reference) ONLY when the user commits an action here
+  // — assign / add tag / remove — never just for opening the menu. Opening it used
+  // to materialize immediately, which jumped the card to the top under "newest
+  // first" and left stray pool items behind after the folder was removed.
+  const ensureItem = async () => {
+    if (!it && materializeFn) it = await materializeFn();
+    return it;
+  };
   const pop = document.createElement('div');
   pop.className = 'lib-popup';
   pop.id = 'libPopup';
 
   appendAssignRows(pop, async (monitorId, th) => {
-    config = await window.api.libraryAssign(it.id, monitorId, th);
+    const item = await ensureItem();
+    if (!item) return;
+    config = await window.api.libraryAssign(item.id, monitorId, th);
     closeLibPopup();
     renderLibrary();
     renderPreviews();
@@ -1646,7 +1660,7 @@ function openAssignMenu(it, anchor) {
   tagBox.appendChild(suggest);
   pop.appendChild(tagBox);
 
-  const curTags = () => { const f = config.library[it.id]; return (f && f.tags) || []; };
+  const curTags = () => { const f = it && config.library[it.id]; return (f && f.tags) || []; };
   function renderChips() {
     chips.innerHTML = '';
     curTags().forEach((tg) => {
@@ -1658,6 +1672,7 @@ function openAssignMenu(it, anchor) {
       x.textContent = '×';
       x.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (!it) return; // chips only exist once the item is in the pool
         config = await window.api.libraryRemoveTag(it.id, tg);
         renderChips();
         renderSuggest();
@@ -1673,7 +1688,9 @@ function openAssignMenu(it, anchor) {
   async function applyTag(raw) {
     const v = String(raw || '').trim();
     if (!v) return;
-    config = await window.api.libraryAddTag(it.id, v);
+    const item = await ensureItem();
+    if (!item) return;
+    config = await window.api.libraryAddTag(item.id, v);
     tagInput.value = '';
     renderChips();
     renderSuggest();
@@ -1722,6 +1739,7 @@ function openAssignMenu(it, anchor) {
   rm.textContent = t('library.remove');
   rm.addEventListener('click', async (e) => {
     e.stopPropagation();
+    if (!it) { closeLibPopup(); return; } // ephemeral, not in the pool → nothing to remove
     config = await window.api.libraryRemove(it.id);
     closeLibPopup();
     renderLibrary();
@@ -3118,17 +3136,16 @@ function renderHomeRecentItems(items, version) {
     date.textContent = homeRecentDate(item.addedAt);
     copy.append(title, date);
     card.append(preview, copy);
-    card.addEventListener('click', async () => {
+    card.addEventListener('click', () => {
+      // Open the assign menu on the existing card; an ephemeral folder image is
+      // materialized into the pool only when the user commits an action in the menu
+      // (so merely opening it no longer reorders "recently added" or leaves strays).
       if (!item.ephemeral) { openAssignMenu(item, card); return; }
-      const res = await window.api.libraryMaterialize(item.path, 'image');
-      config = (res && res.config) || config;
-      const materialized = res && res.id ? config.library[res.id] : null;
-      if (!materialized) return;
-      await new Promise((resolve) => setTimeout(resolve, 0));
-      const key = normPathKey(item.path);
-      const anchor = Array.from(document.querySelectorAll('#homeRecentGrid .home-recent-card'))
-        .find((candidate) => candidate.dataset.pathKey === key) || card;
-      openAssignMenu(materialized, anchor);
+      openAssignMenu(null, card, async () => {
+        const res = await window.api.libraryMaterialize(item.path, 'image');
+        config = (res && res.config) || config;
+        return res && res.id ? config.library[res.id] : null;
+      });
     });
     grid.appendChild(card);
 
