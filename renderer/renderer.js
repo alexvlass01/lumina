@@ -725,6 +725,8 @@ let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
 const deferredLiveRefresh = window.DeferredRefresh.create(['home', 'library']);
 let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
+let activePage = 'home';       // current top-level tab; used to save/restore per-tab scroll
+const pageScroll = { home: 0, library: 0, design: 0, prefs: 0 }; // remembered scrollTop per tab
 let justifiedFrame = 0;
 const justifiedPending = new Set();
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
@@ -935,8 +937,16 @@ function renderLibrary() {
   // Record what we're about to render so a later tab switch can detect "nothing
   // changed" and skip a needless rebuild. Online does not consume a pending
   // local-folder refresh because the local grid has not been updated yet.
+  const keyChanged = libRenderKey() !== lastLibRenderKey;
   if (LIB.filter !== 'online') deferredLiveRefresh.consume('library');
   lastLibRenderKey = libRenderKey();
+  // A changed view (filter / folder / sort / query) shows new content → start at the
+  // top rather than keeping the previous scroll offset.
+  if (keyChanged && activePage === 'library') {
+    const page = document.querySelector('.page');
+    if (page) page.scrollTop = 0;
+    pageScroll.library = 0;
+  }
   renderLibRailTags();
   setLibViewHeader();
   const local = $('#libLocal');
@@ -2697,6 +2707,9 @@ function showPage(name) {
   const views = { home: 'viewHome', library: 'viewLibrary', design: 'viewDesign', prefs: 'viewPrefs' };
   const target = views[name] || 'viewHome';
   const page = document.querySelector('.page');
+  // All tabs share one .page scroll container, so remember the outgoing tab's
+  // position and restore the incoming one — otherwise switching tabs clamps/loses it.
+  if (page && Object.prototype.hasOwnProperty.call(pageScroll, activePage)) pageScroll[activePage] = page.scrollTop;
   if (page) {
     page.classList.toggle('library-page', name === 'library');
     page.classList.toggle('home-page', name === 'home');
@@ -2707,6 +2720,7 @@ function showPage(name) {
   });
   const gear = $('#btnPrefs');
   if (gear) gear.classList.toggle('active', name === 'prefs');
+  activePage = name;
 
   if (name === 'home') {
     renderHome();
@@ -2717,12 +2731,14 @@ function showPage(name) {
     const grid = $('#libGrid');
     const upToDate = grid && grid.childElementCount > 0 && !deferredLiveRefresh.has('library')
       && LIB.filter !== 'online' && libRenderKey() === lastLibRenderKey;
-    if (!upToDate) renderLibrary();
+    if (!upToDate) renderLibrary(); // a rebuild (changed view) resets pageScroll.library to 0
     scheduleAllLibraryLayouts();
   } else if (name === 'design') {
     renderPreviews();   // reflect current config
     layoutMonitors();   // stages just became visible — refit thumbnails
   }
+
+  if (page) page.scrollTop = pageScroll[name] || 0;
 }
 
 // First-run welcome screen (one-time).

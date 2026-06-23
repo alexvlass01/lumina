@@ -1275,7 +1275,13 @@ select option {
 .lib-rail {
   flex: 0 0 174px;
   display: flex; flex-direction: column; gap: 2px;
+  /* Always-visible left rail: pinned while the grid scrolls under it, regardless of
+     folder size. align-self keeps it from stretching (so sticky engages); max-height
+     bounds it to the viewport. The rail itself never scrolls — the fixed filter
+     buttons stay put and only the tag list (.lib-railtags) scrolls internally. */
   position: sticky; top: 0;
+  align-self: flex-start;
+  max-height: calc(100vh - 80px);
   padding: 7px 8px 10px;
   background: var(--sidebar-bg);
   border: 1px solid var(--card-border);
@@ -1286,7 +1292,7 @@ select option {
 html.dark .lib-rail { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
 .lib-railbtn {
   display: flex; align-items: center; gap: 9px;
-  min-width: 0; min-height: 35px;
+  min-width: 0; min-height: 35px; flex: 0 0 auto;
   text-align: left;
   border: none; background: transparent; color: var(--text);
   font-family: inherit; font-size: 13px; font-weight: 500;
@@ -1302,7 +1308,7 @@ html.dark .lib-rail { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
 }
 .lib-railbtn.active:hover { background: var(--accent-soft-hover); }
 .lib-railbtn span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lib-rail-separator { height: 1px; margin: 7px 8px; background: var(--card-border); }
+.lib-rail-separator { height: 1px; margin: 7px 8px; background: var(--card-border); flex: 0 0 auto; }
 /* Rail icons: symbolic SVGs (inherit currentColor → tint to the accent when active). The tag
    rows reuse the same 15px slot with a "#" glyph so the whole rail stays aligned. */
 .lib-rail-ic { width: 16px; height: 16px; flex: 0 0 auto; opacity: 0.82; }
@@ -1543,7 +1549,12 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-popup-btn.danger:hover { background: rgba(224, 27, 36, 0.12); }
 
 /* tags */
-.lib-railtags { display: flex; flex-direction: column; gap: 2px; }
+/* Only the tag list scrolls (fixed filter buttons above it stay pinned to the top of
+   the rail). Thin, subtle scrollbar so it doesn't look tacked-on. */
+.lib-railtags { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.lib-railtags::-webkit-scrollbar { width: 6px; }
+.lib-railtags::-webkit-scrollbar-thumb { background: var(--switch-off); border-radius: 4px; }
+.lib-railtags::-webkit-scrollbar-track { background: transparent; }
 .lib-rail-hdr {
   font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
   color: var(--text-dim); padding: 10px 10px 4px;
@@ -1994,7 +2005,7 @@ html.dark .lib-folder-front { fill: #d99a34; }
   .lib-railbtn { flex: 0 0 auto; min-height: 34px; padding: 6px 10px; }
   .lib-railbtn.active { box-shadow: inset 0 -3px var(--accent); }
   .lib-rail-separator { width: 1px; height: 22px; margin: 0 4px; flex: 0 0 auto; }
-  .lib-railtags { flex: 0 0 auto; flex-direction: row; gap: 2px; }
+  .lib-railtags { flex: 0 0 auto; flex-direction: row; gap: 2px; overflow: visible; min-height: 0; }
   .lib-view-head { margin-bottom: 6px; }
   .lib-view-title { font-size: 19px; }
   .lib-toolbar { margin-bottom: 12px; }
