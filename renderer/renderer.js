@@ -1211,25 +1211,37 @@ async function renderFolderView(tok) {
   const empty = $('#libEmpty');
   if (!grid) return;
   resetLibObservers();
-  const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
   const dir = LIB.folderPath;
   let res;
   try { res = await window.api.folderEntries(dir); } catch { res = null; }
   if (tok !== allViewToken) return; // navigated away while awaiting
   const folders = (res && res.folders) || [];
-  let images = (res && res.images) || [];
+  let images = (res && res.images) || []; // [{ path, addedAt, modifiedAt }]
   const q = LIB.q.trim().toLowerCase();
-  if (q) images = images.filter((p) => baseName(p).toLowerCase().includes(q));
-  if (LIB.sort === 'name') images = images.slice().sort((a, b) => baseName(a).localeCompare(baseName(b)));
-  const assigned = assignedIds();
+  if (q) images = images.filter((im) => baseName(im.path).toLowerCase().includes(q));
+  // Same entry shape, sorting and chunked rendering as "All": a folder image already
+  // in the pool shows its real card, otherwise an ephemeral one. This applies the
+  // chosen sort (newest first / name / size / shuffle) and renders big folders in
+  // lazy chunks with batched aspect prefetch (the old code built every card at once).
   const pmap = poolImageMap();
-  grid.innerHTML = '';
-  folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
-  images.forEach((p) => grid.appendChild(buildPathImageCard(p, assigned, pmap)));
-  scheduleJustifiedLayout(grid);
-  const total = folders.length + images.length;
+  const entries = images.map((im) => {
+    const item = pmap.get(normPathKey(im.path));
+    return item
+      ? { path: im.path, item, id: item.id }
+      : { path: im.path, item: null, id: im.path, addedAt: im.addedAt, modifiedAt: im.modifiedAt };
+  });
+  sortItems(entries, {
+    added: (x) => (x.item ? x.item.addedAt : x.addedAt),
+    modified: (x) => (x.item ? x.item.modifiedAt : x.modifiedAt),
+    size: (x) => (x.item && x.item.size) || 0,
+  });
+  const total = folders.length + entries.length;
   setLibViewHeader(total);
   if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
+  grid.innerHTML = '';
+  folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
+  scheduleJustifiedLayout(grid); // lay out subfolders immediately; images stream in below
+  renderEntriesLazily(grid, entries, assignedIds(), tok);
 }
 
 // A subfolder card (not a pool item): click drills in; ⋯ assigns it as a source.
@@ -1258,13 +1270,6 @@ function buildSubfolderCard(f) {
   card.addEventListener('mouseenter', () => setLibStatus(f.path));
   card.addEventListener('click', () => enterFolder(f.path, f.name));
   return card;
-}
-
-// An image found by path: real pool card if it's already in the pool, else ephemeral.
-function buildPathImageCard(p, assigned, pmap) {
-  const real = pmap ? pmap.get(normPathKey(p)) : null;
-  if (real) return buildLibCard(real, assigned.has(real.id));
-  return buildEphemeralImageCard(p);
 }
 
 // Image living inside a folder, not yet in the pool. Preview can open it directly;

@@ -2240,9 +2240,20 @@ ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
 ipcMain.handle('folder-entries', (e, dir) => {
   try {
     const { folders, images } = playlist.scanFolderEntries(dir);
+    // Attach discovery/modified dates from the live-folder index so the renderer can
+    // sort the folder like "All" (newest first, etc.) instead of in readdir order.
+    const meta = new Map();
+    try {
+      for (const im of folderState.listImages(liveFolderState)) {
+        if (im && im.path) meta.set(String(im.path).toLowerCase(), im);
+      }
+    } catch {}
     return {
       folders: folders.map((p) => ({ path: p, name: path.basename(p) })),
-      images,
+      images: images.map((p) => {
+        const m = meta.get(String(p).toLowerCase());
+        return { path: p, addedAt: (m && m.addedAt) || 0, modifiedAt: (m && m.modifiedAt) || 0 };
+      }),
       count: images.length,
     };
   } catch { return { folders: [], images: [], count: 0 }; }
