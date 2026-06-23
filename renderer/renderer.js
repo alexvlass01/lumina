@@ -723,6 +723,8 @@ const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [],
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
+let pendingLibRefresh = false; // a live-folder change arrived while hidden → refresh on re-show only
+let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
 let justifiedFrame = 0;
 const justifiedPending = new Set();
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
@@ -809,6 +811,26 @@ function assignedIds() {
     }
   }
   return set;
+}
+
+// Cheap fingerprint of everything the Library grid renders from (pool items +
+// their favorite/type, the sort, and the assigned set). Used to skip a wasteful
+// full re-render on config broadcasts that don't touch the library (theme,
+// schedule, viewer background, …) — those were flashing the whole grid.
+function librarySignature() {
+  const lib = (config && config.library) || {};
+  const items = Object.keys(lib).sort().map((id) => {
+    const it = lib[id] || {};
+    return id + (it.favorite ? '*' : '') + (it.type === 'folder' ? 'F' : '');
+  }).join(',');
+  return `${items}|${(config && config.librarySort) || ''}|${[...assignedIds()].sort().join(',')}`;
+}
+
+// Full identity of what the Library grid currently shows (view + filter + folder +
+// query + sort + content). When this is unchanged, a tab switch back to Library can
+// reuse the existing DOM (and its loaded thumbnails) instead of rebuilding/flashing.
+function libRenderKey() {
+  return [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || '', librarySignature()].join('');
 }
 
 function libAllTags() {
@@ -910,6 +932,10 @@ function setLibViewHeader(count = null) {
 }
 
 function renderLibrary() {
+  // Record what we're about to render so a later tab switch can detect "nothing
+  // changed" and skip a needless rebuild; any pending refresh is now satisfied.
+  pendingLibRefresh = false;
+  lastLibRenderKey = libRenderKey();
   renderLibRailTags();
   setLibViewHeader();
   const local = $('#libLocal');
@@ -2657,7 +2683,13 @@ function showPage(name) {
   if (name === 'home') {
     renderHome();
   } else if (name === 'library') {
-    renderLibrary();
+    // Returning to a Library tab whose view + contents are unchanged reuses the
+    // already-rendered grid (keeps scroll + loaded thumbnails). Rebuild only when
+    // something actually changed, a live-folder refresh is pending, or it's Online.
+    const grid = $('#libGrid');
+    const upToDate = grid && grid.childElementCount > 0 && !pendingLibRefresh
+      && LIB.filter !== 'online' && libRenderKey() === lastLibRenderKey;
+    if (!upToDate) renderLibrary();
     scheduleAllLibraryLayouts();
   } else if (name === 'design') {
     renderPreviews();   // reflect current config
@@ -3498,10 +3530,18 @@ async function init() {
   });
 
   window.api.onConfig((cfg) => {
+    const prevSig = librarySignature();
     config = cfg;
     renderConfig();
     renderHome();
-    if (!$('#viewLibrary').hidden) renderLibrary();
+    // Only rebuild the Library grid when its contents actually changed. Unrelated
+    // config broadcasts (theme, schedule, viewer background, …) used to flash the
+    // whole grid and drop the scroll position back to the top. While hidden, defer
+    // to the next show instead of rebuilding an invisible grid.
+    if (!$('#viewLibrary').hidden && LIB.filter !== 'online' && librarySignature() !== prevSig) {
+      if (document.hidden) pendingLibRefresh = true;
+      else renderLibrary();
+    }
     window.api.getWallpaperTheme().then((theme) => {
       currentWallpaperTheme = theme;
       applyThemeToUI(currentTheme);
@@ -3510,13 +3550,21 @@ async function init() {
   });
 
   window.api.onLiveFoldersChanged(() => {
-    if (document.hidden) return;
+    // While the window is hidden, just remember to refresh once it is shown again
+    // (a full re-render of a hidden grid would only cost work and reset scroll).
+    if (document.hidden) { pendingLibRefresh = true; return; }
     if (!$('#viewHome').hidden) renderHomeRecent();
-    else if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
+    if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
+    else pendingLibRefresh = true; // Library on another tab → catch up when it's shown again
   });
 
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
+    // Re-showing the window (un-minimize, viewer closed over it) must NOT rebuild
+    // the grid on its own — that emptied the grid at a deep scroll position and
+    // reloaded every thumbnail. Only catch up if live folders changed while hidden.
+    if (!pendingLibRefresh) return;
+    pendingLibRefresh = false;
     if (!$('#viewHome').hidden) renderHomeRecent();
     else if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
   });
