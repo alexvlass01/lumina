@@ -723,7 +723,7 @@ const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [],
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
-let pendingLibRefresh = false; // a live-folder change arrived while hidden → refresh on re-show only
+const deferredLiveRefresh = window.DeferredRefresh.create(['home', 'library']);
 let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
 let justifiedFrame = 0;
 const justifiedPending = new Set();
@@ -933,8 +933,9 @@ function setLibViewHeader(count = null) {
 
 function renderLibrary() {
   // Record what we're about to render so a later tab switch can detect "nothing
-  // changed" and skip a needless rebuild; any pending refresh is now satisfied.
-  pendingLibRefresh = false;
+  // changed" and skip a needless rebuild. Online does not consume a pending
+  // local-folder refresh because the local grid has not been updated yet.
+  if (LIB.filter !== 'online') deferredLiveRefresh.consume('library');
   lastLibRenderKey = libRenderKey();
   renderLibRailTags();
   setLibViewHeader();
@@ -2710,7 +2711,7 @@ function showPage(name) {
     // already-rendered grid (keeps scroll + loaded thumbnails). Rebuild only when
     // something actually changed, a live-folder refresh is pending, or it's Online.
     const grid = $('#libGrid');
-    const upToDate = grid && grid.childElementCount > 0 && !pendingLibRefresh
+    const upToDate = grid && grid.childElementCount > 0 && !deferredLiveRefresh.has('library')
       && LIB.filter !== 'online' && libRenderKey() === lastLibRenderKey;
     if (!upToDate) renderLibrary();
     scheduleAllLibraryLayouts();
@@ -3163,6 +3164,7 @@ function renderHomeRecentItems(items, version) {
 }
 
 function renderHomeRecent() {
+  deferredLiveRefresh.consume('home');
   const version = ++homeRecentRenderVersion;
   renderHomeRecentItems(homeRecentItems(), version);
   if (typeof window.api.libraryRecent !== 'function') return;
@@ -3561,7 +3563,7 @@ async function init() {
     // whole grid and drop the scroll position back to the top. While hidden, defer
     // to the next show instead of rebuilding an invisible grid.
     if (!$('#viewLibrary').hidden && LIB.filter !== 'online' && librarySignature() !== prevSig) {
-      if (document.hidden) pendingLibRefresh = true;
+      if (document.hidden) deferredLiveRefresh.mark('library');
       else renderLibrary();
     }
     window.api.getWallpaperTheme().then((theme) => {
@@ -3572,12 +3574,12 @@ async function init() {
   });
 
   window.api.onLiveFoldersChanged(() => {
-    // While the window is hidden, just remember to refresh once it is shown again
-    // (a full re-render of a hidden grid would only cost work and reset scroll).
-    if (document.hidden) { pendingLibRefresh = true; return; }
+    // Home and Library consume their own pending state. Refreshing one view must
+    // not make the other stale view look current after a minimize/restore cycle.
+    deferredLiveRefresh.markAll();
+    if (document.hidden) return;
     if (!$('#viewHome').hidden) renderHomeRecent();
     if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
-    else pendingLibRefresh = true; // Library on another tab → catch up when it's shown again
   });
 
   document.addEventListener('visibilitychange', () => {
@@ -3585,10 +3587,8 @@ async function init() {
     // Re-showing the window (un-minimize, viewer closed over it) must NOT rebuild
     // the grid on its own — that emptied the grid at a deep scroll position and
     // reloaded every thumbnail. Only catch up if live folders changed while hidden.
-    if (!pendingLibRefresh) return;
-    pendingLibRefresh = false;
-    if (!$('#viewHome').hidden) renderHomeRecent();
-    else if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
+    if (!$('#viewHome').hidden && deferredLiveRefresh.has('home')) renderHomeRecent();
+    else if (!$('#viewLibrary').hidden && LIB.filter !== 'online' && deferredLiveRefresh.has('library')) renderLibrary();
   });
 
   window.api.onMonitors((list) => {
