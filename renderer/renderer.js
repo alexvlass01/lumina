@@ -2107,7 +2107,7 @@ function renderOnlineTagSuggest(items, token) {
 
   INTERNET_TAG_SUGGEST.items = items;
   INTERNET_TAG_SUGGEST.token = token;
-  INTERNET_TAG_SUGGEST.index = 0;
+  INTERNET_TAG_SUGGEST.index = -1; // nothing pre-selected: Enter searches what was typed, not the top suggestion
   box.innerHTML = '';
   items.forEach((item, index) => {
     const btn = document.createElement('button');
@@ -2115,8 +2115,7 @@ function renderOnlineTagSuggest(items, token) {
     btn.className = 'online-tag-sug';
     btn.id = `whSuggestOpt${index}`;
     btn.setAttribute('role', 'option');
-    btn.setAttribute('aria-selected', index === 0 ? 'true' : 'false');
-    if (index === 0) btn.classList.add('active');
+    btn.setAttribute('aria-selected', 'false');
 
     const name = document.createElement('span');
     name.className = 'online-tag-name';
@@ -2133,7 +2132,7 @@ function renderOnlineTagSuggest(items, token) {
     box.appendChild(btn);
   });
   input.setAttribute('aria-expanded', 'true');
-  input.setAttribute('aria-activedescendant', 'whSuggestOpt0');
+  input.removeAttribute('aria-activedescendant');
   box.hidden = false;
 }
 
@@ -2210,8 +2209,13 @@ function handleOnlineTagSuggestKeydown(e) {
     return true;
   }
   if (e.key === 'Enter') {
+    // Apply a suggestion ONLY if the user explicitly highlighted one (arrow keys).
+    // Otherwise let Enter fall through and search exactly what was typed — don't
+    // silently swap e.g. "loli" for the most popular "lolipop".
+    if (INTERNET_TAG_SUGGEST.index < 0) return false;
+    const item = INTERNET_TAG_SUGGEST.items[INTERNET_TAG_SUGGEST.index];
+    if (!item) return false;
     e.preventDefault();
-    const item = INTERNET_TAG_SUGGEST.items[INTERNET_TAG_SUGGEST.index] || INTERNET_TAG_SUGGEST.items[0];
     applyOnlineTagSuggestion(item);
     return true;
   }
