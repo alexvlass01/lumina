@@ -1870,6 +1870,39 @@ ipcMain.handle('library-ensure-sizes', () => {
   return config;
 });
 
+// On-demand byte sizes for ephemeral folder images (files living in a watched folder
+// that are NOT pool items, so they have no cached size). Used only by the renderer's
+// "Largest first" sort. Async + cached so sorting a 1000+ folder never blocks the main
+// loop and never re-stats a path twice in a session. Returns [{ path, size }].
+const pathSizeCache = new Map(); // lowercased path -> size in bytes
+const PATH_SIZE_CACHE_CAP = 50000;
+ipcMain.handle('library-path-sizes', async (e, paths) => {
+  const list = Array.isArray(paths) ? paths : [];
+  const out = [];
+  const pending = [];
+  for (const p of list) {
+    if (!p || typeof p !== 'string') continue;
+    const key = p.toLowerCase();
+    if (pathSizeCache.has(key)) out.push({ path: p, size: pathSizeCache.get(key) });
+    else pending.push({ p, key });
+  }
+  const CONCURRENCY = 24; // bounded so a huge folder doesn't open thousands of FDs at once
+  for (let i = 0; i < pending.length; i += CONCURRENCY) {
+    const slice = pending.slice(i, i + CONCURRENCY);
+    await Promise.all(slice.map(async ({ p, key }) => {
+      let size = 0;
+      try { size = (await fs.promises.stat(p)).size; } catch { size = 0; }
+      if (pathSizeCache.size > PATH_SIZE_CACHE_CAP) {
+        const k0 = pathSizeCache.keys().next().value;
+        pathSizeCache.delete(k0);
+      }
+      pathSizeCache.set(key, size);
+      out.push({ path: p, size });
+    }));
+  }
+  return out;
+});
+
 ipcMain.handle('library-add-tag', (e, id, tag) => {
   if (library.addTag(config.library, id, tag)) saveConfig();
   return config;
@@ -2236,6 +2269,20 @@ ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
   return result;
 });
 
+// Look up one path's discovery metadata ({ firstSeenAt, modifiedAt, ... }) in the live
+// folder index, or null if it isn't a watched-folder image. Used when materializing so
+// the new pool item keeps the date Lumina first saw the file.
+function liveFolderDiscovery(p) {
+  if (!p || typeof p !== 'string') return null;
+  const key = p.toLowerCase();
+  try {
+    for (const im of folderState.listImages(liveFolderState)) {
+      if (im && im.path && String(im.path).toLowerCase() === key) return im;
+    }
+  } catch {}
+  return null;
+}
+
 // Содержимое папки для навигации ВНУТРЬ библиотеки: подпапки + картинки (один уровень).
 ipcMain.handle('folder-entries', (e, dir) => {
   try {
@@ -2285,7 +2332,15 @@ ipcMain.handle('library-recent', async (e, limit) => {
 ipcMain.handle('library-materialize', (e, p, type) => {
   if (!p || typeof p !== 'string') return { config, id: null };
   const itemType = type === 'folder' ? 'folder' : 'image';
-  const id = library.addPath(config.library, itemType, p);
+  // Inherit the discovery date from the live-folder index so assigning/★-ing a file
+  // out of a watched folder does NOT mark it "just added" and jump it to the top under
+  // "Newest first". Only genuinely new standalone imports (no index entry) keep now().
+  let extra;
+  if (itemType === 'image') {
+    const disc = liveFolderDiscovery(p);
+    if (disc) extra = { addedAt: disc.firstSeenAt || disc.modifiedAt || Date.now(), modifiedAt: disc.modifiedAt };
+  }
+  const id = library.addPath(config.library, itemType, p, extra);
   if (id) saveConfig();
   if (id && itemType === 'folder') {
     syncLiveFolderWatchers();

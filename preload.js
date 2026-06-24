@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('api', {
   expandFolders: () => ipcRenderer.invoke('expand-folders'),
   libraryRecent: (limit) => ipcRenderer.invoke('library-recent', limit),
   libraryEnsureSizes: () => ipcRenderer.invoke('library-ensure-sizes'),
+  libraryPathSizes: (paths) => ipcRenderer.invoke('library-path-sizes', paths),
 
   // Lumina Cloud (C2): safe capability state only (environment/available/reason).
   getCloudCapability: () => ipcRenderer.invoke('get-cloud-capability'),

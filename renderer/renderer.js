@@ -98,6 +98,7 @@ if (!window.api) {
       .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
       .slice(0, Number(limit) || 5) }),
     libraryEnsureSizes: async () => mock,
+    libraryPathSizes: async (paths) => (Array.isArray(paths) ? paths : []).map((p) => ({ path: p, size: 0 })),
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
     cloudCatalog: async (opts) => {
@@ -719,7 +720,7 @@ async function renderConfig() {
 // ---------------------------------------------------------------------------
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
-const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null, aspectCache: new Map() };
+const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null, aspectCache: new Map(), sizeCache: new Map() };
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
@@ -871,6 +872,45 @@ function sortItems(arr, get) {
       || number(g.modified(b)) - number(g.modified(a))
       || byName(a, b));
   }
+}
+
+// Before a "Largest first" sort of folder/All entries, make sure every card has a size:
+// pool items cache theirs in config (library-ensure-sizes), ephemeral folder files are
+// statted on demand by main and cached in LIB.sizeCache so re-renders don't re-stat.
+// No-op for any other sort. `entries` are { path, item } records (item === null = ephemeral).
+async function ensureSizesFor(entries) {
+  if (LIB.sort !== 'size') return;
+  const needPool = Object.values(config.library || {})
+    .some((it) => it && it.type === 'image' && it.path && typeof it.size !== 'number');
+  if (needPool) { try { config = await window.api.libraryEnsureSizes(); } catch {} }
+  const missing = [];
+  const seen = new Set();
+  for (const en of entries) {
+    if (!en || en.item) continue; // pool items already carry .size
+    const key = normPathKey(en.path);
+    if (!key || LIB.sizeCache.has(key) || seen.has(key)) continue;
+    seen.add(key);
+    missing.push(en.path);
+  }
+  if (!missing.length) return;
+  try {
+    const rows = await window.api.libraryPathSizes(missing);
+    for (const row of (rows || [])) {
+      if (row && row.path) LIB.sizeCache.set(normPathKey(row.path), Number(row.size) || 0);
+    }
+  } catch {}
+}
+
+// Size accessor shared by folder/All views: pool item → its size, ephemeral → LIB.sizeCache.
+// Pool size is re-read from the current config by id, because ensureSizesFor() may have
+// refreshed config AFTER the entry captured its (now stale, size-less) item reference.
+function entrySize(x) {
+  if (!x) return 0;
+  if (x.item) {
+    const cur = config.library && config.library[x.item.id];
+    return (cur && cur.size) || x.item.size || 0;
+  }
+  return LIB.sizeCache.get(normPathKey(x.path)) || 0;
 }
 
 function libList() {
@@ -1241,10 +1281,12 @@ async function renderFolderView(tok) {
       ? { path: im.path, item, id: item.id }
       : { path: im.path, item: null, id: im.path, addedAt: im.addedAt, modifiedAt: im.modifiedAt };
   });
+  await ensureSizesFor(entries);
+  if (tok !== allViewToken || !LIB.folderPath) return; // navigated away while statting sizes
   sortItems(entries, {
     added: (x) => (x.item ? x.item.addedAt : x.addedAt),
     modified: (x) => (x.item ? x.item.modifiedAt : x.modifiedAt),
-    size: (x) => (x.item && x.item.size) || 0,
+    size: entrySize,
   });
   const total = folders.length + entries.length;
   setLibViewHeader(total);
@@ -1349,11 +1391,13 @@ async function renderAllView(tok) {
     })));
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
+  await ensureSizesFor(entries);
+  if (tok !== allViewToken || LIB.folderPath || LIB.filter !== 'all') return; // stale after statting
   sortItems(entries, {
     path: (x) => x.path,
     added: (x) => x.item ? x.item.addedAt : x.addedAt,
     modified: (x) => x.item ? x.item.modifiedAt : x.modifiedAt,
-    size: (x) => (x.item && x.item.size) || 0,
+    size: entrySize,
     id: (x) => x.id,
   });
   if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }

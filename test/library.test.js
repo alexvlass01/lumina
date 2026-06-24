@@ -27,6 +27,13 @@ ok('aspectOf: accepts direct aspect or dimensions and rejects junk',
   && L.aspectOf({ width: 1920, height: 1080 }) === 1920 / 1080
   && L.aspectOf({ aspect: -1, width: 0, height: 10 }) === 0);
 ok('makeItem: preserves valid aspect metadata', L.makeItem('image', 'C:/wide.jpg', { width: 1600, height: 900 }).aspect === 1600 / 900);
+// modifiedAt is carried only when valid (>0), so a materialized live-folder image keeps
+// the same secondary sort key as its ephemeral form instead of jumping under "newest first".
+ok('makeItem: keeps valid modifiedAt', L.makeItem('image', 'C:/m.jpg', { addedAt: 100, modifiedAt: 42 }).modifiedAt === 42);
+ok('makeItem: omits missing/invalid modifiedAt',
+  !('modifiedAt' in L.makeItem('image', 'C:/n.jpg', { addedAt: 100 }))
+  && !('modifiedAt' in L.makeItem('image', 'C:/o.jpg', { addedAt: 100, modifiedAt: 0 }))
+  && !('modifiedAt' in L.makeItem('image', 'C:/p.jpg', { addedAt: 100, modifiedAt: -5 })));
 
 // ---- addItem / dedup / getItem / removeItem ----
 const lib = {};

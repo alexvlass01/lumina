@@ -45,6 +45,10 @@ function makeItem(type, p, extra = {}) {
   };
   const aspect = aspectOf(extra);
   if (aspect) item.aspect = aspect;
+  // Preserve the live-folder discovery's modified time when materializing a folder
+  // image, so the pool card sorts (newest-first secondary key) exactly like its
+  // ephemeral form did and does not jump. Absent/invalid → omitted (treated as 0).
+  if (Number.isFinite(extra.modifiedAt) && extra.modifiedAt > 0) item.modifiedAt = extra.modifiedAt;
   return item;
 }
 
