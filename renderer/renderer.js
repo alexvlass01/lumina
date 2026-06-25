@@ -97,7 +97,12 @@ if (!window.api) {
       .filter((item) => item && item.type === 'image' && item.path)
       .sort((a, b) => (Number(b.addedAt) || 0) - (Number(a.addedAt) || 0))
       .slice(0, Number(limit) || 5) }),
-    libraryEnsureSizes: async () => mock,
+    libraryEnsureSizes: async () => {
+      // Mirror main: stamp a numeric size so needPool clears (otherwise size sort would
+      // re-render forever in mock/preview mode).
+      Object.values(mock.library || {}).forEach((it) => { if (it && it.type === 'image' && typeof it.size !== 'number') it.size = 0; });
+      return mock;
+    },
     libraryPathSizes: async (paths) => (Array.isArray(paths) ? paths : []).map((p) => ({ path: p, size: 0 })),
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
@@ -726,6 +731,7 @@ let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
 const deferredLiveRefresh = window.DeferredRefresh.create(['home', 'library']);
 let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
+let lastLibViewKey = '';       // view IDENTITY only (filter/folder/query/sort); scroll resets to top only when THIS changes
 let activePage = 'home';       // current top-level tab; used to save/restore per-tab scroll
 const pageScroll = { home: 0, library: 0, design: 0, prefs: 0 }; // remembered scrollTop per tab
 let justifiedFrame = 0;
@@ -874,15 +880,17 @@ function sortItems(arr, get) {
   }
 }
 
-// Before a "Largest first" sort of folder/All entries, make sure every card has a size:
-// pool items cache theirs in config (library-ensure-sizes), ephemeral folder files are
-// statted on demand by main and cached in LIB.sizeCache so re-renders don't re-stat.
-// No-op for any other sort. `entries` are { path, item } records (item === null = ephemeral).
+// Load any file sizes missing for a "Largest first" sort: pool items cache theirs in
+// config (library-ensure-sizes), ephemeral folder files are statted on demand by main
+// and cached in LIB.sizeCache so re-renders don't re-stat. Returns true if it actually
+// loaded anything new (so the caller can re-render once). No-op for any other sort.
+// `entries` are { path, item } records (item === null = ephemeral).
 async function ensureSizesFor(entries) {
-  if (LIB.sort !== 'size') return;
+  if (LIB.sort !== 'size') return false;
+  let loaded = false;
   const needPool = Object.values(config.library || {})
     .some((it) => it && it.type === 'image' && it.path && typeof it.size !== 'number');
-  if (needPool) { try { config = await window.api.libraryEnsureSizes(); } catch {} }
+  if (needPool) { try { config = await window.api.libraryEnsureSizes(); loaded = true; } catch {} }
   const missing = [];
   const seen = new Set();
   for (const en of entries) {
@@ -892,13 +900,29 @@ async function ensureSizesFor(entries) {
     seen.add(key);
     missing.push(en.path);
   }
-  if (!missing.length) return;
-  try {
-    const rows = await window.api.libraryPathSizes(missing);
-    for (const row of (rows || [])) {
-      if (row && row.path) LIB.sizeCache.set(normPathKey(row.path), Number(row.size) || 0);
-    }
-  } catch {}
+  if (missing.length) {
+    try {
+      const rows = await window.api.libraryPathSizes(missing);
+      for (const row of (rows || [])) {
+        if (row && row.path) LIB.sizeCache.set(normPathKey(row.path), Number(row.size) || 0);
+      }
+      loaded = true;
+    } catch {}
+  }
+  return loaded;
+}
+
+// Size sort needs file sizes that may not be cached yet. Statting them up front froze
+// the app on the first click (sync stat on main + the render awaiting thousands of
+// stats). Instead the views render IMMEDIATELY with whatever sizes are cached, then
+// this loads the missing ones in the background and re-renders ONCE so the order
+// settles. The cache makes the follow-up render's ensureSizesFor a no-op, so it can't
+// loop; the token guard drops the re-render if the user navigated away meanwhile.
+function scheduleSizeReorder(entries, tok) {
+  if (LIB.sort !== 'size') return;
+  ensureSizesFor(entries).then((loaded) => {
+    if (loaded && tok === allViewToken) renderLibrary();
+  }).catch(() => {});
 }
 
 // Size accessor shared by folder/All views: pool item → its size, ephemeral → LIB.sizeCache.
@@ -977,12 +1001,16 @@ function renderLibrary() {
   // Record what we're about to render so a later tab switch can detect "nothing
   // changed" and skip a needless rebuild. Online does not consume a pending
   // local-folder refresh because the local grid has not been updated yet.
-  const keyChanged = libRenderKey() !== lastLibRenderKey;
   if (LIB.filter !== 'online') deferredLiveRefresh.consume('library');
   lastLibRenderKey = libRenderKey();
-  // A changed view (filter / folder / sort / query) shows new content → start at the
-  // top rather than keeping the previous scroll offset.
-  if (keyChanged && activePage === 'library') {
+  // Scroll back to the top ONLY when the view IDENTITY changes (new filter/folder/search/
+  // sort) — NOT when content/assignment changes within the same view. Otherwise assigning
+  // or favoriting an item in place would yank the window to the top (it changes the
+  // signature inside libRenderKey, which is why we key the scroll on view identity only).
+  const viewKey = [LIB.filter, LIB.folderPath || '', LIB.q || '', LIB.sort || ''].join('|');
+  const viewChanged = viewKey !== lastLibViewKey;
+  lastLibViewKey = viewKey;
+  if (viewChanged && activePage === 'library') {
     const page = document.querySelector('.page');
     if (page) page.scrollTop = 0;
     pageScroll.library = 0;
@@ -1027,6 +1055,9 @@ function renderLibrary() {
   grid.innerHTML = '';
   items.forEach((it) => grid.appendChild(buildLibCard(it, assigned.has(it.id))));
   scheduleJustifiedLayout(grid);
+  // Favorites/Tags also sort by size: load pool sizes in the background and re-render
+  // once (so a cold start with size sort, or any first size sort, isn't blocked).
+  scheduleSizeReorder(items.map((it) => ({ item: it, path: it.path, id: it.id })), tok);
 }
 
 function buildLibCard(it, isAssigned) {
@@ -1281,8 +1312,6 @@ async function renderFolderView(tok) {
       ? { path: im.path, item, id: item.id }
       : { path: im.path, item: null, id: im.path, addedAt: im.addedAt, modifiedAt: im.modifiedAt };
   });
-  await ensureSizesFor(entries);
-  if (tok !== allViewToken || !LIB.folderPath) return; // navigated away while statting sizes
   sortItems(entries, {
     added: (x) => (x.item ? x.item.addedAt : x.addedAt),
     modified: (x) => (x.item ? x.item.modifiedAt : x.modifiedAt),
@@ -1295,6 +1324,7 @@ async function renderFolderView(tok) {
   folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
   scheduleJustifiedLayout(grid); // lay out subfolders immediately; images stream in below
   renderEntriesLazily(grid, entries, assignedIds(), tok);
+  scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
 
 // A subfolder card (not a pool item): click drills in; ⋯ assigns it as a source.
@@ -1391,8 +1421,6 @@ async function renderAllView(tok) {
     })));
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
-  await ensureSizesFor(entries);
-  if (tok !== allViewToken || LIB.folderPath || LIB.filter !== 'all') return; // stale after statting
   sortItems(entries, {
     path: (x) => x.path,
     added: (x) => x.item ? x.item.addedAt : x.addedAt,
@@ -1404,6 +1432,7 @@ async function renderAllView(tok) {
   setLibViewHeader(entries.length);
   grid.innerHTML = '';
   renderEntriesLazily(grid, entries, assignedIds(), tok);
+  scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
 
 // Append entries in chunks; an IntersectionObserver on #libSentinel pulls the next chunk
@@ -1586,6 +1615,20 @@ function syncSelectionUI() {
   $('#libSelDelete').textContent = t('library.massDelete');
 }
 
+// Update the "assigned" ring on existing cards in place — assignment changes which
+// monitors use an item but NOT the grid's contents or order, so a full renderLibrary()
+// rebuild is wasteful and (in the lazy "All"/folder views) collapses the grid height,
+// yanking the window scroll to the top. Mirrors syncSelectionUI's in-place toggle.
+function refreshAssignedHighlights() {
+  const assigned = assignedIds();
+  document.querySelectorAll('#libGrid .lib-card[data-id]').forEach((card) => {
+    card.classList.toggle('assigned', assigned.has(card.dataset.id));
+  });
+  // The grid now matches the new assigned state, so record the key — a later tab
+  // switch back to Library reuses this DOM (and its scroll) instead of rebuilding.
+  lastLibRenderKey = libRenderKey();
+}
+
 // Shared monitor×theme grid for both the single- and multi-assign popups.
 // onPick(monitorId, theme) performs the actual assignment.
 function appendAssignRows(pop, onPick) {
@@ -1630,7 +1673,7 @@ function openMassAssignMenu(anchor) {
     closeLibPopup();
     clearSelection();
     syncSelectionUI();
-    renderLibrary();
+    refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
     renderPreviews();
     renderHome();
     toast(t('library.assignedToast'));
@@ -1686,7 +1729,7 @@ function openAssignMenu(it, anchor, materializeFn) {
     if (!item) return;
     config = await window.api.libraryAssign(item.id, monitorId, th);
     closeLibPopup();
-    renderLibrary();
+    refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
     renderPreviews();
     renderHome();
     toast(t('library.assignedToast'));
@@ -1932,7 +1975,9 @@ function initLibrary() {
     sortEl.addEventListener('change', async () => {
       LIB.sort = sortEl.value;
       if (LIB.sort === 'shuffle') LIB.shuffleRank = {}; // новый случайный порядок при каждом выборе
-      if (LIB.sort === 'size') config = await window.api.libraryEnsureSizes();
+      // Note: size sort no longer pre-loads sizes synchronously here (that froze the app
+      // on first click). renderLibrary paints now; missing sizes load in the background
+      // and trigger one re-sort (see scheduleSizeReorder).
       config = await window.api.setConfig({ librarySort: LIB.sort });
       renderLibrary();
     });

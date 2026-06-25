@@ -1858,11 +1858,14 @@ ipcMain.handle('library-refresh', async () => {
 
 // Заполнить размеры файлов (байты) для сортировки «по размеру» — лениво, по запросу.
 // Считаем только для image-элементов без size; folder/недоступные → 0.
-ipcMain.handle('library-ensure-sizes', () => {
+ipcMain.handle('library-ensure-sizes', async () => {
+  // Async stat (NOT statSync): a synchronous loop here blocks the whole main process —
+  // and a single pool image on a slow/disconnected drive would freeze the entire app
+  // the first time the user sorts by size.
   let changed = false;
   for (const it of Object.values(config.library || {})) {
     if (it && it.type === 'image' && it.path && typeof it.size !== 'number') {
-      try { it.size = fs.statSync(it.path).size; } catch { it.size = 0; }
+      try { it.size = (await fs.promises.stat(it.path)).size; } catch { it.size = 0; }
       changed = true;
     }
   }
