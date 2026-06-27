@@ -80,7 +80,7 @@ contextBridge.exposeInMainWorld('api', {
   detectLocation: () => ipcRenderer.invoke('detect-location'),
   getUpdateState: () => ipcRenderer.invoke('get-update-state'),
 
-  onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t) => cb(t)),
+  onTheme: (cb) => ipcRenderer.on('theme-changed', (_e, t, meta) => cb(t, meta)),
   onWallpaperTheme: (cb) => ipcRenderer.on('wallpaper-theme-changed', (_e, t) => cb(t)),
   onConfig: (cb) => ipcRenderer.on('config-changed', (_e, c) => cb(c)),
   onLiveFoldersChanged: (cb) => ipcRenderer.on('live-folders-changed', (_e, change) => cb(change)),

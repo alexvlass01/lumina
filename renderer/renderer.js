@@ -3708,12 +3708,13 @@ async function init() {
   $('#btnDetectWallpaperCoords').addEventListener('click', () => detectCoordinates('#btnDetectWallpaperCoords', '#lblWallpaperCoordsStatus'));
 
   // live updates from main process
-  window.api.onTheme((theme) => {
+  window.api.onTheme((theme, meta) => {
     applyThemeToUI(theme);
     renderHome();
-    // A hidden autostart window must not queue a stale theme toast that appears
-    // when the user opens Lumina moments later. Visible theme changes still announce.
-    if (!document.hidden) toast(theme === 'dark' ? t('toast.themeDark') : t('toast.themeLight'));
+    // A hidden autostart window must not queue a stale theme toast that appears when the
+    // user opens Lumina moments later. `meta.silent` marks a startup/resume catch-up flip
+    // (background, not a fresh user action). Genuine visible theme changes still announce.
+    if (!document.hidden && !(meta && meta.silent)) toast(theme === 'dark' ? t('toast.themeDark') : t('toast.themeLight'));
   });
 
   window.api.onWallpaperTheme((theme) => {

@@ -56,7 +56,14 @@ if (!gotLock) {
 }
 
 const STARTED_HIDDEN = process.argv.includes('--hidden');
+// True only when Windows launched us from the login item (the Run entry passes --autostart),
+// NOT on a manual/dev/portable launch. Gates the "on Windows startup" wallpaper trigger.
+const STARTED_AUTOSTART = process.argv.includes('--autostart');
 const START_TS = Date.now();
+// During startup and just after resume, a theme catch-up flip (schedule/OS settling) must not
+// pop a "Windows switched theme" toast — it's a background event, not a fresh user action.
+// Genuine visible theme changes after this window still announce. See nativeTheme 'updated'.
+let themeToastQuietUntil = START_TS + 10000;
 
 let mainWindow = null;
 let galleryWindow = null;
@@ -1331,9 +1338,9 @@ function broadcastConfig() {
   }
 }
 
-function broadcastTheme() {
+function broadcastTheme(opts = {}) {
   if (mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send('theme-changed', currentThemeName());
+    mainWindow.webContents.send('theme-changed', currentThemeName(), { silent: !!opts.silent });
   }
 }
 
@@ -2617,7 +2624,9 @@ app.whenReady().then(async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }
-    broadcastTheme();
+    // Suppress the "Windows switched theme" toast during the startup/resume catch-up window
+    // (background flip), but keep announcing genuine theme changes the user makes later.
+    broadcastTheme({ silent: Date.now() < themeToastQuietUntil });
     trayCtl.refreshIcon();
     // Wallpaper mode='system' follows Windows. Independent time/sun schedules ignore
     // nativeTheme events completely; unified mode always stays on the shared light slot.
@@ -2716,6 +2725,7 @@ app.whenReady().then(async () => {
 
   // Switch wallpaper when the computer wakes from sleep/hibernate
   powerMonitor.on('resume', () => {
+    themeToastQuietUntil = Date.now() + 10000; // resume catch-up flip must not toast
     syncLiveFolderWatchers();
     scheduleLiveFolderFullScan('resume', 5000);
     if (config.wallpaperSchedule && (config.wallpaperSchedule.mode === 'time' || config.wallpaperSchedule.mode === 'sun')) {
