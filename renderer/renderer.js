@@ -1373,6 +1373,7 @@ function buildEphemeralImageCard(p) {
   const card = document.createElement('div');
   card.className = 'lib-card';
   card.title = baseName(p);
+  card.dataset.path = p; // lets onConfig upgrade this exact card in place once it's materialized
   makeLibCardFocusable(card);
   primeLibCardAspect(card, null, p);
   lazyThumb(card, p, 320, 200);
@@ -1627,18 +1628,65 @@ function syncSelectionUI() {
   $('#libSelDelete').textContent = t('library.massDelete');
 }
 
-// Update the "assigned" ring on existing cards in place — assignment changes which
+// Set a card's assigned state in place — both the `.assigned` class AND the corner
+// badge element. buildLibCard only appends the <span class="lib-assigned"> when the
+// card is built assigned, so toggling the class alone left the badge missing.
+function setCardAssigned(card, on) {
+  card.classList.toggle('assigned', on);
+  let mark = card.querySelector(':scope > .lib-assigned');
+  if (on && !mark) {
+    mark = document.createElement('span');
+    mark.className = 'lib-assigned';
+    mark.title = t('library.assigned');
+    card.appendChild(mark);
+  } else if (!on && mark) {
+    mark.remove();
+  }
+}
+
+// Update the "assigned" badge on existing cards in place — assignment changes which
 // monitors use an item but NOT the grid's contents or order, so a full renderLibrary()
 // rebuild is wasteful and (in the lazy "All"/folder views) collapses the grid height,
 // yanking the window scroll to the top. Mirrors syncSelectionUI's in-place toggle.
 function refreshAssignedHighlights() {
   const assigned = assignedIds();
   document.querySelectorAll('#libGrid .lib-card[data-id]').forEach((card) => {
-    card.classList.toggle('assigned', assigned.has(card.dataset.id));
+    setCardAssigned(card, assigned.has(card.dataset.id));
   });
   // The grid now matches the new assigned state, so record the key — a later tab
   // switch back to Library reuses this DOM (and its scroll) instead of rebuilding.
   lastLibRenderKey = libRenderKey();
+}
+
+// Find the on-screen ephemeral card (folder image not yet in the pool) for a path.
+function ephemeralCardByPath(path) {
+  const key = normPathKey(path);
+  for (const c of document.querySelectorAll('#libGrid .lib-card[data-path]')) {
+    if (!c.dataset.id && normPathKey(c.dataset.path) === key) return c;
+  }
+  return null;
+}
+
+// When the ONLY content change is pool image(s) added whose path is already shown as an
+// ephemeral folder card — i.e. a materialize, e.g. from assigning a folder photo — upgrade
+// those exact cards to real pool cards in place instead of rebuilding/flashing the whole
+// grid. Returns true if it fully handled the change; false → the caller should rebuild.
+function tryUpgradeMaterializedCards(prevPoolIds) {
+  const lib = config.library || {};
+  for (const id of prevPoolIds) if (!lib[id]) return false; // something removed → real rebuild
+  const added = Object.values(lib).filter((it) => it && it.type === 'image' && it.path && !prevPoolIds.has(it.id));
+  if (!added.length) return false; // favorite/sort/other change → real rebuild
+  const pairs = [];
+  for (const it of added) {
+    const card = ephemeralCardByPath(it.path);
+    if (!card) return false; // a genuinely new item the grid doesn't show yet → rebuild
+    pairs.push({ it, card });
+  }
+  const assigned = assignedIds();
+  for (const { it, card } of pairs) card.replaceWith(buildLibCard(it, assigned.has(it.id)));
+  scheduleJustifiedLayout($('#libGrid'));
+  lastLibRenderKey = libRenderKey();
+  return true;
 }
 
 // Shared monitor×theme grid for both the single- and multi-assign popups.
@@ -3677,19 +3725,21 @@ async function init() {
   window.api.onConfig((cfg) => {
     const prevContentSig = libraryContentSig();
     const prevAssignedSig = assignedSig();
+    const prevPoolIds = new Set(Object.values(config.library || {})
+      .filter((it) => it && it.type === 'image' && it.path).map((it) => it.id));
     config = cfg;
     renderConfig();
     renderHome();
     // Only rebuild the Library grid when its CONTENTS actually changed. Unrelated config
     // broadcasts (theme, schedule, viewer background, …) used to flash the whole grid and
-    // drop the scroll to the top. An assignment-only change (the config-changed broadcast
-    // arrives before the assign IPC reply, so config still looks old here) just flips a
-    // card's .assigned ring — refresh it in place instead of flashing the grid. While
-    // hidden, defer a content rebuild to the next show.
+    // drop the scroll to the top. Two cheaper paths avoid a full rebuild: an assignment-only
+    // change just flips a card's badge (the config-changed broadcast arrives before the
+    // assign IPC reply, so config still looks old here); and a materialize of an on-screen
+    // folder photo upgrades just that one card. While hidden, defer a rebuild to next show.
     if (!$('#viewLibrary').hidden && LIB.filter !== 'online') {
       if (libraryContentSig() !== prevContentSig) {
         if (document.hidden) deferredLiveRefresh.mark('library');
-        else renderLibrary();
+        else if (!tryUpgradeMaterializedCards(prevPoolIds)) renderLibrary();
       } else if (assignedSig() !== prevAssignedSig && !document.hidden) {
         refreshAssignedHighlights();
       }
