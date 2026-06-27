@@ -1161,7 +1161,19 @@ function hasSlideshowItems() {
   return false;
 }
 
+// A pending stealth wait (or the plain 5s delayed auto-advance) lives across setTimeouts.
+// A manual action that really changes the current frame must cancel it, otherwise the old
+// request advances the playlist a second time later. One generation token guards the
+// in-flight session: bumping it makes every queued tick a no-op; the handle is cleared too.
+let stealthGen = 0;
+let stealthTimer = null;
+function cancelPendingStealth() {
+  stealthGen++;
+  if (stealthTimer) { clearTimeout(stealthTimer); stealthTimer = null; }
+}
+
 async function triggerNextWallpaper(targetMonitors = null) {
+  cancelPendingStealth(); // a manual "next" supersedes any pending stealth/auto advance
   if (config.singleWallpaper) targetMonitors = null;
   const theme = wallpaperThemeName();
   if (config.slideshow && config.slideshow.enabled && !targetMonitors) {
@@ -1940,7 +1952,9 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
   saveConfig();
   trayCtl.refresh();
-  if (theme === wallpaperThemeName()) applyForTheme(theme, true);
+  // Assigning a new image to the active monitor×theme changes the current frame → drop any
+  // pending stealth advance so it can't overwrite this choice moments later.
+  if (theme === wallpaperThemeName()) { cancelPendingStealth(); applyForTheme(theme, true); }
   return config;
 });
 
@@ -2434,7 +2448,8 @@ ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
   if (idx < 0) return config; // путь не в развёрнутом плейлисте (исключён/файла нет)
   storeSlideshowPosition(monitorId, t, { index: idx, path: list[idx] });
   saveConfig();
-  if (t === wallpaperThemeName()) await applyForTheme(t, true);
+  // Picking a specific frame is a manual choice → cancel any pending stealth advance.
+  if (t === wallpaperThemeName()) { cancelPendingStealth(); await applyForTheme(t, true); }
   return config;
 });
 
@@ -2667,10 +2682,12 @@ app.whenReady().then(async () => {
     if (!config.slideshow || !config.slideshow.enabled) return;
     if (config.triggers && config.triggers.stealth) {
       console.log(`[StealthTrigger] Waiting for maximized window for ${reason}...`);
+      const gen = ++stealthGen; // new session; supersedes any pending one and is cancelable
       let attempts = 0;
       const maxAttempts = 40; // 40 * 3s = 120s
-      
+
       const tryStealth = async () => {
+        if (gen !== stealthGen) return; // canceled by a manual change or a newer trigger
         if (!config.slideshow || !config.slideshow.enabled) return;
         attempts++;
         try {
@@ -2706,7 +2723,7 @@ app.whenReady().then(async () => {
           }
           
           if (tryStealth.pending.length > 0) {
-            setTimeout(tryStealth, 3000);
+            stealthTimer = setTimeout(tryStealth, 3000);
           } else {
             console.log(`[StealthTrigger] Finished for all monitors.`);
           }
@@ -2717,10 +2734,12 @@ app.whenReady().then(async () => {
       };
       
       // Initial delay so we don't start polling instantly on boot, give it 5s
-      setTimeout(tryStealth, 5000);
+      stealthTimer = setTimeout(tryStealth, 5000);
     } else {
-      // Normal delay
-      setTimeout(() => {
+      // Normal delay — also cancelable, so a manual change within those 5s wins.
+      const gen = ++stealthGen;
+      stealthTimer = setTimeout(() => {
+        if (gen !== stealthGen) return;
         if (!config.slideshow || !config.slideshow.enabled) return;
         console.log(`[Trigger] Triggering next wallpaper for ${reason}`);
         triggerNextWallpaper();
