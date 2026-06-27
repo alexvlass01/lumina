@@ -55,10 +55,15 @@ if (!gotLock) {
   app.quit();
 }
 
-const STARTED_HIDDEN = process.argv.includes('--hidden');
+// Squirrel's Update.exe forwards login-item args via a single `--process-start-args`
+// string; depending on its version the app may receive "--autostart --hidden" as one argv
+// entry OR as two. Normalize by re-splitting all args on whitespace so each flag is detected
+// either way (a brittle exact-match once silently broke --hidden).
+const LAUNCH_FLAGS = process.argv.slice(1).join(' ').split(/\s+/).filter(Boolean);
+const STARTED_HIDDEN = LAUNCH_FLAGS.includes('--hidden');
 // True only when Windows launched us from the login item (the Run entry passes --autostart),
 // NOT on a manual/dev/portable launch. Gates the "on Windows startup" wallpaper trigger.
-const STARTED_AUTOSTART = process.argv.includes('--autostart');
+const STARTED_AUTOSTART = LAUNCH_FLAGS.includes('--autostart');
 const START_TS = Date.now();
 // During startup and just after resume, a theme catch-up flip (schedule/OS settling) must not
 // pop a "Windows switched theme" toast — it's a background event, not a fresh user action.
@@ -1237,8 +1242,12 @@ function applyLoginItem() {
   // launches the current version and survives updates.
   const exeName = path.basename(process.execPath); // Lumina.exe
   const updateExe = path.resolve(path.dirname(process.execPath), '..', 'Update.exe');
-  const args = ['--processStart', exeName];
-  if (config.startMinimized) args.push('--process-start-args', '--hidden');
+  // Always tag the login launch with --autostart so the "on Windows startup" trigger fires
+  // ONLY for a real login (not a manual relaunch). --hidden stays tied to startMinimized and
+  // controls window visibility only. Both ride a single --process-start-args string.
+  const startArgs = ['--autostart'];
+  if (config.startMinimized) startArgs.push('--hidden');
+  const args = ['--processStart', exeName, '--process-start-args', startArgs.join(' ')];
   app.setLoginItemSettings({
     openAtLogin: config.autostart,
     path: updateExe,
@@ -2596,7 +2605,7 @@ app.whenReady().then(async () => {
   ensureComHostScript();
   ensureThemeScript();
 
-  // keep the OS login item in sync with config (openAtLogin + the --hidden arg)
+  // keep the OS login item in sync with config (openAtLogin + the --autostart/--hidden args)
   applyLoginItem();
   cleanStrayAutostartEntries(); // убрать осиротевшие dev/portable записи автозапуска (см. функцию)
 
@@ -2719,7 +2728,9 @@ app.whenReady().then(async () => {
     }
   }
 
-  if (config.slideshow && config.slideshow.enabled && config.triggers && config.triggers.onStartup) {
+  // Only a real Windows login (login item passes --autostart) counts as "on startup".
+  // A manual/dev/portable launch must NOT advance the wallpaper.
+  if (STARTED_AUTOSTART && config.slideshow && config.slideshow.enabled && config.triggers && config.triggers.onStartup) {
     triggerWithStealth('startup');
   }
 
