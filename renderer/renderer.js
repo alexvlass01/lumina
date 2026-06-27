@@ -822,17 +822,29 @@ function assignedIds() {
   return set;
 }
 
-// Cheap fingerprint of everything the Library grid renders from (pool items +
-// their favorite/type, the sort, and the assigned set). Used to skip a wasteful
-// full re-render on config broadcasts that don't touch the library (theme,
-// schedule, viewer background, …) — those were flashing the whole grid.
-function librarySignature() {
+// The part of the grid that needs a FULL rebuild when it changes: pool items + their
+// favorite/type + the sort. Separated from the assigned set so that an assignment-only
+// change (which only flips a card's .assigned ring) can be refreshed in place instead
+// of flashing the whole grid.
+function libraryContentSig() {
   const lib = (config && config.library) || {};
   const items = Object.keys(lib).sort().map((id) => {
     const it = lib[id] || {};
     return id + (it.favorite ? '*' : '') + (it.type === 'folder' ? 'F' : '');
   }).join(',');
-  return `${items}|${(config && config.librarySort) || ''}|${[...assignedIds()].sort().join(',')}`;
+  return `${items}|${(config && config.librarySort) || ''}`;
+}
+
+// Which items are assigned to a monitor — affects only the .assigned highlight.
+function assignedSig() {
+  return [...assignedIds()].sort().join(',');
+}
+
+// Cheap fingerprint of everything the Library grid renders from (content + assigned).
+// Used to skip a wasteful full re-render on config broadcasts that don't touch the
+// library (theme, schedule, viewer background, …) — those were flashing the whole grid.
+function librarySignature() {
+  return `${libraryContentSig()}|${assignedSig()}`;
 }
 
 // Full identity of what the Library grid currently shows (view + filter + folder +
@@ -3663,17 +3675,24 @@ async function init() {
   });
 
   window.api.onConfig((cfg) => {
-    const prevSig = librarySignature();
+    const prevContentSig = libraryContentSig();
+    const prevAssignedSig = assignedSig();
     config = cfg;
     renderConfig();
     renderHome();
-    // Only rebuild the Library grid when its contents actually changed. Unrelated
-    // config broadcasts (theme, schedule, viewer background, …) used to flash the
-    // whole grid and drop the scroll position back to the top. While hidden, defer
-    // to the next show instead of rebuilding an invisible grid.
-    if (!$('#viewLibrary').hidden && LIB.filter !== 'online' && librarySignature() !== prevSig) {
-      if (document.hidden) deferredLiveRefresh.mark('library');
-      else renderLibrary();
+    // Only rebuild the Library grid when its CONTENTS actually changed. Unrelated config
+    // broadcasts (theme, schedule, viewer background, …) used to flash the whole grid and
+    // drop the scroll to the top. An assignment-only change (the config-changed broadcast
+    // arrives before the assign IPC reply, so config still looks old here) just flips a
+    // card's .assigned ring — refresh it in place instead of flashing the grid. While
+    // hidden, defer a content rebuild to the next show.
+    if (!$('#viewLibrary').hidden && LIB.filter !== 'online') {
+      if (libraryContentSig() !== prevContentSig) {
+        if (document.hidden) deferredLiveRefresh.mark('library');
+        else renderLibrary();
+      } else if (assignedSig() !== prevAssignedSig && !document.hidden) {
+        refreshAssignedHighlights();
+      }
     }
     window.api.getWallpaperTheme().then((theme) => {
       currentWallpaperTheme = theme;
