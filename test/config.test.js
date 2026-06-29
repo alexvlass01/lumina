@@ -93,7 +93,9 @@ const loadedGameMode = C.load(p('gamemode_bad.json'));
 ok('gameModeBlock config is normalized to boolean', loadedGameMode.gameModeBlock === true);
 
 // Trigger configuration tests
-ok('fresh defaults contain triggers config', fresh.triggers && fresh.triggers.onStartup === false && fresh.triggers.onWakeup === false && fresh.triggers.stealth === false);
+ok('fresh defaults contain triggers config', fresh.triggers && fresh.triggers.onStartup === false && fresh.triggers.onWakeup === false
+  && fresh.triggers.stealth && fresh.triggers.stealth.enabled === false && fresh.triggers.stealth.startup === true
+  && fresh.triggers.stealth.wakeup === true && fresh.triggers.stealth.interval === false && fresh.triggers.stealth.timeoutMin === 5);
 fs.writeFileSync(p('triggers_bad.json'), JSON.stringify({
   triggers: {
     onStartup: 1,
@@ -102,12 +104,37 @@ fs.writeFileSync(p('triggers_bad.json'), JSON.stringify({
   }
 }));
 const loadedTriggers = C.load(p('triggers_bad.json'));
-ok('triggers config is normalized to booleans', loadedTriggers.triggers.onStartup === true && loadedTriggers.triggers.onWakeup === true && loadedTriggers.triggers.stealth === true);
+// Legacy stealth:1 (truthy boolean-ish) → enabled object with startup+wakeup, interval off.
+ok('triggers config is normalized (onStartup/onWakeup booleans, legacy stealth → enabled object)',
+  loadedTriggers.triggers.onStartup === true && loadedTriggers.triggers.onWakeup === true
+  && loadedTriggers.triggers.stealth.enabled === true && loadedTriggers.triggers.stealth.startup === true
+  && loadedTriggers.triggers.stealth.wakeup === true && loadedTriggers.triggers.stealth.interval === false
+  && loadedTriggers.triggers.stealth.timeoutMin === 5);
+
+// Legacy stealth: false → disabled object (scopes default on, interval off)
+fs.writeFileSync(p('triggers_legacy_off.json'), JSON.stringify({ triggers: { onStartup: true, stealth: false } }));
+const legacyOff = C.load(p('triggers_legacy_off.json'));
+ok('legacy stealth:false → disabled object with default scopes',
+  legacyOff.triggers.stealth.enabled === false && legacyOff.triggers.stealth.startup === true
+  && legacyOff.triggers.stealth.wakeup === true && legacyOff.triggers.stealth.interval === false);
+
+// New object shape is preserved + timeout clamped
+fs.writeFileSync(p('triggers_obj.json'), JSON.stringify({
+  triggers: { stealth: { enabled: true, startup: false, wakeup: true, interval: true, timeoutMin: 0 } },
+}));
+const objStealth = C.load(p('triggers_obj.json'));
+ok('object stealth preserved, invalid timeout → 5',
+  objStealth.triggers.stealth.enabled === true && objStealth.triggers.stealth.startup === false
+  && objStealth.triggers.stealth.interval === true && objStealth.triggers.stealth.timeoutMin === 5);
+fs.writeFileSync(p('triggers_obj2.json'), JSON.stringify({ triggers: { stealth: { enabled: true, timeoutMin: 120 } } }));
+ok('timeout clamped to 60 max', C.load(p('triggers_obj2.json')).triggers.stealth.timeoutMin === 60);
 
 // triggers missing entirely → defaults
 fs.writeFileSync(p('triggers_missing.json'), JSON.stringify({ autoSwitch: true }));
 const loadedNoTriggers = C.load(p('triggers_missing.json'));
-ok('missing triggers → defaults (all false)', loadedNoTriggers.triggers.onStartup === false && loadedNoTriggers.triggers.onWakeup === false && loadedNoTriggers.triggers.stealth === false);
+ok('missing triggers → defaults (events off, stealth disabled object)',
+  loadedNoTriggers.triggers.onStartup === false && loadedNoTriggers.triggers.onWakeup === false
+  && loadedNoTriggers.triggers.stealth.enabled === false && loadedNoTriggers.triggers.stealth.timeoutMin === 5);
 
 // themeOverride / librarySort: invalid values collapse to safe defaults, valid pass through
 fs.writeFileSync(p('override_bad.json'), JSON.stringify({ themeOverride: 'banana', _lastAutoTheme: 42, librarySort: 'nope' }));

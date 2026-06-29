@@ -21,6 +21,7 @@ const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // жи�
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
+const { createStealthController } = require('./src/stealth-session'); // отменяемая «невидимая смена» (под тестами)
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
@@ -1161,15 +1162,61 @@ function hasSlideshowItems() {
   return false;
 }
 
-// A pending stealth wait (or the plain 5s delayed auto-advance) lives across setTimeouts.
-// A manual action that really changes the current frame must cancel it, otherwise the old
-// request advances the playlist a second time later. One generation token guards the
-// in-flight session: bumping it makes every queued tick a no-op; the handle is cleared too.
-let stealthGen = 0;
-let stealthTimer = null;
+// "Invisible" (stealth) wallpaper changes wait for a fullscreen window over a monitor before
+// swapping its wallpaper. The cancelable wait/retry/timeout state machine lives in the tested
+// src/stealth-session.js; here we inject the real timers, monitor list, coverage check and the
+// apply. A single session exists at a time, so two automatic events (e.g. wake + a theme flip)
+// can't double-advance; a manual change calls cancelPendingStealth() to supersede a pending one.
+const stealthCtl = createStealthController({
+  setTimer: (fn, ms) => setTimeout(fn, ms),
+  clearTimer: (h) => clearTimeout(h),
+  getMonitors: async () => (monitorsCache.length ? monitorsCache : await getMonitors()).map((m) => m.id),
+  checkCovered: async () => { try { return await wpHost.checkMaximized(2000); } catch { return []; } },
+  apply: async ({ theme, monitors, advance }) => {
+    if (advance) { advanceIndices(theme, monitors); saveConfig(); }
+    await applyForTheme(theme, true, monitors);
+  },
+  pollMs: 3000,
+  log: (...a) => console.error('[Stealth]', ...a),
+});
+
+// The non-stealth path keeps a single delayed auto-advance (not the session controller).
+let autoAdvanceTimer = null;
 function cancelPendingStealth() {
-  stealthGen++;
-  if (stealthTimer) { clearTimeout(stealthTimer); stealthTimer = null; }
+  stealthCtl.cancel();
+  if (autoAdvanceTimer) { clearTimeout(autoAdvanceTimer); autoAdvanceTimer = null; }
+}
+
+// Stealth config helpers (the field is an object since v1.4.3: enabled + per-reason scopes + timeout).
+function stealthCfg() { return (config.triggers && config.triggers.stealth) || {}; }
+function stealthScoped(reason) { const s = stealthCfg(); return !!s.enabled && !!s[reason]; }
+function stealthTimeoutMs() {
+  const m = Number(stealthCfg().timeoutMin);
+  return (Number.isFinite(m) && m >= 1 ? Math.min(60, Math.floor(m)) : 5) * 60000;
+}
+
+// Single entry point for every AUTOMATIC wallpaper advance (startup / wakeup). With stealth on
+// for that reason it routes through the one cancelable session; otherwise it advances after a
+// short settle delay, as before. (Interval rotation still flows through tickSlideshow for now;
+// interval-stealth lands with the "Применять для" UI.)
+function requestWallpaperAdvance(reason) {
+  if (!config.slideshow || !config.slideshow.enabled) return;
+  if (stealthScoped(reason)) {
+    stealthCtl.request({
+      theme: wallpaperThemeName(),
+      advance: true,
+      single: !!config.singleWallpaper,
+      timeoutMs: stealthTimeoutMs(),
+      initialDelayMs: 5000, // let the desktop settle a moment on boot/resume before polling
+    });
+  } else {
+    if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer);
+    autoAdvanceTimer = setTimeout(() => {
+      autoAdvanceTimer = null;
+      if (!config.slideshow || !config.slideshow.enabled) return;
+      triggerNextWallpaper();
+    }, 5000);
+  }
 }
 
 async function triggerNextWallpaper(targetMonitors = null) {
@@ -2655,8 +2702,19 @@ app.whenReady().then(async () => {
     // Wallpaper mode='system' follows Windows. Independent time/sun schedules ignore
     // nativeTheme events completely; unified mode always stays on the shared light slot.
     if (config.separateThemes !== false && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'system') {
-      if (config.slideshow.enabled) tickSlideshow(false); // применить кадр новой темы + перепланировать
-      else applyForTheme();
+      if (config.slideshow.enabled) {
+        if (stealthCtl.isActive()) {
+          // A theme flip during an invisible session folds into it (Option A): apply the new
+          // theme's CURRENT frame, no extra advance. Covered monitors update now, the rest wait —
+          // so an uncovered screen never visibly flashes mid-session (bug: double change on wake).
+          stealthCtl.request({
+            theme: wallpaperThemeName(), advance: false, single: !!config.singleWallpaper,
+            timeoutMs: stealthTimeoutMs(), initialDelayMs: 0,
+          });
+        } else {
+          tickSlideshow(false); // применить кадр новой темы + перепланировать
+        }
+      } else applyForTheme();
     }
   });
 
@@ -2677,80 +2735,11 @@ app.whenReady().then(async () => {
   // start theme schedule (if enabled): set the right theme now + schedule flips
   applyThemeSchedule();
 
-  // ── Wallpaper triggers ───────────────────────────────────────────────
-  function triggerWithStealth(reason) {
-    if (!config.slideshow || !config.slideshow.enabled) return;
-    if (config.triggers && config.triggers.stealth) {
-      console.log(`[StealthTrigger] Waiting for maximized window for ${reason}...`);
-      const gen = ++stealthGen; // new session; supersedes any pending one and is cancelable
-      let attempts = 0;
-      const maxAttempts = 40; // 40 * 3s = 120s
-
-      const tryStealth = async () => {
-        if (gen !== stealthGen) return; // canceled by a manual change or a newer trigger
-        if (!config.slideshow || !config.slideshow.enabled) return;
-        attempts++;
-        try {
-          const monitors = monitorsCache.length ? monitorsCache : await getMonitors();
-          if (!tryStealth.pending) tryStealth.pending = monitors.map(m => m.id);
-          
-          let covered = [];
-          try { covered = await wpHost.checkMaximized(2000); } catch (e) {}
-          
-          const toApply = [];
-          if (attempts >= maxAttempts) {
-            toApply.push(...tryStealth.pending);
-            tryStealth.pending = [];
-            console.log(`[StealthTrigger] Timeout reached. Triggering ${reason} for remaining monitors.`);
-          } else {
-            for (const id of covered) {
-              if (tryStealth.pending.includes(id)) {
-                toApply.push(id);
-                tryStealth.pending = tryStealth.pending.filter(x => x !== id);
-              }
-            }
-          }
-          
-          if (toApply.length > 0) {
-            console.log(`[StealthTrigger] Desktop covered for:`, toApply, `Triggering ${reason}.`);
-            const theme = wallpaperThemeName();
-            if (!config.singleWallpaper || !tryStealth.singleAdvanced) {
-              advanceIndices(theme, toApply);
-              saveConfig();
-              if (config.singleWallpaper) tryStealth.singleAdvanced = true;
-            }
-            applyForTheme(theme, true, toApply);
-          }
-          
-          if (tryStealth.pending.length > 0) {
-            stealthTimer = setTimeout(tryStealth, 3000);
-          } else {
-            console.log(`[StealthTrigger] Finished for all monitors.`);
-          }
-        } catch (err) {
-          console.error(`[StealthTrigger] error:`, err);
-          triggerNextWallpaper(); // fallback
-        }
-      };
-      
-      // Initial delay so we don't start polling instantly on boot, give it 5s
-      stealthTimer = setTimeout(tryStealth, 5000);
-    } else {
-      // Normal delay — also cancelable, so a manual change within those 5s wins.
-      const gen = ++stealthGen;
-      stealthTimer = setTimeout(() => {
-        if (gen !== stealthGen) return;
-        if (!config.slideshow || !config.slideshow.enabled) return;
-        console.log(`[Trigger] Triggering next wallpaper for ${reason}`);
-        triggerNextWallpaper();
-      }, 5000);
-    }
-  }
-
+  // ── Wallpaper triggers (route through requestWallpaperAdvance / stealthCtl) ──────────
   // Only a real Windows login (login item passes --autostart) counts as "on startup".
   // A manual/dev/portable launch must NOT advance the wallpaper.
   if (STARTED_AUTOSTART && config.slideshow && config.slideshow.enabled && config.triggers && config.triggers.onStartup) {
-    triggerWithStealth('startup');
+    requestWallpaperAdvance('startup');
   }
 
   // Switch wallpaper when the computer wakes from sleep/hibernate
@@ -2762,7 +2751,7 @@ app.whenReady().then(async () => {
       applyWallpaperSchedule(false, true);
     }
     if (config.slideshow && config.slideshow.enabled && config.triggers && config.triggers.onWakeup) {
-      triggerWithStealth('wakeup');
+      requestWallpaperAdvance('wakeup');
     }
   });
 

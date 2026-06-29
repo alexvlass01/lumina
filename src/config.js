@@ -40,7 +40,14 @@ const DEFAULT_CONFIG = {
   slideshowCurrentPath: {}, // { [deviceId]: { light: path, dark: path } } — стабильная позиция при живых папках
   hotkeys: { nextWallpaper: { enabled: false, shortcut: '' } },
   gameModeBlock: false,
-  triggers: { onStartup: false, onWakeup: false, stealth: false },
+  // Wallpaper auto-change triggers. `stealth` is an object: enabled + which reasons it
+  // applies to (startup/wakeup/interval) + how long to wait for a fullscreen window before
+  // switching anyway. Legacy `stealth: true` migrates to enabled startup+wakeup (interval off).
+  triggers: {
+    onStartup: false,
+    onWakeup: false,
+    stealth: { enabled: false, startup: true, wakeup: true, interval: false, timeoutMin: 5 },
+  },
   // Online tab content sources (Cloud C2). 'internet' = existing external search,
   // 'lumina' = the Lumina Cloud catalog. Either or both may be on; default keeps the
   // previous behavior (external only) so existing users see no change.
@@ -141,12 +148,25 @@ function normalize(cfg) {
   if (!['added', 'name', 'size', 'shuffle'].includes(cfg.librarySort)) cfg.librarySort = 'added';
 
   cfg.triggers = {
-    onStartup: false, onWakeup: false, stealth: false,
+    onStartup: false, onWakeup: false,
     ...(cfg.triggers && typeof cfg.triggers === 'object' ? cfg.triggers : {}),
   };
   cfg.triggers.onStartup = !!cfg.triggers.onStartup;
   cfg.triggers.onWakeup = !!cfg.triggers.onWakeup;
-  cfg.triggers.stealth = !!cfg.triggers.stealth;
+  // Stealth migration: legacy boolean → object. Old `true` becomes enabled with the
+  // startup+wakeup scopes (interval OFF) so an update never silently adds interval changes.
+  const rawStealth = cfg.triggers.stealth;
+  // Any truthy non-object legacy value (true / 1 / 'yes') counts as "was on".
+  const legacyStealthOn = typeof rawStealth !== 'object' ? !!rawStealth : false;
+  const s = (rawStealth && typeof rawStealth === 'object') ? rawStealth : {};
+  const timeout = Number(s.timeoutMin);
+  cfg.triggers.stealth = {
+    enabled: typeof s.enabled === 'boolean' ? s.enabled : legacyStealthOn,
+    startup: s.startup !== false,
+    wakeup: s.wakeup !== false,
+    interval: !!s.interval,
+    timeoutMin: Number.isFinite(timeout) && timeout >= 1 ? Math.min(60, Math.floor(timeout)) : 5,
+  };
 
   cfg.onlineSources = {
     lumina: false, internet: true,

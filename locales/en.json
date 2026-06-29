@@ -338,7 +338,7 @@
     "wakeupTitle": "On waking from sleep",
     "wakeupSub": "Switch wallpapers when the computer wakes from sleep",
     "stealthTitle": "Stealth switch",
-    "stealthSub": "Wait up to 2 minutes for a full-screen window to switch wallpapers invisibly",
+    "stealthSub": "Wait up to 5 minutes for a full-screen window to switch wallpapers invisibly",
     "stealthTooltip": "Lumina will wait until you open a full-screen window on the monitor before changing its wallpaper, making the transition invisible to you."
   },
   "smart": {

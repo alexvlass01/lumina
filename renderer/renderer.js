@@ -676,7 +676,7 @@ function updateSlideshowControls() {
   if ($('#selSlideOrder')) $('#selSlideOrder').value = ss.order || 'sequential';
   setSwitch($('#swTriggerStartup'), !!trig.onStartup);
   setSwitch($('#swTriggerWakeup'), !!trig.onWakeup);
-  setSwitch($('#swTriggerStealth'), !!trig.stealth);
+  setSwitch($('#swTriggerStealth'), !!(trig.stealth && trig.stealth.enabled)); // stealth is an object now
   document.querySelectorAll('.slideshow-option').forEach((row) => { row.hidden = !ss.enabled; });
   const list = $('#slideshowList');
   if (list) list.classList.toggle('collapsed', !ss.enabled);
@@ -3656,7 +3656,8 @@ async function init() {
   $('#swTriggerStealth').addEventListener('click', async () => {
     const on = $('#swTriggerStealth').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTriggerStealth'), on);
-    config = await window.api.setConfig({ triggers: { ...config.triggers, stealth: on } });
+    const stealth = { ...(config.triggers.stealth || {}), enabled: on };
+    config = await window.api.setConfig({ triggers: { ...config.triggers, stealth } });
     updateSlideshowControls();
   });
 
