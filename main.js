@@ -1173,11 +1173,12 @@ const stealthCtl = createStealthController({
   getMonitors: async () => (monitorsCache.length ? monitorsCache : await getMonitors()).map((m) => m.id),
   checkCovered: async () => { try { return await wpHost.checkMaximized(2000); } catch { return []; } },
   apply: async ({ theme, monitors, advance }) => {
+    console.log(`[Stealth] applying ${theme} ${advance ? '(new frame)' : '(current frame)'} on`, monitors);
     if (advance) { advanceIndices(theme, monitors); saveConfig(); }
     await applyForTheme(theme, true, monitors);
   },
   pollMs: 3000,
-  log: (...a) => console.error('[Stealth]', ...a),
+  log: (...a) => console.log('[Stealth]', ...a),
 });
 
 // The non-stealth path keeps a single delayed auto-advance (not the session controller).
@@ -1201,7 +1202,9 @@ function stealthTimeoutMs() {
 // interval-stealth lands with the "Применять для" UI.)
 function requestWallpaperAdvance(reason) {
   if (!config.slideshow || !config.slideshow.enabled) return;
-  if (stealthScoped(reason)) {
+  const scoped = stealthScoped(reason);
+  console.log(`[Stealth] advance requested: ${reason} (stealth ${scoped ? 'ON' : 'off'})`);
+  if (scoped) {
     stealthCtl.request({
       theme: wallpaperThemeName(),
       advance: true,
@@ -2704,13 +2707,11 @@ app.whenReady().then(async () => {
     if (config.separateThemes !== false && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'system') {
       if (config.slideshow.enabled) {
         if (stealthCtl.isActive()) {
-          // A theme flip during an invisible session folds into it (Option A): apply the new
-          // theme's CURRENT frame, no extra advance. Covered monitors update now, the rest wait —
-          // so an uncovered screen never visibly flashes mid-session (bug: double change on wake).
-          stealthCtl.request({
-            theme: wallpaperThemeName(), advance: false, single: !!config.singleWallpaper,
-            timeoutMs: stealthTimeoutMs(), initialDelayMs: 0,
-          });
+          // A theme flip during an invisible session folds in (Option A) WITHOUT discarding the
+          // session's advance intent — a wake session still shows a new photo on the new theme.
+          // changeTheme() no-ops if the theme didn't actually change, so a spurious WM_SETTINGCHANGE
+          // (Windows fires one when a wallpaper is applied) can't loop or clobber the session.
+          stealthCtl.changeTheme(wallpaperThemeName());
         } else {
           tickSlideshow(false); // применить кадр новой темы + перепланировать
         }

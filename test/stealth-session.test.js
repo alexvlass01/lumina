@@ -201,6 +201,28 @@ function makeHarness() {
   ok('8: cancel during apply does not crash, session ends inactive', !crashed && !ctl.isActive());
 })();
 
+// ---- 9. changeTheme: a real flip keeps advance (new photo); a no-change is a no-op ----
+(async () => {
+  const h = makeHarness();
+  const ctl = createStealthController(h.env);
+  h.setCovered([]);
+  await ctl.request({ theme: 'dark', advance: true, timeoutMs: 600000, initialDelayMs: 0 });
+  await h.flush();
+  await h.advance(0); // tick: nothing covered yet
+  const before = h.calls.apply.length;
+  await ctl.changeTheme('dark'); // SAME theme → no-op (this is what breaks the spurious-event loop)
+  await h.flush();
+  ok('9: changeTheme(same theme) is a no-op', ctl._snapshot().theme === 'dark' && ctl._snapshot().advance === true && h.calls.apply.length === before);
+  await ctl.changeTheme('light'); // REAL flip while both monitors still pending
+  await h.flush();
+  ok('9: real flip retargets theme + KEEPS advance + re-pends all',
+    ctl._snapshot().theme === 'light' && ctl._snapshot().advance === true && ctl._snapshot().pending.slice().sort().join() === 'M1,M2');
+  h.setCovered(['M1']);
+  await h.advance(0); // fire the tick changeTheme scheduled
+  ok('9: applies the NEW theme WITH advance (a new frame, not the same one)',
+    h.calls.apply.length === 1 && h.calls.apply[0].theme === 'light' && h.calls.apply[0].advance === true && h.calls.apply[0].monitors.join() === 'M1');
+})();
+
 // summary (microtasks above are all settled synchronously enough; print on next tick)
 setTimeout(() => {
   console.log(`\n${fail ? 'FAILED' : 'All'} ${pass} stealth-session ${fail ? `(${fail} failed)` : 'tests passed.'}`);

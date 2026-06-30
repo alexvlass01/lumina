@@ -96,6 +96,28 @@ function createStealthController(deps = {}) {
     handle = setTimer(runTick, Math.max(0, Number(initialDelayMs) || 0));
   }
 
+  // A Windows theme flip DURING an active session: converge every monitor to the new theme
+  // invisibly while KEEPING the session's advance intent (so a wake session still shows a
+  // NEW photo, not the same frame). No-op when there is no session or the theme did not
+  // actually change — which also stops a spurious WM_SETTINGCHANGE (Windows fires one when a
+  // wallpaper is applied) from re-triggering and looping/clobbering the session.
+  async function changeTheme(theme) {
+    if (!session || session.theme === theme) return;
+    let monitorIds;
+    try { monitorIds = await getMonitors(); }
+    catch (e) { log('getMonitors failed', e); return; }
+    if (!session || session.theme === theme) return; // session ended / already updated while enumerating
+    const ids = (Array.isArray(monitorIds) ? monitorIds : []).filter(Boolean);
+    if (!ids.length) return;
+    gen++;                       // invalidate any in-flight tick; we own the session now
+    session.theme = theme;
+    session.didAdvance = false;  // advance once for the new theme (singleWallpaper)
+    session.pending = new Set(ids); // re-pend so every monitor converges to the new theme
+    // advance/single/deadline are kept as-is — the session still wants a fresh photo.
+    clearHandle();
+    handle = setTimer(runTick, 0);
+  }
+
   function runTick() { tick().catch((e) => log('tick error', e)); }
 
   async function tick() {
@@ -138,6 +160,7 @@ function createStealthController(deps = {}) {
 
   return {
     request,
+    changeTheme,
     cancel,
     isActive: () => !!session,
     // test-only introspection
