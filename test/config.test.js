@@ -136,6 +136,45 @@ ok('missing triggers → defaults (events off, stealth disabled object)',
   loadedNoTriggers.triggers.onStartup === false && loadedNoTriggers.triggers.onWakeup === false
   && loadedNoTriggers.triggers.stealth.enabled === false && loadedNoTriggers.triggers.stealth.timeoutMin === 5);
 
+// ---- A real user's config survives an update unchanged (no settings "wiped") ----
+// Mirrors a populated installed config (legacy boolean stealth) to guard against migration
+// data loss: loading it must preserve every user setting and only migrate the shape.
+const realUser = {
+  singleWallpaper: false, separateThemes: true,
+  monitors: { 'DISPLAY#A': { light: { itemIds: ['id1'] }, dark: { itemIds: ['id2'] } } },
+  library: {
+    id1: { id: 'id1', type: 'image', path: 'C:/a.jpg', addedAt: 111, favorite: true, tags: ['x'] },
+    id2: { id: 'id2', type: 'image', path: 'C:/b.jpg', addedAt: 222, favorite: false, tags: [] },
+  },
+  style: 'fit', autostart: true, startMinimized: false, language: 'ru', gameModeBlock: true,
+  slideshow: { enabled: true, intervalEnabled: true, intervalMin: 120, order: 'shuffle' },
+  slideshowIndex: { 'DISPLAY#A': { light: 3, dark: 1 } },
+  slideshowCurrentPath: { 'DISPLAY#A': { light: 'C:/a.jpg', dark: 'C:/b.jpg' } },
+  hotkeys: { nextWallpaper: { enabled: true, shortcut: 'Ctrl+Alt+N' } },
+  triggers: { onStartup: true, onWakeup: true, stealth: true }, // legacy boolean
+  wallpaperSchedule: { mode: 'sun', lightStart: '06:30', darkStart: '21:00' },
+  themeSchedule: { mode: 'time', lightStart: '08:00', darkStart: '19:00', lat: '50', lng: '30' },
+  onlineSources: { lumina: true, internet: true }, onlineSort: 'random',
+  onlinePurity: { sfw: true, sketchy: false, nsfw: true }, viewerBackground: 'charcoal',
+};
+fs.writeFileSync(p('real_user.json'), JSON.stringify(realUser));
+const ru = C.load(p('real_user.json'));
+ok('update keeps slideshow settings', ru.slideshow.enabled === true && ru.slideshow.intervalMin === 120 && ru.slideshow.order === 'shuffle');
+ok('update keeps library + monitor slots', Object.keys(ru.library).length === 2 && ru.library.id1.favorite === true
+  && ru.library.id1.tags[0] === 'x' && ru.monitors['DISPLAY#A'].light.itemIds[0] === 'id1' && ru.monitors['DISPLAY#A'].dark.itemIds[0] === 'id2');
+ok('update keeps slideshow position', ru.slideshowIndex['DISPLAY#A'].light === 3 && ru.slideshowCurrentPath['DISPLAY#A'].dark === 'C:/b.jpg');
+ok('update keeps misc settings', ru.style === 'fit' && ru.autostart === true && ru.startMinimized === false && ru.language === 'ru'
+  && ru.gameModeBlock === true && ru.hotkeys.nextWallpaper.shortcut === 'Ctrl+Alt+N' && ru.viewerBackground === 'charcoal');
+ok('update keeps schedules + online prefs', ru.wallpaperSchedule.mode === 'sun' && ru.themeSchedule.lightStart === '08:00'
+  && ru.onlineSort === 'random' && ru.onlinePurity.nsfw === true && ru.onlineSources.lumina === true);
+ok('legacy stealth boolean migrates, enabled state kept', ru.triggers.stealth.enabled === true && ru.triggers.onStartup === true && ru.triggers.onWakeup === true);
+// Re-loading the already-migrated config must not drift (a second update is a no-op).
+fs.writeFileSync(p('real_user2.json'), JSON.stringify(ru));
+const ru2 = C.load(p('real_user2.json'));
+ok('migration is idempotent (no drift on the next update)',
+  ru2.slideshow.intervalMin === 120 && ru2.slideshow.order === 'shuffle' && ru2.triggers.stealth.enabled === true
+  && Object.keys(ru2.library).length === 2 && ru2.slideshowIndex['DISPLAY#A'].light === 3);
+
 // themeOverride / librarySort: invalid values collapse to safe defaults, valid pass through
 fs.writeFileSync(p('override_bad.json'), JSON.stringify({ themeOverride: 'banana', _lastAutoTheme: 42, librarySort: 'nope' }));
 const loadedBadOverride = C.load(p('override_bad.json'));
