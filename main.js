@@ -882,6 +882,36 @@ function wallpaperFor(monitorId, theme) {
   return (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
 }
 
+// Windows' IDesktopWallpaper renders a blank/solid desktop for a large PNG — it accepts the
+// path without error but fails to decode/cache it past ~10-20 MB (a 21 MB PNG applies as a
+// placeholder, though thumbnails are fine; small PNGs set fine). JPEG has no such limit. So a
+// big NON-JPEG file is re-encoded to a FULL-RESOLUTION, maximum-quality JPEG (never downscaled)
+// and that is applied; JPEGs and small files are used as-is, untouched. Cached in
+// userData/wp-cache (key = path+size+mtime). Best-effort — any failure falls back to the original.
+const WP_CACHE_DIR = path.join(app.getPath('userData'), 'wp-cache');
+const WP_SAFE_BYTES = 10 * 1024 * 1024; // below this a PNG sets fine; above it we convert to JPEG
+async function ensureWallpaperReady(srcPath) {
+  const ext = path.extname(srcPath).toLowerCase();
+  if (ext === '.jpg' || ext === '.jpeg') return srcPath; // JPEG has no size limit — apply as-is
+  let st;
+  try { st = fs.statSync(srcPath); } catch { return srcPath; }
+  if (st.size <= WP_SAFE_BYTES) return srcPath; // small enough — keep the ORIGINAL file, untouched
+  try {
+    const key = crypto.createHash('md5').update(`${srcPath}|${st.size}|${Math.floor(st.mtimeMs)}`).digest('hex').slice(0, 16);
+    const dest = path.join(WP_CACHE_DIR, `wp-full-${key}.jpg`);
+    if (fs.existsSync(dest)) return dest;
+    const img = nativeImage.createFromPath(srcPath);
+    if (img.isEmpty()) return srcPath;
+    const jpeg = img.toJPEG(100); // FULL resolution, MAXIMUM quality — JPEG bypasses the PNG limit
+    if (!jpeg || !jpeg.length) return srcPath;
+    fs.mkdirSync(WP_CACHE_DIR, { recursive: true });
+    fs.writeFileSync(dest, jpeg);
+    const sz = img.getSize();
+    console.log(`[Wallpaper] converted large ${ext} to full-res JPEG q100: ${(st.size / 1048576).toFixed(1)} MB → ${(jpeg.length / 1048576).toFixed(1)} MB at ${sz.width}x${sz.height}`);
+    return dest;
+  } catch (e) { console.error('ensureWallpaperReady:', e); return srcPath; }
+}
+
 async function applyForTheme(themeName, isManual = false, targetMonitors = null) {
   const theme = config.separateThemes === false ? 'light' : (themeName || wallpaperThemeName());
   broadcastWallpaperTheme(theme);
@@ -897,7 +927,7 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
     for (const m of monitors) {
       if (targetMonitors && !targetMonitors.includes(m.id)) continue;
       const p = wallpaperFor(m.id, theme);
-      if (p && fs.existsSync(p)) items.push({ id: m.id, path: p });
+      if (p && fs.existsSync(p)) items.push({ id: m.id, path: await ensureWallpaperReady(p) });
     }
     persistSlideshowPosition();
     if (!items.length) return { ok: false, reason: 'no-wallpaper', theme };
