@@ -70,6 +70,9 @@ const START_TS = Date.now();
 // pop a "Windows switched theme" toast — it's a background event, not a fresh user action.
 // Genuine visible theme changes after this window still announce. See nativeTheme 'updated'.
 let themeToastQuietUntil = START_TS + 10000;
+// Last light/dark value we actually acted on. Windows fires nativeTheme 'updated' spuriously
+// when a wallpaper is applied (same value) — we compare against this to ignore those.
+let lastNativeDark = null;
 
 let mainWindow = null;
 let galleryWindow = null;
@@ -2689,8 +2692,14 @@ app.whenReady().then(async () => {
     });
   }
 
+  lastNativeDark = nativeTheme.shouldUseDarkColors; // baseline so the first real flip is detected
   nativeTheme.on('updated', () => {
     const isDark = nativeTheme.shouldUseDarkColors;
+    // Windows fires this event spuriously when a wallpaper is applied (WM_SETTINGCHANGE) with
+    // the SAME light/dark value. Only a real flip should toast or re-apply wallpapers — without
+    // this guard every stealth/manual wallpaper change wrongly announced "Windows switched theme".
+    const reallyChanged = lastNativeDark === null ? true : (isDark !== lastNativeDark);
+    lastNativeDark = isDark;
     if ((config.themeOverride === 'light' && isDark) || (config.themeOverride === 'dark' && !isDark)) {
       config.themeOverride = null;
       saveConfig();
@@ -2698,10 +2707,11 @@ app.whenReady().then(async () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       try { mainWindow.setTitleBarOverlay(titleBarOverlayColors()); } catch {}
     }
+    trayCtl.refreshIcon();
+    if (!reallyChanged) { broadcastTheme({ silent: true }); return; } // spurious event: refresh UI quietly, nothing else
     // Suppress the "Windows switched theme" toast during the startup/resume catch-up window
     // (background flip), but keep announcing genuine theme changes the user makes later.
     broadcastTheme({ silent: Date.now() < themeToastQuietUntil });
-    trayCtl.refreshIcon();
     // Wallpaper mode='system' follows Windows. Independent time/sun schedules ignore
     // nativeTheme events completely; unified mode always stays on the shared light slot.
     if (config.separateThemes !== false && config.wallpaperSchedule && config.wallpaperSchedule.mode === 'system') {
