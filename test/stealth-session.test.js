@@ -170,6 +170,37 @@ function makeHarness() {
   ok('7: applies both after the initial delay', h.calls.apply.length === 1 && h.calls.apply[0].monitors.slice().sort().join() === 'M1,M2');
 })();
 
+// ---- 8. REGRESSION: cancel() while an apply is in flight must not crash ----
+// (the bug: tick read session.advance after the apply await, after cancel had nulled session)
+(async () => {
+  let nowMs = 0, seq = 1; const timers = [];
+  let resolveApply = null;
+  const env = {
+    now: () => nowMs, pollMs: 3000, log: () => {},
+    setTimer: (fn, ms) => { const id = seq++; timers.push({ id, fn, fireAt: nowMs + ms }); return id; },
+    clearTimer: (id) => { const i = timers.findIndex((t) => t.id === id); if (i >= 0) timers.splice(i, 1); },
+    getMonitors: async () => ['M1'],
+    checkCovered: async () => ['M1'],
+    apply: () => new Promise((res) => { resolveApply = res; }), // stays pending until we resolve it
+  };
+  const ctl = createStealthController(env);
+  const flush = async () => { for (let i = 0; i < 16; i++) await Promise.resolve(); };
+  const fire = async () => {
+    const due = timers.filter((t) => t.fireAt <= nowMs).sort((a, b) => a.fireAt - b.fireAt);
+    for (const t of due) { const i = timers.indexOf(t); if (i >= 0) timers.splice(i, 1); t.fn(); await flush(); }
+  };
+  let crashed = false;
+  try {
+    await ctl.request({ theme: 'dark', advance: true, single: true, timeoutMs: 600000, initialDelayMs: 0 });
+    await flush();
+    await fire();                 // tick runs, M1 covered, suspends inside apply()
+    ctl.cancel();                 // cancel while the apply is in flight → session = null
+    if (resolveApply) resolveApply(); // let the apply resolve; tick resumes after the await
+    await flush();
+  } catch (e) { crashed = true; console.log('  (8 caught)', e && e.message); }
+  ok('8: cancel during apply does not crash, session ends inactive', !crashed && !ctl.isActive());
+})();
+
 // summary (microtasks above are all settled synchronously enough; print on next tick)
 setTimeout(() => {
   console.log(`\n${fail ? 'FAILED' : 'All'} ${pass} stealth-session ${fail ? `(${fail} failed)` : 'tests passed.'}`);

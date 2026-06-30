@@ -63,11 +63,14 @@ function createStealthController(deps = {}) {
       timeoutMs = 300000,
       initialDelayMs = 0,
     } = opts;
-    const myGen = gen;
+    // Bump the generation so any tick still in flight from a prior request/session bails at
+    // its next await check instead of racing this one (two ticks could otherwise null the
+    // session out from under each other — the crash this fixes).
+    const myGen = ++gen;
     let monitorIds;
     try { monitorIds = await getMonitors(); }
     catch (e) { log('getMonitors failed', e); monitorIds = []; }
-    if (myGen !== gen) return;                 // canceled while enumerating
+    if (myGen !== gen) return;                 // superseded by a newer request while enumerating
     const ids = (Array.isArray(monitorIds) ? monitorIds : []).filter(Boolean);
     if (!ids.length) return;
 
@@ -112,13 +115,17 @@ function createStealthController(deps = {}) {
 
     if (toApply.length) {
       // singleWallpaper: advance the shared playlist ONCE per session, then just re-apply
-      // the same frame to each monitor as it is covered.
-      const doAdvance = session.advance && (!session.single || !session.didAdvance);
+      // the same frame to each monitor as it is covered. Capture the flags BEFORE awaiting —
+      // session can be nulled (cancel) or retargeted during the apply, so we must not read it
+      // again until we've re-checked it below.
+      const single = !!session.single;
+      const advanceFlag = !!session.advance;
+      const doAdvance = advanceFlag && (!single || !session.didAdvance);
       try {
-        await apply({ theme: session.theme, monitors: toApply, advance: doAdvance, single: session.single });
+        await apply({ theme: session.theme, monitors: toApply, advance: doAdvance, single });
       } catch (e) { log('apply failed', e); }
-      if (session.advance && session.single) session.didAdvance = true;
-      if (myGen !== gen || !session) return;   // canceled/retargeted during apply
+      if (myGen !== gen || !session) return;   // canceled/retargeted during apply — don't touch session
+      if (advanceFlag && single) session.didAdvance = true;
     }
 
     if (session.pending.size > 0) {
