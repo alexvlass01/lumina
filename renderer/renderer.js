@@ -3,7 +3,7 @@
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
-  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, slideshowCurrentPath: {}, triggers: { onStartup: false, onWakeup: false, stealth: false }, onlineSources: { lumina: false, internet: true }, onlineSort: 'date_added', onlinePurity: { sfw: true, sketchy: true, nsfw: false } };
+  let mock = { lightWallpaper: '', darkWallpaper: '', singleWallpaper: false, separateThemes: true, monitors: {}, library: {}, autoSwitch: true, wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' }, style: 'fill', autostart: false, startMinimized: true, language: 'system', themeSchedule: { mode: 'off', lightStart: '07:00', darkStart: '20:00', lat: '', lng: '' }, slideshow: { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' }, slideshowIndex: {}, slideshowCurrentPath: {}, triggers: { onStartup: false, onWakeup: false, stealth: { enabled: false, startup: true, wakeup: true, interval: false, timeoutMin: 5 } }, onlineSources: { lumina: false, internet: true }, onlineSort: 'date_added', onlinePurity: { sfw: true, sketchy: true, nsfw: false } };
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   let mockCloud = { signedIn: false, user: null };
@@ -639,6 +639,28 @@ function setSwitch(el, on) {
   el.setAttribute('aria-checked', on ? 'true' : 'false');
 }
 
+function currentStealth() {
+  const raw = config && config.triggers ? config.triggers.stealth : null;
+  if (raw && typeof raw === 'object') {
+    return {
+      enabled: !!raw.enabled,
+      startup: raw.startup !== false,
+      wakeup: raw.wakeup !== false,
+      interval: !!raw.interval,
+      timeoutMin: raw.timeoutMin || 5,
+    };
+  }
+  return { enabled: !!raw, startup: true, wakeup: true, interval: false, timeoutMin: 5 };
+}
+
+function setScopeCheckbox(el, checked, disabled) {
+  if (!el) return;
+  el.checked = !!checked;
+  el.disabled = !!disabled;
+  const wrap = el.closest('.stealth-scope-check');
+  if (wrap) wrap.classList.toggle('disabled', !!disabled);
+}
+
 function renderSharedCoordinates() {
   const sch = (config && config.themeSchedule) || {};
   for (const id of ['#latInput', '#wallpaperLatInput']) if ($(id)) $(id).value = sch.lat || '';
@@ -669,6 +691,7 @@ function renderThemeSchedule() {
 function updateSlideshowControls() {
   const ss = (config && config.slideshow) || { enabled: false, intervalEnabled: true, intervalMin: 30, order: 'sequential' };
   const trig = (config && config.triggers) || {};
+  const stealth = currentStealth();
   setSwitch($('#swSlideshow'), !!ss.enabled);
   setSwitch($('#swSlideInterval'), ss.intervalEnabled !== false);
   if ($('#slideInterval')) $('#slideInterval').value = ss.intervalMin || 30;
@@ -676,8 +699,13 @@ function updateSlideshowControls() {
   if ($('#selSlideOrder')) $('#selSlideOrder').value = ss.order || 'sequential';
   setSwitch($('#swTriggerStartup'), !!trig.onStartup);
   setSwitch($('#swTriggerWakeup'), !!trig.onWakeup);
-  setSwitch($('#swTriggerStealth'), !!(trig.stealth && trig.stealth.enabled)); // stealth is an object now
+  setSwitch($('#swTriggerStealth'), !!stealth.enabled);
   document.querySelectorAll('.slideshow-option').forEach((row) => { row.hidden = !ss.enabled; });
+  const scopeRow = $('#rowTriggerStealthScope');
+  if (scopeRow) scopeRow.hidden = !ss.enabled || !stealth.enabled;
+  setScopeCheckbox($('#cbStealthStartup'), stealth.startup, !trig.onStartup);
+  setScopeCheckbox($('#cbStealthWakeup'), stealth.wakeup, !trig.onWakeup);
+  setScopeCheckbox($('#cbStealthInterval'), stealth.interval, ss.intervalEnabled === false);
   const list = $('#slideshowList');
   if (list) list.classList.toggle('collapsed', !ss.enabled);
 }
@@ -3656,9 +3684,19 @@ async function init() {
   $('#swTriggerStealth').addEventListener('click', async () => {
     const on = $('#swTriggerStealth').getAttribute('aria-checked') !== 'true';
     setSwitch($('#swTriggerStealth'), on);
-    const stealth = { ...(config.triggers.stealth || {}), enabled: on };
+    const stealth = { ...currentStealth(), enabled: on };
     config = await window.api.setConfig({ triggers: { ...config.triggers, stealth } });
     updateSlideshowControls();
+  });
+  async function setStealthScope(key, on) {
+    const stealth = { ...currentStealth(), [key]: !!on };
+    config = await window.api.setConfig({ triggers: { ...config.triggers, stealth } });
+    updateSlideshowControls();
+  }
+  document.querySelectorAll('[data-stealth-scope]').forEach((cb) => {
+    cb.addEventListener('change', async (e) => {
+      await setStealthScope(e.target.dataset.stealthScope, e.target.checked);
+    });
   });
 
   async function saveSharedCoordinates(lat, lng) {

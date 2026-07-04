@@ -223,6 +223,64 @@ function makeHarness() {
     h.calls.apply.length === 1 && h.calls.apply[0].theme === 'light' && h.calls.apply[0].advance === true && h.calls.apply[0].monitors.join() === 'M1');
 })();
 
+// ---- 10. completion callback: fires once only after the whole session finishes ----
+(async () => {
+  const h = makeHarness();
+  let completed = 0;
+  const ctl = createStealthController(h.env);
+  h.setCovered(['M1']);
+  await ctl.request({ theme: 'dark', advance: true, timeoutMs: 600000, initialDelayMs: 0, onComplete: () => { completed++; } });
+  await h.flush();
+  await h.advance(0); // M1 only; M2 still pending
+  ok('10: onComplete is not called after a partial monitor apply', completed === 0 && ctl.isActive());
+  h.setCovered(['M1', 'M2']);
+  await h.advance(3000);
+  ok('10: onComplete fires once when all pending monitors finish',
+    completed === 1 && !ctl.isActive() && h.timerCount() === 0);
+})();
+
+// ---- 11. completion callback is not called when a manual cancel supersedes it ----
+(async () => {
+  const h = makeHarness();
+  let completed = 0;
+  const ctl = createStealthController(h.env);
+  await ctl.request({ theme: 'dark', advance: true, timeoutMs: 600000, initialDelayMs: 0, onComplete: () => { completed++; } });
+  await h.flush();
+  await h.advance(0);
+  ctl.cancel();
+  h.setCovered(['M1', 'M2']);
+  await h.advance(3000);
+  ok('11: cancel does not call onComplete', completed === 0 && !ctl.isActive());
+})();
+
+// ---- 12. empty monitor list completes immediately so interval scheduling can continue ----
+(async () => {
+  const h = makeHarness();
+  let completed = 0;
+  const ctl = createStealthController(h.env);
+  h.setMonitors([]);
+  await ctl.request({ theme: 'dark', advance: true, timeoutMs: 600000, initialDelayMs: 0, onComplete: () => { completed++; } });
+  await h.flush();
+  ok('12: empty monitor list calls onComplete once without starting a session',
+    completed === 1 && !ctl.isActive() && h.timerCount() === 0);
+})();
+
+// ---- 13. retarget without callback preserves the existing completion hook ----
+(async () => {
+  const h = makeHarness();
+  let completed = 0;
+  const ctl = createStealthController(h.env);
+  await ctl.request({ theme: 'dark', advance: true, timeoutMs: 600000, initialDelayMs: 0, onComplete: () => { completed++; } });
+  await h.flush();
+  await h.advance(0);
+  await ctl.request({ theme: 'light', advance: true, timeoutMs: 600000, initialDelayMs: 0 });
+  await h.flush();
+  h.setCovered(['M1', 'M2']);
+  await h.advance(0);
+  ok('13: retarget keeps onComplete when the new request has none',
+    completed === 1 && !ctl.isActive());
+})();
+
 // summary (microtasks above are all settled synchronously enough; print on next tick)
 setTimeout(() => {
   console.log(`\n${fail ? 'FAILED' : 'All'} ${pass} stealth-session ${fail ? `(${fail} failed)` : 'tests passed.'}`);

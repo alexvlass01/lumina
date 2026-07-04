@@ -62,7 +62,9 @@ function createStealthController(deps = {}) {
       single = false,
       timeoutMs = 300000,
       initialDelayMs = 0,
+      onComplete = null,
     } = opts;
+    const complete = typeof onComplete === 'function' ? onComplete : null;
     // Bump the generation so any tick still in flight from a prior request/session bails at
     // its next await check instead of racing this one (two ticks could otherwise null the
     // session out from under each other — the crash this fixes).
@@ -72,7 +74,12 @@ function createStealthController(deps = {}) {
     catch (e) { log('getMonitors failed', e); monitorIds = []; }
     if (myGen !== gen) return;                 // superseded by a newer request while enumerating
     const ids = (Array.isArray(monitorIds) ? monitorIds : []).filter(Boolean);
-    if (!ids.length) return;
+    if (!ids.length) {
+      if (complete) {
+        try { await complete(); } catch (e) { log('onComplete failed', e); }
+      }
+      return;
+    }
 
     const deadline = now() + Math.max(0, Number(timeoutMs) || 0);
     if (session) {
@@ -82,6 +89,7 @@ function createStealthController(deps = {}) {
       session.didAdvance = false;              // a new target may advance once again
       session.pending = new Set(ids);
       session.deadline = deadline;
+      session.onComplete = complete || session.onComplete;
     } else {
       session = {
         theme,
@@ -90,6 +98,7 @@ function createStealthController(deps = {}) {
         didAdvance: false,
         pending: new Set(ids),
         deadline,
+        onComplete: complete,
       };
     }
     clearHandle();
@@ -153,8 +162,12 @@ function createStealthController(deps = {}) {
     if (session.pending.size > 0) {
       handle = setTimer(runTick, pollMs);
     } else {
+      const complete = session.onComplete;
       session = null;
       clearHandle();
+      if (complete) {
+        try { await complete(); } catch (e) { log('onComplete failed', e); }
+      }
     }
   }
 
@@ -171,6 +184,7 @@ function createStealthController(deps = {}) {
       didAdvance: session.didAdvance,
       pending: Array.from(session.pending),
       deadline: session.deadline,
+      hasOnComplete: typeof session.onComplete === 'function',
     },
   };
 }

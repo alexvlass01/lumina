@@ -985,16 +985,52 @@ function advanceIndices(theme, targetMonitors = null) {
 }
 
 // advance=true сдвигает кадр; false — просто применить текущее и (пере)запланировать.
+function slideshowIntervalEnabled() {
+  return !!(config.slideshow && config.slideshow.enabled && playlist.usesInterval(config.slideshow));
+}
+
+function slideshowIntervalMs() {
+  const mins = Math.max(1, Math.floor(Number(config.slideshow && config.slideshow.intervalMin) || 30));
+  return mins * 60000;
+}
+
+function scheduleSlideshowTimer(delayMs = slideshowIntervalMs()) {
+  clearSlideshowTimer();
+  if (!slideshowIntervalEnabled()) return;
+  slideshowTimer = setTimeout(runSlideshowInterval, Math.max(1, Math.floor(Number(delayMs) || slideshowIntervalMs())));
+}
+
+function retrySlideshowIntervalSoon() {
+  clearSlideshowTimer();
+  if (!config.slideshow || !config.slideshow.enabled) return;
+  slideshowTimer = setTimeout(runSlideshowInterval, 60000);
+}
+
+async function runSlideshowInterval() {
+  slideshowTimer = null;
+  if (!slideshowIntervalEnabled()) return;
+  if (config.gameModeBlock && await isGameOrFullscreenRunning()) {
+    console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
+    retrySlideshowIntervalSoon();
+    return;
+  }
+  if (stealthScoped('interval')) {
+    requestWallpaperAdvance('interval', { initialDelayMs: 0, rescheduleInterval: true });
+    return;
+  }
+  await tickSlideshow(true, false);
+}
+
 async function tickSlideshow(advance, isManual = false) {
   clearSlideshowTimer();
   if (!config.slideshow || !config.slideshow.enabled) return;
-  const intervalEnabled = playlist.usesInterval(config.slideshow);
+  const intervalEnabled = slideshowIntervalEnabled();
   // A timer may already be queued when the user disables the interval trigger.
   if (advance && !isManual && !intervalEnabled) return;
 
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
     console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
-    slideshowTimer = setTimeout(() => tickSlideshow(advance, false), 60000);
+    retrySlideshowIntervalSoon();
     return;
   }
 
@@ -1002,8 +1038,7 @@ async function tickSlideshow(advance, isManual = false) {
   if (advance) { advanceIndices(theme); saveConfig(); }
   await applyForTheme(theme, isManual);
   if (!intervalEnabled) return;
-  const mins = Math.max(1, Math.floor(Number(config.slideshow.intervalMin) || 30));
-  slideshowTimer = setTimeout(() => tickSlideshow(true, false), mins * 60000);
+  scheduleSlideshowTimer();
 }
 
 // ---------------------------------------------------------------------------
@@ -1229,12 +1264,16 @@ function stealthTimeoutMs() {
   return (Number.isFinite(m) && m >= 1 ? Math.min(60, Math.floor(m)) : 5) * 60000;
 }
 
-// Single entry point for every AUTOMATIC wallpaper advance (startup / wakeup). With stealth on
+// Single entry point for every AUTOMATIC wallpaper advance (startup / wakeup / interval). With stealth on
 // for that reason it routes through the one cancelable session; otherwise it advances after a
-// short settle delay, as before. (Interval rotation still flows through tickSlideshow for now;
-// interval-stealth lands with the "Применять для" UI.)
-function requestWallpaperAdvance(reason) {
+// short settle delay, as before.
+function requestWallpaperAdvance(reason, options = {}) {
   if (!config.slideshow || !config.slideshow.enabled) return;
+  const initialDelayMs = Number.isFinite(+options.initialDelayMs)
+    ? Math.max(0, Math.floor(+options.initialDelayMs))
+    : 5000;
+  const rescheduleInterval = !!options.rescheduleInterval;
+  if (rescheduleInterval) clearSlideshowTimer();
   const scoped = stealthScoped(reason);
   console.log(`[Stealth] advance requested: ${reason} (stealth ${scoped ? 'ON' : 'off'})`);
   if (scoped) {
@@ -1243,7 +1282,8 @@ function requestWallpaperAdvance(reason) {
       advance: true,
       single: !!config.singleWallpaper,
       timeoutMs: stealthTimeoutMs(),
-      initialDelayMs: 5000, // let the desktop settle a moment on boot/resume before polling
+      initialDelayMs, // boot/resume settle for startup/wakeup; interval uses 0.
+      onComplete: rescheduleInterval ? () => scheduleSlideshowTimer() : null,
     });
   } else {
     if (autoAdvanceTimer) clearTimeout(autoAdvanceTimer);
@@ -1251,7 +1291,7 @@ function requestWallpaperAdvance(reason) {
       autoAdvanceTimer = null;
       if (!config.slideshow || !config.slideshow.enabled) return;
       triggerNextWallpaper();
-    }, 5000);
+    }, initialDelayMs);
   }
 }
 
@@ -1694,6 +1734,10 @@ ipcMain.handle('set-config', async (e, patch) => {
     next.wallpaperSchedule = { ...config.wallpaperSchedule, ...patch.wallpaperSchedule };
   }
   config = next;
+  if (patch && patch.triggers && Object.prototype.hasOwnProperty.call(patch.triggers, 'stealth')) {
+    const s = config.triggers && config.triggers.stealth;
+    if (!s || s.enabled === false) cancelPendingStealth();
+  }
   if (patch && 'wallpaperSchedule' in patch) {
     const sch = config.wallpaperSchedule && typeof config.wallpaperSchedule === 'object'
       ? config.wallpaperSchedule
@@ -2472,6 +2516,7 @@ ipcMain.handle('set-slideshow', (e, patch) => {
   if (!Number.isFinite(+config.slideshow.intervalMin) || +config.slideshow.intervalMin < 1) config.slideshow.intervalMin = 30;
   config.slideshow.intervalMin = Math.floor(+config.slideshow.intervalMin);
   if (config.slideshow.order !== 'shuffle') config.slideshow.order = 'sequential';
+  if (patch && (patch.enabled === false || patch.intervalEnabled === false)) cancelPendingStealth();
   saveConfig();
   if (config.slideshow.enabled) tickSlideshow(false, true);
   else { clearSlideshowTimer(); applyForTheme(null, true); }

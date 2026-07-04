@@ -391,6 +391,26 @@
           </div>
           <button class="gtkswitch" id="swTriggerStealth" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
+        <div class="row slideshow-option stealth-scope-row" id="rowTriggerStealthScope" hidden>
+          <div class="row-text">
+            <div class="row-title" data-i18n="triggers.stealthScopeTitle">Применять для</div>
+            <div class="row-sub" data-i18n="triggers.stealthScopeSub">Выберите, где Lumina будет пытаться скрыть смену обоев</div>
+          </div>
+          <div class="row-controls stealth-scope-controls">
+            <label class="stealth-scope-check">
+              <input type="checkbox" id="cbStealthStartup" data-stealth-scope="startup" />
+              <span data-i18n="triggers.stealthScopeStartup">Запуск</span>
+            </label>
+            <label class="stealth-scope-check">
+              <input type="checkbox" id="cbStealthWakeup" data-stealth-scope="wakeup" />
+              <span data-i18n="triggers.stealthScopeWakeup">Пробуждение</span>
+            </label>
+            <label class="stealth-scope-check">
+              <input type="checkbox" id="cbStealthInterval" data-stealth-scope="interval" />
+              <span data-i18n="triggers.stealthScopeInterval">Интервал</span>
+            </label>
+          </div>
+        </div>
       </div>
 
       <h2 class="group-title" data-i18n="theme.group">Тема Windows</h2>
