@@ -1264,6 +1264,10 @@ function stealthTimeoutMs() {
   return (Number.isFinite(m) && m >= 1 ? Math.min(60, Math.floor(m)) : 5) * 60000;
 }
 
+function rescheduleSlideshowAfterManualWallpaperChange() {
+  if (slideshowIntervalEnabled()) scheduleSlideshowTimer();
+}
+
 // Single entry point for every AUTOMATIC wallpaper advance (startup / wakeup / interval). With stealth on
 // for that reason it routes through the one cancelable session; otherwise it advances after a
 // short settle delay, as before.
@@ -1304,7 +1308,11 @@ async function triggerNextWallpaper(targetMonitors = null) {
   } else {
     advanceIndices(theme, targetMonitors);
     saveConfig();
-    return applyForTheme(theme, true, targetMonitors);
+    try {
+      return await applyForTheme(theme, true, targetMonitors);
+    } finally {
+      rescheduleSlideshowAfterManualWallpaperChange();
+    }
   }
 }
 
@@ -2072,7 +2080,7 @@ ipcMain.handle('library-remove-tag', (e, id, tag) => {
 });
 
 // Назначить элемент пула на монитор×тему (добавляет в плейлист слота) + применить, если тема активна.
-ipcMain.handle('library-assign', (e, id, monitorId, which) => {
+ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
   const theme = which === 'dark' ? 'dark' : 'light';
   if (!monitorId || !id || !config.library[id]) return config;
   const slot = ensureSlot(monitorId, theme);
@@ -2081,7 +2089,14 @@ ipcMain.handle('library-assign', (e, id, monitorId, which) => {
   trayCtl.refresh();
   // Assigning a new image to the active monitor×theme changes the current frame → drop any
   // pending stealth advance so it can't overwrite this choice moments later.
-  if (theme === wallpaperThemeName()) { cancelPendingStealth(); applyForTheme(theme, true); }
+  if (theme === wallpaperThemeName()) {
+    cancelPendingStealth();
+    try {
+      await applyForTheme(theme, true);
+    } finally {
+      rescheduleSlideshowAfterManualWallpaperChange();
+    }
+  }
   return config;
 });
 
@@ -2561,7 +2576,14 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
   if (!list.length) return config;
   storeSlideshowPosition(monitorId, t, playlist.reconcilePosition(list, '', Number(index)));
   saveConfig();
-  if (t === wallpaperThemeName()) await applyForTheme(t, true);
+  if (t === wallpaperThemeName()) {
+    cancelPendingStealth();
+    try {
+      await applyForTheme(t, true);
+    } finally {
+      rescheduleSlideshowAfterManualWallpaperChange();
+    }
+  }
   return config;
 });
 
@@ -2577,7 +2599,14 @@ ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
   storeSlideshowPosition(monitorId, t, { index: idx, path: list[idx] });
   saveConfig();
   // Picking a specific frame is a manual choice → cancel any pending stealth advance.
-  if (t === wallpaperThemeName()) { cancelPendingStealth(); await applyForTheme(t, true); }
+  if (t === wallpaperThemeName()) {
+    cancelPendingStealth();
+    try {
+      await applyForTheme(t, true);
+    } finally {
+      rescheduleSlideshowAfterManualWallpaperChange();
+    }
+  }
   return config;
 });
 
