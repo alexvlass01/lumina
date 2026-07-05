@@ -25,6 +25,7 @@ That's it. The app keeps running in the **system tray** after you close the wind
 - 🖥 **A different wallpaper per monitor**, with a visual monitor map.
 - ⚡ **Automatic** — the wallpaper changes the moment Windows switches theme.
 - 📚 **Wallpaper library** — keep all your wallpapers in one place: mark favourites, add tags, and browse folders. Open a folder to see what's inside, step into sub-folders, and find your way back with breadcrumbs.
+- 🗂 **Live folders** — connect a folder and Lumina will pick up new wallpapers you add there.
 - 🔀 **Slideshow** — let a set of wallpapers rotate on a timer instead of showing just one picture.
 - 🌐 **Online wallpapers** — search by tags and download fresh wallpapers right inside the app.
 - 🖱 **Drag & drop** — drop an image straight onto the app to add it.
@@ -41,7 +42,7 @@ That's it. The app keeps running in the **system tray** after you close the wind
 
 - Lumina watches the Windows light/dark setting (*Settings → Personalization → Colors → Mode*) and reacts instantly.
 - It sets a separate wallpaper on each monitor using built-in Windows features — no extra software or drivers.
-- Wallpapers you pick are copied into the app's own folder, so they don't disappear after an update or if you move the original.
+- Individual wallpapers you pick are copied into the app's own folder, so they don't disappear after an update or if you move the original. Connected live folders stay linked to their original location.
 
 ## Build from source (for developers)
 
