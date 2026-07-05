@@ -182,6 +182,53 @@ function recentImages(library, folderImages, limit = 5) {
     .slice(0, count);
 }
 
+function normalizedAbsolutePath(value) {
+  try { return path.resolve(String(value || '')).toLowerCase(); }
+  catch { return ''; }
+}
+
+function isPathInsideRoot(filePath, rootPath) {
+  const file = normalizedAbsolutePath(filePath);
+  const root = normalizedAbsolutePath(rootPath).replace(/[\\/]+$/, '');
+  if (!file || !root || file === root) return false;
+  return file.startsWith(`${root}${path.sep}`);
+}
+
+// Materialized live-folder images are ordinary pool image items, but their backing
+// file still lives under a connected folder root. If a COMPLETE live-folder scan has
+// removed the path from folder-state and the root itself is available, the pool item
+// is a confirmed stale reference and can be removed safely. If the root is offline
+// or the path is still retained in folder-state (partial/unavailable scan), keep it.
+function findConfirmedMissingLiveFolderImageIds(library, folderImages, fileExistsFn, rootExistsFn) {
+  const out = [];
+  if (typeof fileExistsFn !== 'function') return out;
+  const rootExists = typeof rootExistsFn === 'function' ? rootExistsFn : fileExistsFn;
+  const lib = library || {};
+  const indexedIds = new Set((Array.isArray(folderImages) ? folderImages : [])
+    .filter((image) => image && image.path)
+    .map((image) => idFor(image.path)));
+  const roots = Object.values(lib)
+    .filter((it) => it && it.type === 'folder' && it.path)
+    .map((it) => it.path);
+
+  if (!roots.length) return out;
+
+  for (const it of Object.values(lib)) {
+    if (!it || it.type !== 'image' || !it.id || !it.path) continue;
+    if (indexedIds.has(idFor(it.path))) continue;
+    let fileExists = false;
+    try { fileExists = !!fileExistsFn(it.path); } catch { fileExists = false; }
+    if (fileExists) continue;
+
+    const confirmedRoot = roots.some((root) => {
+      if (!isPathInsideRoot(it.path, root)) return false;
+      try { return !!rootExists(root); } catch { return false; }
+    });
+    if (confirmedRoot) out.push(it.id);
+  }
+  return out;
+}
+
 // The GC keep-set: every file the config still references (normalized lowercase paths).
 // The pool is self-sufficient — an image stays referenced even when assigned to no monitor
 // (that's the point of the library) — so ALL image paths are kept, plus the legacy globals.
@@ -303,5 +350,6 @@ module.exports = {
   idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, ephemeralFolderImages, recentImages,
+  isPathInsideRoot, findConfirmedMissingLiveFolderImageIds,
   findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
 };

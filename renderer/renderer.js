@@ -88,7 +88,7 @@ if (!window.api) {
       if (!mock.monitors[mid]) mock.monitors[mid] = { light: { itemIds: [] }, dark: { itemIds: [] } };
       const slot = mock.monitors[mid][theme];
       if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
-      return mock;
+      return { config: mock, ok: true, error: null };
     },
     folderInfo: async () => ({ count: 0, subfolders: 0, previews: [] }),
     folderEntries: async () => ({ folders: [], images: [], count: 0 }),
@@ -1719,6 +1719,26 @@ function tryUpgradeMaterializedCards(prevPoolIds) {
 
 // Shared monitor×theme grid for both the single- and multi-assign popups.
 // onPick(monitorId, theme) performs the actual assignment.
+function consumeAssignResult(res) {
+  if (res && res.config) {
+    config = res.config;
+    return { ok: res.ok !== false && !res.error, error: res.error || null };
+  }
+  // Backward-compatible with older mock/preload shapes that returned config directly.
+  if (res && res.library) {
+    config = res;
+    return { ok: true, error: null };
+  }
+  return { ok: false, error: 'unknown' };
+}
+
+async function assignLibraryItem(id, monitorId, th) {
+  let res;
+  try { res = await window.api.libraryAssign(id, monitorId, th); }
+  catch { res = { config, ok: false, error: 'assign_failed' }; }
+  return consumeAssignResult(res);
+}
+
 function appendAssignRows(pop, onPick) {
   const title = document.createElement('div');
   title.className = 'lib-popup-title';
@@ -1757,14 +1777,20 @@ function openMassAssignMenu(anchor) {
   pop.id = 'libPopup';
 
   appendAssignRows(pop, async (monitorId, th) => {
-    for (const id of LIB.selection) config = await window.api.libraryAssign(id, monitorId, th);
+    let assigned = 0;
+    let failed = 0;
+    for (const id of LIB.selection) {
+      const res = await assignLibraryItem(id, monitorId, th);
+      if (res.ok) assigned++;
+      else failed++;
+    }
     closeLibPopup();
     clearSelection();
     syncSelectionUI();
     refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
     renderPreviews();
     renderHome();
-    toast(t('library.assignedToast'));
+    toast(failed ? t(assigned ? 'library.assignPartialToast' : 'library.assignMissingToast') : t('library.assignedToast'));
   });
 
   document.body.appendChild(pop);
@@ -1815,12 +1841,12 @@ function openAssignMenu(it, anchor, materializeFn) {
   appendAssignRows(pop, async (monitorId, th) => {
     const item = await ensureItem();
     if (!item) return;
-    config = await window.api.libraryAssign(item.id, monitorId, th);
+    const res = await assignLibraryItem(item.id, monitorId, th);
     closeLibPopup();
     refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
     renderPreviews();
     renderHome();
-    toast(t('library.assignedToast'));
+    toast(res.ok ? t('library.assignedToast') : t('library.assignMissingToast'));
   });
 
   const sep = document.createElement('div');

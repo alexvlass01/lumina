@@ -207,6 +207,33 @@ ok('recentImages: combines pool and folders in discovery order', recent.length =
 ok('recentImages: marks only folder records ephemeral', recent[0].ephemeral === true
   && recent[1].ephemeral === false);
 
+// ---- confirmed stale materialized live-folder images ----
+const liveLib = {};
+L.addPath(liveLib, 'folder', 'C:/Live');
+const liveGone = L.addPath(liveLib, 'image', 'C:/Live/gone.jpg');
+const liveStillIndexed = L.addPath(liveLib, 'image', 'C:/Live/still-indexed.jpg');
+const liveStillExists = L.addPath(liveLib, 'image', 'C:/Live/still-exists.jpg');
+const outsideGone = L.addPath(liveLib, 'image', 'C:/Other/gone.jpg');
+const indexedLiveRows = [{ path: 'C:/Live/still-indexed.jpg', addedAt: 1, modifiedAt: 1 }];
+const existingLive = new Set(['C:/Live', 'C:/Live/still-exists.jpg']);
+const staleLive = L.findConfirmedMissingLiveFolderImageIds(
+  liveLib,
+  indexedLiveRows,
+  (p) => existingLive.has(p),
+  (p) => existingLive.has(p)
+);
+ok('findConfirmedMissingLiveFolderImageIds: removes only confirmed missing files under available roots',
+  staleLive.length === 1 && staleLive[0] === liveGone
+  && !staleLive.includes(liveStillIndexed)
+  && !staleLive.includes(liveStillExists)
+  && !staleLive.includes(outsideGone));
+ok('findConfirmedMissingLiveFolderImageIds: offline root keeps materialized images',
+  L.findConfirmedMissingLiveFolderImageIds(liveLib, [], () => false, () => false).length === 0);
+ok('isPathInsideRoot: matches only real children',
+  L.isPathInsideRoot('C:/Live/a.jpg', 'C:/Live')
+  && !L.isPathInsideRoot('C:/Live2/a.jpg', 'C:/Live')
+  && !L.isPathInsideRoot('C:/Live', 'C:/Live'));
+
 // ---- findMissingIds: pool entries whose path no longer exists (refresh sanity check) ----
 const lib6 = {};
 const okId = L.addPath(lib6, 'image', 'C:/exists.jpg');

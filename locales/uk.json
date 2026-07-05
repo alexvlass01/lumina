@@ -159,6 +159,8 @@
     "addTagPh": "Додати тег…",
     "remove": "Видалити з бібліотеки",
     "assignedToast": "Призначено",
+    "assignMissingToast": "Файл більше недоступний",
+    "assignPartialToast": "Деякі файли недоступні",
     "removedToast": "Видалено з бібліотеки",
     "selected": "Вибрано: {n}",
     "massAssign": "Призначити...",

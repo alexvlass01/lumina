@@ -159,6 +159,8 @@
     "addTagPh": "Add a tag…",
     "remove": "Remove from library",
     "assignedToast": "Assigned",
+    "assignMissingToast": "File is no longer available",
+    "assignPartialToast": "Some files were unavailable",
     "removedToast": "Removed from library",
     "selected": "Selected: {n}",
     "massAssign": "Assign...",

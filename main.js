@@ -230,6 +230,45 @@ function liveFolderItems() {
   return Object.values(config.library || {}).filter((item) => item && item.type === 'folder' && item.id && item.path);
 }
 
+function pathExists(p) {
+  try { return !!(p && fs.existsSync(p)); } catch { return false; }
+}
+
+function dirExists(p) {
+  try { return !!(p && fs.statSync(p).isDirectory()); } catch { return false; }
+}
+
+function isPathUnderLiveFolder(p) {
+  return liveFolderItems().some((folder) => library.isPathInsideRoot(p, folder.path));
+}
+
+function pruneConfirmedMissingLiveFolderImages() {
+  let ids = [];
+  try {
+    ids = library.findConfirmedMissingLiveFolderImageIds(
+      config.library,
+      folderState.listImages(liveFolderState),
+      pathExists,
+      dirExists
+    );
+  } catch (err) {
+    console.error('Не удалось проверить missing-файлы живых папок:', err);
+    return 0;
+  }
+  let removed = 0;
+  for (const id of ids) {
+    if (removeFromLibrary(id)) removed++;
+  }
+  if (removed) {
+    // Do not call applyForTheme here: removing a vanished live-folder source should
+    // clean the UI/playlist, but the currently displayed desktop may stay until the
+    // next manual or scheduled wallpaper change.
+    saveConfig();
+    trayCtl.refresh();
+  }
+  return removed;
+}
+
 function syncLiveFolderWatchers() {
   if (!liveFolderWatcher) return { watched: 0, failed: 0 };
   return liveFolderWatcher.sync(liveFolderItems());
@@ -302,6 +341,10 @@ function refreshLiveFolders(folderIds = null, force = false) {
         // deletion still needs one notification after the completed scan.
         notified: batchNotified && !finalResult.contentChanged,
       });
+    }
+    const pruned = pruneConfirmedMissingLiveFolderImages();
+    if (pruned) {
+      summaries.push({ id: 'library', status: 'pruned', changed: true, added: 0, removed: pruned });
     }
     broadcastLiveFolderChanges(summaries.filter((summary) => !summary.notified));
     return summaries;
@@ -2003,11 +2046,12 @@ ipcMain.handle('library-refresh', async () => {
   await refreshLiveFolders(null, true);
   liveFolderLastFullScanAt = Date.now();
   scheduleLiveFolderFullScan('hourly', LIVE_FOLDER_FULL_SCAN_MS);
+  const staleLive = pruneConfirmedMissingLiveFolderImages();
   const dead = library.findMissingIds(config.library, (p) => {
     try { return fs.existsSync(p); } catch { return false; }
   }).filter((id) => {
     const item = library.getItem(config.library, id);
-    return item && item.type === 'image';
+    return item && item.type === 'image' && !isPathUnderLiveFolder(item.path);
   });
   let removed = 0;
   for (const id of dead) { if (removeFromLibrary(id)) removed++; }
@@ -2016,7 +2060,7 @@ ipcMain.handle('library-refresh', async () => {
     trayCtl.refresh();
     applyForTheme(null, true); // a removed item may have been the current wallpaper
   }
-  return { config, removed };
+  return { config, removed: removed + staleLive };
 });
 
 // Заполнить размеры файлов (байты) для сортировки «по размеру» — лениво, по запросу.
@@ -2082,7 +2126,11 @@ ipcMain.handle('library-remove-tag', (e, id, tag) => {
 // Назначить элемент пула на монитор×тему (добавляет в плейлист слота) + применить, если тема активна.
 ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
   const theme = which === 'dark' ? 'dark' : 'light';
-  if (!monitorId || !id || !config.library[id]) return config;
+  const item = library.getItem(config.library, id);
+  if (!monitorId || !id || !item) return { config, ok: false, error: 'missing_item' };
+  if (item.type === 'image' && !pathExists(item.path)) {
+    return { config, ok: false, error: 'missing_file' };
+  }
   const slot = ensureSlot(monitorId, theme);
   if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
   saveConfig();
@@ -2097,7 +2145,7 @@ ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
       rescheduleSlideshowAfterManualWallpaperChange();
     }
   }
-  return config;
+  return { config, ok: true, error: null };
 });
 
 // ---- Internet providers: Wallhaven + Gelbooru, with Danbooru fallback ----
