@@ -128,6 +128,20 @@ ok('migrateSlot: already-new {itemIds} kept', (() => {
   const s = L.migrateSlot({}, { itemIds: ['abc', 'def'] });
   return s.itemIds.join() === 'abc,def';
 })());
+ok('migrateSlot: explicit empty marker survives only on empty slots', (() => {
+  const empty = L.migrateSlot({}, { itemIds: [], legacyFallbackDisabled: true });
+  const full = L.migrateSlot({}, { itemIds: ['abc'], legacyFallbackDisabled: true });
+  return empty.itemIds.length === 0 && empty.legacyFallbackDisabled === true
+    && full.itemIds.length === 1 && full.legacyFallbackDisabled !== true;
+})());
+ok('slot explicit empty helpers gate legacy fallback', (() => {
+  const slot = { itemIds: [] };
+  return L.allowsLegacyFallback(slot)
+    && L.markSlotExplicitEmpty(slot) === true
+    && L.allowsLegacyFallback(slot) === false
+    && L.clearSlotExplicitEmpty(slot) === true
+    && L.allowsLegacyFallback(slot) === true;
+})());
 
 // ---- migrateConfig: the real thing ----
 ok('migrateConfig: two monitors, light/dark not mixed up', (() => {

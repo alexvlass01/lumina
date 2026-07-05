@@ -257,6 +257,24 @@ function findMissingIds(library, existsFn) {
   return out;
 }
 
+// A migrated old config can still use lightWallpaper/darkWallpaper as a legacy
+// fallback when a monitor has no playlist. Once the user explicitly empties a
+// slot, that fallback becomes surprising, so the slot carries a small opt-out.
+function markSlotExplicitEmpty(slot) {
+  if (!slot || !Array.isArray(slot.itemIds) || slot.itemIds.length > 0) return false;
+  if (slot.legacyFallbackDisabled === true) return false;
+  slot.legacyFallbackDisabled = true;
+  return true;
+}
+function clearSlotExplicitEmpty(slot) {
+  if (!slot || slot.legacyFallbackDisabled !== true) return false;
+  delete slot.legacyFallbackDisabled;
+  return true;
+}
+function allowsLegacyFallback(slot) {
+  return !(slot && slot.legacyFallbackDisabled === true);
+}
+
 // ---- tags (manual, on pool items) ----
 
 // Normalize a tag: trimmed, collapsed whitespace, lowercase (tags are categories).
@@ -315,7 +333,10 @@ function listItems(library, opts = {}) {
 // current {items:[{type,path}]} shape, or the legacy string path. Populates `library`.
 function migrateSlot(library, slot) {
   if (slot && Array.isArray(slot.itemIds)) {
-    return { itemIds: slot.itemIds.filter((id) => typeof id === 'string' && id) };
+    const itemIds = slot.itemIds.filter((id) => typeof id === 'string' && id);
+    const out = { itemIds };
+    if (!itemIds.length && slot.legacyFallbackDisabled === true) out.legacyFallbackDisabled = true;
+    return out;
   }
   const norm = playlist.normalizeSlot(slot); // -> { items: [{type,path}] }
   const itemIds = [];
@@ -351,5 +372,6 @@ module.exports = {
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, ephemeralFolderImages, recentImages,
   isPathInsideRoot, findConfirmedMissingLiveFolderImageIds,
-  findMissingIds, referencedFiles, listItems, migrateSlot, migrateConfig,
+  findMissingIds, markSlotExplicitEmpty, clearSlotExplicitEmpty, allowsLegacyFallback,
+  referencedFiles, listItems, migrateSlot, migrateConfig,
 };

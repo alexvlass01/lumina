@@ -10,7 +10,7 @@ const path = require('path');
 const library = require('./library');
 
 const DEFAULT_CONFIG = {
-  lightWallpaper: '',     // legacy global fallback (only on COM failure / empty playlist)
+  lightWallpaper: '',     // legacy global fallback (unless a slot was explicitly emptied)
   darkWallpaper: '',
   singleWallpaper: false, // одни обои на все мониторы (вместо своей пары на каждый)
   separateThemes: true,   // раздельные обои день/ночь (фишка Lumina). false = один общий слот:

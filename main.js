@@ -921,7 +921,10 @@ function wallpaperFor(monitorId, theme) {
   }
   const p = currentImageFor(monitorId, theme);
   if (p) return p;
-  // легаси-fallback только если у монитора пустой плейлист (старые конфиги / COM-сбой)
+  const m = config.monitors && config.monitors[monitorId];
+  const slot = m && m[theme];
+  if (!library.allowsLegacyFallback(slot)) return '';
+  // Легаси-fallback нужен старым конфигам, но не после явной очистки слота пользователем.
   return (theme === 'dark' ? config.darkWallpaper : config.lightWallpaper) || '';
 }
 
@@ -1856,6 +1859,7 @@ function assignToSlot(slot, type, srcPath) {
   if (!id) return false;
   if (slot.itemIds.includes(id)) return false; // уже в этом слоте
   slot.itemIds.push(id);
+  library.clearSlotExplicitEmpty(slot);
   return true;
 }
 
@@ -1863,10 +1867,15 @@ function assignToSlot(slot, type, srcPath) {
 function removeFromLibrary(id) {
   const item = library.getItem(config.library, id);
   if (!library.removeItem(config.library, id)) return false;
-  for (const m of Object.values(config.monitors || {})) {
+  for (const [monitorId, m] of Object.entries(config.monitors || {})) {
     for (const th of ['light', 'dark']) {
       if (m[th] && Array.isArray(m[th].itemIds)) {
+        const before = m[th].itemIds.length;
         m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
+        if (before > 0 && m[th].itemIds.length === 0) {
+          library.markSlotExplicitEmpty(m[th]);
+          storeSlideshowPosition(monitorId, th, { index: 0, path: '' });
+        }
       }
     }
   }
@@ -1948,8 +1957,15 @@ ipcMain.handle('add-slot-paths', async (e, monitorId, which, paths) => {
 
 ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
   if (!monitorId) return config;
+  const theme = which === 'dark' ? 'dark' : 'light';
   const slot = ensureSlot(monitorId, which);
-  if (index >= 0 && index < slot.itemIds.length) slot.itemIds.splice(index, 1);
+  if (index >= 0 && index < slot.itemIds.length) {
+    slot.itemIds.splice(index, 1);
+    if (slot.itemIds.length === 0) {
+      library.markSlotExplicitEmpty(slot);
+      storeSlideshowPosition(monitorId, theme, { index: 0, path: '' });
+    }
+  }
   saveConfig();
   gcWallpapers();
   trayCtl.refresh();
@@ -1958,7 +1974,11 @@ ipcMain.handle('remove-slot-item', (e, monitorId, which, index) => {
 
 ipcMain.handle('clear-slot', (e, monitorId, which) => {
   if (!monitorId) return config;
-  ensureSlot(monitorId, which).itemIds = [];
+  const theme = which === 'dark' ? 'dark' : 'light';
+  const slot = ensureSlot(monitorId, which);
+  slot.itemIds = [];
+  library.markSlotExplicitEmpty(slot);
+  storeSlideshowPosition(monitorId, theme, { index: 0, path: '' });
   saveConfig();
   gcWallpapers();
   return config;
