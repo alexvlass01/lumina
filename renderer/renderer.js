@@ -1059,11 +1059,19 @@ function renderLibrary() {
   setLibViewHeader();
   const local = $('#libLocal');
   const online = $('#libOnline');
-  const canAddLocalSources = !LIB.folderPath && (LIB.filter === 'all' || LIB.filter === 'folder');
+  const canAddLocalSources = !LIB.folderPath;
+  const showAddPhotos = canAddLocalSources && LIB.filter === 'all';
+  const showAddFolder = canAddLocalSources && (LIB.filter === 'all' || LIB.filter === 'folder');
   const addPhotos = $('#libAddPhotos');
   const addFolder = $('#libAddFolder');
-  if (addPhotos) addPhotos.hidden = !canAddLocalSources;
-  if (addFolder) addFolder.hidden = !canAddLocalSources;
+  if (addPhotos) {
+    addPhotos.hidden = !showAddPhotos;
+    addPhotos.classList.toggle('suggested', showAddPhotos);
+  }
+  if (addFolder) {
+    addFolder.hidden = !showAddFolder;
+    addFolder.classList.toggle('suggested', LIB.filter === 'folder');
+  }
   if (LIB.filter === 'online') {
     if (local) local.hidden = true;
     if (online) online.hidden = false;
@@ -1229,6 +1237,18 @@ function crumbTo(i) {
   renderLibrary();
 }
 function exitToFolders() { exitFolderState(); renderLibrary(); }
+
+function navigateFolderBack() {
+  if (!LIB.folderPath) return false;
+  if (LIB.crumbs.length > 1) {
+    LIB.crumbs = LIB.crumbs.slice(0, -1);
+    LIB.folderPath = LIB.crumbs[LIB.crumbs.length - 1].path;
+    renderLibrary();
+  } else {
+    exitToFolders();
+  }
+  return true;
+}
 
 // Render the breadcrumb bar (hidden unless inside a folder). Includes a "‹ all folders"
 // back link and an "Assign this folder" action that materializes the current dir + assigns.
@@ -2056,6 +2076,24 @@ function initLibrary() {
     clearSelection();
     syncSelectionUI();
   });
+
+  let lastLibraryMouseBackAt = 0;
+  function onLibraryMouseBack(e) {
+    if (e.button !== 3 || activePage !== 'library' || !LIB.folderPath) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === 'mousedown') return;
+    const now = Date.now();
+    if (now - lastLibraryMouseBackAt < 120) return;
+    lastLibraryMouseBackAt = now;
+    closeLibPopup();
+    clearSelection();
+    syncSelectionUI();
+    navigateFolderBack();
+  }
+  document.addEventListener('mousedown', onLibraryMouseBack, true);
+  document.addEventListener('mouseup', onLibraryMouseBack, true);
+  document.addEventListener('auxclick', onLibraryMouseBack, true);
 
   // Escape key clears selection
   document.addEventListener('keydown', (e) => {
@@ -3676,6 +3714,7 @@ async function init() {
     setSwitch($('#swSlideshow'), on);
     config = await window.api.setSlideshow({ enabled: on });
     updateSlideshowControls();
+    renderHome();
     toast(on ? t('toast.slideshowOn') : t('toast.slideshowOff'));
   });
   $('#slideInterval').addEventListener('change', async () => {
@@ -3683,6 +3722,8 @@ async function init() {
     if (!Number.isFinite(v) || v < 1) v = 30;
     config = await window.api.setSlideshow({ intervalMin: v });
     $('#slideInterval').value = config.slideshow.intervalMin;
+    updateSlideshowControls();
+    renderHome();
   });
   $('#selSlideOrder').addEventListener('change', async () => {
     config = await window.api.setSlideshow({ order: $('#selSlideOrder').value });
@@ -3692,6 +3733,7 @@ async function init() {
     setSwitch($('#swSlideInterval'), on);
     config = await window.api.setSlideshow({ intervalEnabled: on });
     updateSlideshowControls();
+    renderHome();
   });
 
   // Slideshow event triggers (startup, wake from sleep, optional stealth delay)
