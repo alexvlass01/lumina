@@ -768,6 +768,7 @@ const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
+const GALLERY_MAX_PAYLOAD_ITEMS = 500;
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
 // Unified online feed state. view = 'search' | 'favorites'; loaded gates the initial
@@ -1101,7 +1102,14 @@ function renderLibrary() {
   if (empty) { empty.hidden = items.length > 0; if (!items.length) setLibEmptyText('library.empty'); }
   setLibViewHeader(items.length);
   grid.innerHTML = '';
-  items.forEach((it) => grid.appendChild(buildLibCard(it, assigned.has(it.id))));
+  const galleryItems = items.filter((it) => it.type !== 'folder').map(galleryItemFromLibrary);
+  setGridGallerySource(grid, galleryItems);
+  let galleryIndex = 0;
+  items.forEach((it) => {
+    const card = buildLibCard(it, assigned.has(it.id));
+    if (card.__galleryItem) bindCardGalleryItem(card, galleryItems[galleryIndex] || card.__galleryItem, galleryIndex++);
+    grid.appendChild(card);
+  });
   scheduleJustifiedLayout(grid);
   // Favorites/Tags also sort by size: load pool sizes in the background and re-render
   // once (so a cold start with size sort, or any first size sort, isn't blocked).
@@ -1381,6 +1389,7 @@ async function renderFolderView(tok) {
   setLibViewHeader(total);
   if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
   grid.innerHTML = '';
+  setGridGallerySource(grid, entries.map(galleryItemFromEntry));
   folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
   scheduleJustifiedLayout(grid); // lay out subfolders immediately; images stream in below
   renderEntriesLazily(grid, entries, assignedIds(), tok);
@@ -1492,6 +1501,7 @@ async function renderAllView(tok) {
   if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }
   setLibViewHeader(entries.length);
   grid.innerHTML = '';
+  setGridGallerySource(grid, entries.map(galleryItemFromEntry));
   renderEntriesLazily(grid, entries, assignedIds(), tok);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
@@ -1501,6 +1511,10 @@ async function renderAllView(tok) {
 function renderEntriesLazily(grid, entries, assigned, tok) {
   const CHUNK = 60;
   const sentinel = $('#libSentinel');
+  const galleryItems = Array.isArray(grid && grid.__galleryItems) && grid.__galleryItems.length === entries.length
+    ? grid.__galleryItems
+    : entries.map(galleryItemFromEntry);
+  setGridGallerySource(grid, galleryItems);
   let i = 0;
   let drawPromise = null;
   const drawNext = () => {
@@ -1532,7 +1546,9 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
       if (tok !== allViewToken) return;
       for (; i < end; i++) {
         const en = entries[i];
-        grid.appendChild(en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path));
+        const card = en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path);
+        bindCardGalleryItem(card, galleryItems[i] || card.__galleryItem, i);
+        grid.appendChild(card);
       }
       scheduleJustifiedLayout(grid);
       if (sentinel) sentinel.hidden = i >= entries.length;
@@ -1571,6 +1587,60 @@ function makeLibCardFocusable(card) {
 // ---- Gallery viewer helpers ----
 function gallerySubtitle(parts) {
   return parts.filter(Boolean).join(' - ');
+}
+
+function setGridGallerySource(grid, items) {
+  if (!grid) return;
+  const list = (items || []).filter(Boolean);
+  grid.__galleryItems = list;
+  grid.__galleryIndexByKey = new Map();
+  list.forEach((item, index) => {
+    if (item && item.key && !grid.__galleryIndexByKey.has(item.key)) {
+      grid.__galleryIndexByKey.set(item.key, index);
+    }
+  });
+}
+
+function addGridGalleryItem(grid, item) {
+  if (!grid || !item) return -1;
+  if (!Array.isArray(grid.__galleryItems)) setGridGallerySource(grid, []);
+  const index = grid.__galleryItems.length;
+  grid.__galleryItems.push(item);
+  if (!grid.__galleryIndexByKey) grid.__galleryIndexByKey = new Map();
+  if (item.key && !grid.__galleryIndexByKey.has(item.key)) {
+    grid.__galleryIndexByKey.set(item.key, index);
+  }
+  return index;
+}
+
+function appendGalleryCard(grid, card, item) {
+  if (!grid || !card) return;
+  const galleryItem = item || card.__galleryItem;
+  if (galleryItem) bindCardGalleryItem(card, galleryItem, addGridGalleryItem(grid, galleryItem));
+  grid.appendChild(card);
+}
+
+function bindCardGalleryItem(card, item, index) {
+  if (!card || !item) return;
+  card.__galleryItem = item;
+  if (Number.isFinite(index) && index >= 0) card.dataset.galleryIndex = String(index);
+  else delete card.dataset.galleryIndex;
+}
+
+function galleryItemFromEntry(entry) {
+  return entry && entry.item ? galleryItemFromLibrary(entry.item) : galleryItemFromPath(entry && entry.path);
+}
+
+function galleryPayloadWindow(items, index) {
+  const list = (items || []).filter(Boolean);
+  if (list.length <= GALLERY_MAX_PAYLOAD_ITEMS) return { items: list, index };
+  const safeIndex = Math.max(0, Math.min(list.length - 1, Number.isFinite(index) ? Math.floor(index) : 0));
+  const half = Math.floor(GALLERY_MAX_PAYLOAD_ITEMS / 2);
+  const start = Math.max(0, Math.min(safeIndex - half, list.length - GALLERY_MAX_PAYLOAD_ITEMS));
+  return {
+    items: list.slice(start, start + GALLERY_MAX_PAYLOAD_ITEMS),
+    index: safeIndex - start,
+  };
 }
 
 function galleryItemFromLibrary(it) {
@@ -1621,12 +1691,28 @@ function galleryItemFromInternet(item) {
 
 function openGalleryFromCard(card, fallbackItem) {
   const grid = card && card.closest('.lib-grid');
+  const fallback = fallbackItem || (card && card.__galleryItem);
+  const source = grid && Array.isArray(grid.__galleryItems) ? grid.__galleryItems : [];
+  if (source.length) {
+    const explicitIndex = Number(card && card.dataset.galleryIndex);
+    let index = Number.isInteger(explicitIndex) && explicitIndex >= 0 && explicitIndex < source.length
+      ? explicitIndex
+      : -1;
+    if (index < 0 && fallback && fallback.key && grid.__galleryIndexByKey) {
+      const keyed = grid.__galleryIndexByKey.get(fallback.key);
+      if (Number.isInteger(keyed)) index = keyed;
+    }
+    if (index >= 0) {
+      openGalleryViewer(source, index);
+      return;
+    }
+  }
   const cards = grid
     ? Array.from(grid.querySelectorAll('.lib-card')).filter((c) => c.__galleryItem)
     : [card].filter(Boolean);
   const items = cards.map((c) => c.__galleryItem).filter(Boolean);
-  const index = Math.max(0, cards.indexOf(card));
-  openGalleryViewer(items.length ? items : [fallbackItem].filter(Boolean), index);
+  const domIndex = Math.max(0, cards.indexOf(card));
+  openGalleryViewer(items.length ? items : [fallback].filter(Boolean), domIndex);
 }
 
 function openGalleryViewer(items, index = 0) {
@@ -1638,9 +1724,10 @@ function openGalleryViewer(items, index = 0) {
     ...entry,
     added: entry.added || isGalleryItemAdded(entry),
   }));
+  const payload = galleryPayloadWindow(payloadItems, index);
   window.api.openGalleryViewer({
-    items: payloadItems,
-    index: Math.max(0, Math.min(payloadItems.length - 1, index || 0)),
+    items: payload.items,
+    index: Math.max(0, Math.min(payload.items.length - 1, payload.index || 0)),
   }).catch(() => toast(t('viewer.loadError')));
 }
 
@@ -2673,7 +2760,7 @@ async function loadFavoritesFeed() {
   ONLINE.loading = true;
   const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
   if (more) more.hidden = true;
-  if (grid) grid.innerHTML = '';
+  if (grid) { grid.innerHTML = ''; setGridGallerySource(grid, []); }
   if (note) note.textContent = t('online.loading');
   let res;
   try { res = await window.api.cloudFavorites(); } catch { res = { error: 'network' }; }
@@ -2684,7 +2771,7 @@ async function loadFavoritesFeed() {
     return;
   }
   CLOUDFAV.ids = new Set((res.items || []).map((it) => it.id)); CLOUDFAV.fetched = true;
-  (res.items || []).forEach((it) => { if (grid) grid.appendChild(buildCloudCard(it)); });
+  (res.items || []).forEach((it) => { if (grid) appendGalleryCard(grid, buildCloudCard(it)); });
   if (grid) scheduleJustifiedLayout(grid);
   const n = grid ? grid.children.length : 0;
   setLibViewHeader(n);
@@ -2705,7 +2792,7 @@ async function loadLuminaResults(reset) {
   } catch { res = { error: 'network' }; }
   if (!res || res.error) { LUMINA.cursor = null; return; }
   LUMINA.cursor = res.nextCursor || null;
-  (res.items || []).forEach((it) => { if (grid) grid.appendChild(buildCloudCard(it)); });
+  (res.items || []).forEach((it) => { if (grid) appendGalleryCard(grid, buildCloudCard(it)); });
 }
 
 // Already imported? Cloud items carry a stable "lumina:<id>" source marker.
@@ -2834,7 +2921,12 @@ async function doOnlineSearch(reset) {
   const sources = onlineSources();
   const qEl = $('#whQuery'); INTERNET.q = (qEl && qEl.value || '').trim();
   const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
-  if (reset) { INTERNET.page = 1; LUMINA.cursor = null; ONLINE.loaded = true; if (grid) grid.innerHTML = ''; }
+  if (reset) {
+    INTERNET.page = 1;
+    LUMINA.cursor = null;
+    ONLINE.loaded = true;
+    if (grid) { grid.innerHTML = ''; setGridGallerySource(grid, []); }
+  }
   ONLINE.loading = true; if (more) more.disabled = true;
   if (note) note.textContent = t('online.loading');
 
@@ -2858,7 +2950,7 @@ async function loadInternetResults() {
   if (typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
   if (res.error) { INTERNET.lastPage = INTERNET.page; return; }
   INTERNET.lastPage = (res.meta && res.meta.lastPage) || INTERNET.page;
-  (res.items || []).forEach((it) => { if (grid) grid.appendChild(buildInternetCard(it)); });
+  (res.items || []).forEach((it) => { if (grid) appendGalleryCard(grid, buildInternetCard(it)); });
 }
 
 // Note + "more" button + header for the current shared grid.

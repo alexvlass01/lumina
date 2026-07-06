@@ -26,6 +26,7 @@ const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: �
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
 const cloudDevProfile = require('./src/cloud/dev-profile'); // isolated userData for explicit staging launches
+const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 
 // Resolve staging userData before the single-instance lock and before any paths
 // are derived from app.getPath('userData'). This keeps config, wallpapers,
@@ -1168,28 +1169,7 @@ function showWindow() {
 }
 
 function sanitizeGalleryPayload(payload) {
-  const raw = payload && typeof payload === 'object' ? payload : {};
-  const items = Array.isArray(raw.items) ? raw.items : [];
-  const safeItems = items.slice(0, 500).map((item) => {
-    if (!item || typeof item !== 'object') return null;
-    const rawItem = item.raw && typeof item.raw === 'object' ? item.raw : {};
-    return {
-      kind: String(item.kind || ''),
-      key: String(item.key || ''),
-      title: String(item.title || '').slice(0, 300),
-      subtitle: String(item.subtitle || '').slice(0, 300),
-      path: typeof item.path === 'string' ? item.path : '',
-      previewUrl: typeof item.previewUrl === 'string' ? item.previewUrl : '',
-      query: typeof item.query === 'string' ? item.query.slice(0, 500) : '',
-      added: !!item.added,
-      raw: rawItem,
-    };
-  }).filter(Boolean);
-  const index = Number(raw.index);
-  return {
-    items: safeItems,
-    index: safeItems.length ? Math.max(0, Math.min(safeItems.length - 1, Number.isFinite(index) ? Math.floor(index) : 0)) : 0,
-  };
+  return galleryPayloadMod.sanitizeGalleryPayload(payload);
 }
 
 function createGalleryWindow() {
