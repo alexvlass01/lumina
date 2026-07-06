@@ -22,6 +22,7 @@ const configMod = require('./src/config'); // дефолты + load/migrate/save
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 const { createStealthController } = require('./src/stealth-session'); // отменяемая «невидимая смена» (под тестами)
+const { createTaskQueue } = require('./src/task-queue'); // small async queue for expensive OS thumbnail jobs
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
@@ -2440,24 +2441,46 @@ ipcMain.handle('folder-info', (e, dir) => {
 // при даунскейле. Вместе с URL держим размер thumbnail: его пропорция совпадает с оригиналом
 // и нужна justified-сетке. LRU-кэш по "путь|WxH" хранит и промахи.
 const thumbCache = new Map();
+const thumbPending = new Map();
+const runThumbnailTask = createTaskQueue(4);
 const THUMB_CAP = 800;
+function cachedThumb(key) {
+  const hit = thumbCache.get(key);
+  if (hit === undefined) return undefined;
+  thumbCache.delete(key);
+  thumbCache.set(key, hit);
+  return hit;
+}
 async function thumbnailData(p, w, h) {
   if (!p || typeof p !== 'string') return { url: '', width: 0, height: 0 };
   const W = w || 320; const H = h || 200;
   const key = `${p}|${W}x${H}`;
-  const hit = thumbCache.get(key);
-  if (hit !== undefined) { thumbCache.delete(key); thumbCache.set(key, hit); return hit; } // LRU bump
-  let data = { url: '', width: 0, height: 0 };
-  try {
-    const img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
-    if (img && !img.isEmpty()) {
-      const size = img.getSize();
-      data = { url: img.toDataURL(), width: size.width || 0, height: size.height || 0 };
+  const hit = cachedThumb(key);
+  if (hit !== undefined) return hit;
+  const pending = thumbPending.get(key);
+  if (pending) return pending;
+  const job = runThumbnailTask(async () => {
+    const lateHit = cachedThumb(key);
+    if (lateHit !== undefined) return lateHit;
+    let data = { url: '', width: 0, height: 0 };
+    try {
+      const img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
+      if (img && !img.isEmpty()) {
+        const size = img.getSize();
+        data = { url: img.toDataURL(), width: size.width || 0, height: size.height || 0 };
+      }
+    } catch {}
+    thumbCache.set(key, data);
+    if (thumbCache.size > THUMB_CAP) {
+      const k0 = thumbCache.keys().next().value;
+      thumbCache.delete(k0);
     }
-  } catch {}
-  thumbCache.set(key, data);
-  if (thumbCache.size > THUMB_CAP) { const k0 = thumbCache.keys().next().value; thumbCache.delete(k0); }
-  return data;
+    return data;
+  }).finally(() => {
+    thumbPending.delete(key);
+  });
+  thumbPending.set(key, job);
+  return job;
 }
 ipcMain.handle('thumb', async (e, p, w, h) => {
   const data = await thumbnailData(p, w, h);

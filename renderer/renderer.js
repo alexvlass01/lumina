@@ -769,6 +769,9 @@ const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], in
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
 const GALLERY_MAX_PAYLOAD_ITEMS = 500;
+const LIB_CHUNK_SIZE = 60;
+const LIB_RENDER_PRELOAD_MARGIN = '2200px';
+const LIB_THUMB_PRELOAD_MARGIN = '1600px';
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
 // Unified online feed state. view = 'search' | 'favorites'; loaded gates the initial
@@ -1347,7 +1350,7 @@ function lazyThumb(card, p, w, h) {
         for (const en of ents) {
           if (en.isIntersecting) { thumbIO.unobserve(en.target); loadThumbInto(en.target); }
         }
-      }, { root: null, rootMargin: '300px' });
+      }, { root: null, rootMargin: LIB_THUMB_PRELOAD_MARGIN });
     }
     thumbIO.observe(card);
   } else {
@@ -1506,10 +1509,44 @@ async function renderAllView(tok) {
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
 
+function refreshChunkAspects(entries, cards, tok) {
+  const missing = entries
+    .map((en, index) => ({ en, card: cards[index] }))
+    .filter(({ en }) => en && en.path && !knownLibAspect(en.item, en.path));
+  if (!missing.length || !window.api.thumbAspects) return;
+  window.api.thumbAspects(
+    missing.map(({ en }) => ({ id: en.item && en.item.id, path: en.path })),
+    320,
+    200
+  ).then((aspects) => {
+    if (tok !== allViewToken) return;
+    const byPath = new Map();
+    for (const info of (aspects || [])) {
+      if (!info || !info.path || !(info.aspect > 0)) continue;
+      const key = normPathKey(info.path);
+      LIB.aspectCache.set(key, info.aspect);
+      byPath.set(key, info.aspect);
+    }
+    let changed = false;
+    for (const { en, card } of missing) {
+      if (!card || !card.isConnected) continue;
+      const aspect = byPath.get(normPathKey(en.path)) || LIB.aspectCache.get(normPathKey(en.path));
+      if (!aspect) continue;
+      if (en.item) en.item.aspect = aspect;
+      card.dataset.aspectKnown = 'true';
+      setLibCardAspect(card, aspect);
+      changed = true;
+    }
+    if (changed) scheduleJustifiedLayout($('#libGrid'));
+  }).catch((err) => {
+    console.error('library: aspect prefetch failed', err);
+  });
+}
+
 // Append entries in chunks; an IntersectionObserver on #libSentinel pulls the next chunk
-// as the user scrolls. Falls back to rendering everything if observers are unavailable.
+// as the user scrolls. Cards are inserted immediately, while missing aspect ratios are
+// refined in the background so large folders do not pause at the chunk boundary.
 function renderEntriesLazily(grid, entries, assigned, tok) {
-  const CHUNK = 60;
   const sentinel = $('#libSentinel');
   const galleryItems = Array.isArray(grid && grid.__galleryItems) && grid.__galleryItems.length === entries.length
     ? grid.__galleryItems
@@ -1521,36 +1558,19 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
     if (drawPromise) return drawPromise;
     if (tok !== allViewToken) return Promise.resolve();
     drawPromise = (async () => {
-      const end = Math.min(i + CHUNK, entries.length);
+      const end = Math.min(i + LIB_CHUNK_SIZE, entries.length);
       const chunk = entries.slice(i, end);
-      try {
-        const missing = chunk.filter((en) => !knownLibAspect(en.item, en.path));
-        if (missing.length && window.api.thumbAspects) {
-          const aspects = await window.api.thumbAspects(
-            missing.map((en) => ({ id: en.item && en.item.id, path: en.path })),
-            320,
-            200
-          );
-          if (tok !== allViewToken) return;
-          for (const info of (aspects || [])) {
-            if (info && info.path && info.aspect > 0) LIB.aspectCache.set(normPathKey(info.path), info.aspect);
-          }
-          for (const en of missing) {
-            const aspect = LIB.aspectCache.get(normPathKey(en.path));
-            if (aspect && en.item) en.item.aspect = aspect;
-          }
-        }
-      } catch (err) {
-        console.error('library: aspect prefetch failed', err);
-      }
       if (tok !== allViewToken) return;
+      const cards = [];
       for (; i < end; i++) {
         const en = entries[i];
         const card = en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path);
         bindCardGalleryItem(card, galleryItems[i] || card.__galleryItem, i);
         grid.appendChild(card);
+        cards.push(card);
       }
       scheduleJustifiedLayout(grid);
+      refreshChunkAspects(chunk, cards, tok);
       if (sentinel) sentinel.hidden = i >= entries.length;
     })().finally(() => { drawPromise = null; });
     return drawPromise;
@@ -1561,7 +1581,7 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
       if (tok !== allViewToken || i >= entries.length) return;
       libObserver = new IntersectionObserver((ents) => {
         if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) drawNext();
-      }, { root: null, rootMargin: '400px' });
+      }, { root: null, rootMargin: LIB_RENDER_PRELOAD_MARGIN });
       libObserver.observe(sentinel);
     });
   } else {
