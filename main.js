@@ -2442,7 +2442,7 @@ ipcMain.handle('folder-info', (e, dir) => {
 // и нужна justified-сетке. LRU-кэш по "путь|WxH" хранит и промахи.
 const thumbCache = new Map();
 const thumbPending = new Map();
-const runThumbnailTask = createTaskQueue(4);
+const runThumbnailTask = createTaskQueue(1);
 const THUMB_CAP = 800;
 function cachedThumb(key) {
   const hit = thumbCache.get(key);

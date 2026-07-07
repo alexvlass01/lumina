@@ -757,6 +757,7 @@ const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [],
 let libObserver = null; // IntersectionObserver for lazy "All" rendering
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
+let libScrollCleanup = null; // scroll fallback for lazy chunks inside .page
 const deferredLiveRefresh = window.DeferredRefresh.create(['home', 'library']);
 let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
 let lastLibViewKey = '';       // view IDENTITY only (filter/folder/query/sort); scroll resets to top only when THIS changes
@@ -764,14 +765,18 @@ let activePage = 'home';       // current top-level tab; used to save/restore pe
 const pageScroll = { home: 0, library: 0, design: 0, prefs: 0 }; // remembered scrollTop per tab
 let justifiedFrame = 0;
 const justifiedPending = new Set();
+let aspectLayoutTimer = 0;
+let libLazyKick = null;
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
 const GALLERY_MAX_PAYLOAD_ITEMS = 500;
-const LIB_CHUNK_SIZE = 60;
-const LIB_RENDER_PRELOAD_MARGIN = '2200px';
-const LIB_THUMB_PRELOAD_MARGIN = '1600px';
+const LIB_CHUNK_SIZE = 48;
+const LIB_RENDER_PRELOAD_PX = 2800;
+const LIB_THUMB_PRELOAD_PX = 800;
+const LIB_RENDER_PRELOAD_MARGIN = `${LIB_RENDER_PRELOAD_PX}px`;
+const LIB_THUMB_PRELOAD_MARGIN = `${LIB_THUMB_PRELOAD_PX}px`;
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
 // Unified online feed state. view = 'search' | 'favorites'; loaded gates the initial
@@ -784,14 +789,17 @@ const CLOUDAUTH = { state: null, fetched: false, signingIn: false };
 // Cloud C5: account-synced favorites (ids of catalog items the user has hearted).
 const CLOUDFAV = { ids: new Set(), fetched: false };
 
-function setLibCardAspect(card, aspect) {
+function setLibCardAspect(card, aspect, opts = {}) {
   if (!card) return;
   const safe = window.JustifiedLayout.normalizeAspect(aspect, 0.65, 3);
   const previous = Number(card.dataset.aspect);
   if (Number.isFinite(previous) && Math.abs(previous - safe) < 0.005) return;
   card.dataset.aspect = String(safe);
   const grid = card.closest('.lib-grid');
-  if (grid) scheduleJustifiedLayout(grid);
+  if (grid) {
+    if (opts.deferred) scheduleDeferredJustifiedLayout(grid);
+    else scheduleJustifiedLayout(grid);
+  }
 }
 
 function knownLibAspect(item, p) {
@@ -1141,7 +1149,13 @@ function buildLibCard(it, isAssigned) {
   fav.addEventListener('click', async (e) => {
     e.stopPropagation();
     config = await window.api.libraryToggleFavorite(it.id);
-    renderLibrary();
+    const fresh = config.library && config.library[it.id];
+    if (LIB.filter === 'favorite' && !(fresh && fresh.favorite)) {
+      renderLibrary();
+      return;
+    }
+    setCardFavorite(card, !!(fresh && fresh.favorite));
+    lastLibRenderKey = libRenderKey();
   });
   card.appendChild(fav);
 
@@ -1315,13 +1329,20 @@ function poolImageMap() {
 
 // ---- lazy thumbnails: fetch a small preview only when the card scrolls into view ----
 // Большие сетки «Все» иначе декодировали бы тысячи полноразмерных фото разом → зависания.
+function libScrollRoot() {
+  return document.querySelector('.page');
+}
 function resetLibObservers() {
   if (libObserver) { libObserver.disconnect(); libObserver = null; }
   if (thumbIO) { thumbIO.disconnect(); thumbIO = null; }
+  if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
+  libLazyKick = null;
 }
 function loadThumbInto(card) {
+  if (!card || card.dataset.thumbLoading === 'true' || card.dataset.thumbLoaded === 'true') return;
   const p = card.dataset.thumbPath;
   if (!p) return;
+  card.dataset.thumbLoading = 'true';
   const w = +card.dataset.thumbW || 320;
   const h = +card.dataset.thumbH || 200;
   const request = window.api.thumbInfo
@@ -1330,15 +1351,16 @@ function loadThumbInto(card) {
   request.then((info) => {
     const u = info && info.url;
     if (!u) { card.classList.add('missing'); return; }
+    card.dataset.thumbLoaded = 'true';
     card.classList.remove('missing');
     card.style.backgroundImage = `url("${u}")`;
     if (info.width > 0 && info.height > 0) {
       const aspect = info.width / info.height;
       LIB.aspectCache.set(normPathKey(p), aspect);
-      if (card.dataset.aspectKnown !== 'true') setLibCardAspect(card, aspect);
+      if (card.dataset.aspectKnown !== 'true') setLibCardAspect(card, aspect, { deferred: true });
       card.dataset.aspectKnown = 'true';
     }
-  });
+  }).finally(() => { delete card.dataset.thumbLoading; });
 }
 function lazyThumb(card, p, w, h) {
   card.dataset.thumbPath = p;
@@ -1350,7 +1372,7 @@ function lazyThumb(card, p, w, h) {
         for (const en of ents) {
           if (en.isIntersecting) { thumbIO.unobserve(en.target); loadThumbInto(en.target); }
         }
-      }, { root: null, rootMargin: LIB_THUMB_PRELOAD_MARGIN });
+      }, { root: libScrollRoot(), rootMargin: LIB_THUMB_PRELOAD_MARGIN });
     }
     thumbIO.observe(card);
   } else {
@@ -1450,9 +1472,22 @@ function buildEphemeralImageCard(p) {
   fav.title = t('library.favorite');
   fav.addEventListener('click', async (e) => {
     e.stopPropagation();
+    const oldIndex = Number(card.dataset.galleryIndex);
+    const galleryItem = card.__galleryItem || galleryItemFromPath(p);
     const it = await materialize();
     if (it) { config = await window.api.libraryToggleFavorite(it.id); }
-    renderLibrary();
+    const fresh = it && config.library && config.library[it.id];
+    if (!fresh) return;
+    const current = poolCardById(fresh.id) || ephemeralCardByPath(fresh.path) || card;
+    if (current && current.dataset.id === fresh.id) {
+      setCardFavorite(current, !!fresh.favorite);
+    } else if (current && current.isConnected) {
+      const replacement = buildLibCard(fresh, assignedIds().has(fresh.id));
+      bindCardGalleryItem(replacement, galleryItem, Number.isFinite(oldIndex) ? oldIndex : Number(current.dataset.galleryIndex));
+      current.replaceWith(replacement);
+      scheduleJustifiedLayout($('#libGrid'));
+    }
+    lastLibRenderKey = libRenderKey();
   });
   card.appendChild(fav);
 
@@ -1543,6 +1578,16 @@ function refreshChunkAspects(entries, cards, tok) {
   });
 }
 
+function scheduleDeferredJustifiedLayout(grid) {
+  if (grid) justifiedPending.add(grid);
+  if (aspectLayoutTimer) return;
+  aspectLayoutTimer = setTimeout(() => {
+    aspectLayoutTimer = 0;
+    if (!justifiedPending.size) return;
+    scheduleJustifiedLayout();
+  }, 140);
+}
+
 // Append entries in chunks; an IntersectionObserver on #libSentinel pulls the next chunk
 // as the user scrolls. Cards are inserted immediately, while missing aspect ratios are
 // refined in the background so large folders do not pause at the chunk boundary.
@@ -1554,6 +1599,22 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
   setGridGallerySource(grid, galleryItems);
   let i = 0;
   let drawPromise = null;
+  let nearEndFrame = 0;
+  const hasMore = () => i < entries.length;
+  const isNearEnd = () => {
+    const root = libScrollRoot();
+    if (!root) return true;
+    return root.scrollHeight - root.scrollTop - root.clientHeight <= LIB_RENDER_PRELOAD_PX;
+  };
+  const scheduleNearEndDraw = () => {
+    if (nearEndFrame) return;
+    nearEndFrame = requestAnimationFrame(() => {
+      nearEndFrame = 0;
+      if (tok !== allViewToken || !hasMore() || !isNearEnd()) return;
+      drawNext().then(scheduleNearEndDraw);
+    });
+  };
+  libLazyKick = scheduleNearEndDraw;
   const drawNext = () => {
     if (drawPromise) return drawPromise;
     if (tok !== allViewToken) return Promise.resolve();
@@ -1570,19 +1631,37 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
         cards.push(card);
       }
       scheduleJustifiedLayout(grid);
-      refreshChunkAspects(chunk, cards, tok);
+      // Do not prefetch aspects for every newly appended chunk: on large folders
+      // that competes with visible thumbnails and causes a noticeable scroll pause.
+      // loadThumbInto() refines each card's aspect as its thumbnail actually loads.
       if (sentinel) sentinel.hidden = i >= entries.length;
     })().finally(() => { drawPromise = null; });
     return drawPromise;
   };
   if (libObserver) { libObserver.disconnect(); libObserver = null; }
+  if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
+  const root = libScrollRoot();
+  if (root) {
+    const onScroll = () => scheduleNearEndDraw();
+    root.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    libScrollCleanup = () => {
+      root.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+      if (nearEndFrame) { cancelAnimationFrame(nearEndFrame); nearEndFrame = 0; }
+      if (libLazyKick === scheduleNearEndDraw) libLazyKick = null;
+    };
+  }
   if (sentinel && 'IntersectionObserver' in window) {
     drawNext().then(() => {
       if (tok !== allViewToken || i >= entries.length) return;
       libObserver = new IntersectionObserver((ents) => {
-        if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) drawNext();
-      }, { root: null, rootMargin: LIB_RENDER_PRELOAD_MARGIN });
+        if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) {
+          drawNext().then(scheduleNearEndDraw);
+        }
+      }, { root, rootMargin: LIB_RENDER_PRELOAD_MARGIN });
       libObserver.observe(sentinel);
+      scheduleNearEndDraw();
     });
   } else {
     (async () => { while (i < entries.length && tok === allViewToken) await drawNext(); })();
@@ -1799,6 +1878,21 @@ function setCardAssigned(card, on) {
   }
 }
 
+function setCardFavorite(card, on) {
+  if (!card) return;
+  const fav = card.querySelector(':scope > .lib-fav');
+  if (!fav) return;
+  fav.classList.toggle('on', !!on);
+  fav.textContent = on ? '★' : '☆';
+}
+
+function poolCardById(id) {
+  for (const c of document.querySelectorAll('#libGrid .lib-card[data-id]')) {
+    if (c.dataset.id === id) return c;
+  }
+  return null;
+}
+
 // Update the "assigned" badge on existing cards in place — assignment changes which
 // monitors use an item but NOT the grid's contents or order, so a full renderLibrary()
 // rebuild is wasteful and (in the lazy "All"/folder views) collapses the grid height,
@@ -1811,6 +1905,42 @@ function refreshAssignedHighlights() {
   // The grid now matches the new assigned state, so record the key — a later tab
   // switch back to Library reuses this DOM (and its scroll) instead of rebuilding.
   lastLibRenderKey = libRenderKey();
+}
+
+function refreshFavoriteHighlights() {
+  const lib = config.library || {};
+  document.querySelectorAll('#libGrid .lib-card[data-id]').forEach((card) => {
+    const it = lib[card.dataset.id];
+    if (it) setCardFavorite(card, !!it.favorite);
+  });
+  lastLibRenderKey = libRenderKey();
+}
+
+function sameTags(a, b) {
+  const aa = Array.isArray(a) ? a : [];
+  const bb = Array.isArray(b) ? b : [];
+  if (aa.length !== bb.length) return false;
+  for (let i = 0; i < aa.length; i++) if (aa[i] !== bb[i]) return false;
+  return true;
+}
+
+function isFavoriteOnlyLibraryChange(prevLib, nextLib) {
+  const prev = prevLib || {};
+  const next = nextLib || {};
+  const prevIds = Object.keys(prev).sort();
+  const nextIds = Object.keys(next).sort();
+  if (prevIds.length !== nextIds.length) return false;
+  let changed = false;
+  for (let i = 0; i < prevIds.length; i++) {
+    const id = prevIds[i];
+    if (id !== nextIds[i]) return false;
+    const a = prev[id] || {};
+    const b = next[id] || {};
+    if (a.type !== b.type || a.path !== b.path || a.addedAt !== b.addedAt || a.modifiedAt !== b.modifiedAt) return false;
+    if (!sameTags(a.tags, b.tags)) return false;
+    if (!!a.favorite !== !!b.favorite) changed = true;
+  }
+  return changed;
 }
 
 // Find the on-screen ephemeral card (folder image not yet in the pool) for a path.
@@ -1838,7 +1968,11 @@ function tryUpgradeMaterializedCards(prevPoolIds) {
     pairs.push({ it, card });
   }
   const assigned = assignedIds();
-  for (const { it, card } of pairs) card.replaceWith(buildLibCard(it, assigned.has(it.id)));
+  for (const { it, card } of pairs) {
+    const replacement = buildLibCard(it, assigned.has(it.id));
+    bindCardGalleryItem(replacement, card.__galleryItem || galleryItemFromPath(it.path), Number(card.dataset.galleryIndex));
+    card.replaceWith(replacement);
+  }
   scheduleJustifiedLayout($('#libGrid'));
   lastLibRenderKey = libRenderKey();
   return true;
@@ -3945,6 +4079,7 @@ async function init() {
   window.api.onConfig((cfg) => {
     const prevContentSig = libraryContentSig();
     const prevAssignedSig = assignedSig();
+    const prevLibrary = config.library || {};
     const prevPoolIds = new Set(Object.values(config.library || {})
       .filter((it) => it && it.type === 'image' && it.path).map((it) => it.id));
     config = cfg;
@@ -3959,6 +4094,7 @@ async function init() {
     if (!$('#viewLibrary').hidden && LIB.filter !== 'online') {
       if (libraryContentSig() !== prevContentSig) {
         if (document.hidden) deferredLiveRefresh.mark('library');
+        else if (LIB.filter !== 'favorite' && isFavoriteOnlyLibraryChange(prevLibrary, config.library)) refreshFavoriteHighlights();
         else if (!tryUpgradeMaterializedCards(prevPoolIds)) renderLibrary();
       } else if (assignedSig() !== prevAssignedSig && !document.hidden) {
         refreshAssignedHighlights();
@@ -4009,6 +4145,7 @@ async function init() {
     resizeT = setTimeout(() => {
       layoutMonitors();
       scheduleAllLibraryLayouts();
+      if (libLazyKick) libLazyKick();
       if (!$('#viewHome').hidden) renderHome();
     }, 60);
   });
