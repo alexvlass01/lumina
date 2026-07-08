@@ -23,6 +23,7 @@ const { createTrayController } = require('./src/tray'); // системный т
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 const { createStealthController } = require('./src/stealth-session'); // отменяемая «невидимая смена» (под тестами)
 const { createTaskQueue } = require('./src/task-queue'); // small async queue for expensive OS thumbnail jobs
+const thumbnail = require('./src/thumbnail');
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
@@ -2442,7 +2443,7 @@ ipcMain.handle('folder-info', (e, dir) => {
 // и нужна justified-сетке. LRU-кэш по "путь|WxH" хранит и промахи.
 const thumbCache = new Map();
 const thumbPending = new Map();
-const runThumbnailTask = createTaskQueue(1);
+const runThumbnailTask = createTaskQueue(2);
 const THUMB_CAP = 800;
 function cachedThumb(key) {
   const hit = thumbCache.get(key);
@@ -2466,8 +2467,7 @@ async function thumbnailData(p, w, h) {
     try {
       const img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
       if (img && !img.isEmpty()) {
-        const size = img.getSize();
-        data = { url: img.toDataURL(), width: size.width || 0, height: size.height || 0 };
+        data = thumbnail.encodeThumbnail(img);
       }
     } catch {}
     thumbCache.set(key, data);
