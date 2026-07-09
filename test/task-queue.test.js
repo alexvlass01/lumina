@@ -30,6 +30,57 @@ function wait(ms) {
   ]);
   assert.strictEqual(order, 'ab');
 
+  // Hooks: timing/counters are reported, results and errors pass through untouched.
+  let fakeNow = 1000;
+  const calls = { enqueue: [], start: [], settle: [] };
+  const hooked = createTaskQueue(1, {
+    now: () => fakeNow,
+    onEnqueue: (info) => calls.enqueue.push(info),
+    onStart: (info) => calls.start.push(info),
+    onSettle: (info) => calls.settle.push(info),
+  });
+  const first = hooked(async () => {
+    fakeNow += 40; // simulated run duration of the first job
+    return 'ok-value';
+  });
+  const second = hooked(async () => { throw new Error('boom'); });
+  assert.strictEqual(await first, 'ok-value');
+  await assert.rejects(second, /boom/);
+  assert.strictEqual(calls.enqueue.length, 2);
+  assert.strictEqual(calls.start.length, 2);
+  assert.strictEqual(calls.settle.length, 2);
+  // Second job waited in the queue while the first one ran for 40ms.
+  assert.strictEqual(calls.start[0].waitMs, 0);
+  assert.strictEqual(calls.settle[0].ok, true);
+  assert.strictEqual(calls.settle[0].runMs, 40);
+  assert.strictEqual(calls.settle[0].startedAt, 1000);
+  assert.strictEqual(calls.start[1].waitMs, 40);
+  assert.strictEqual(calls.settle[1].ok, false);
+  assert.ok(calls.enqueue[1].pending >= 1, 'second enqueue sees a pending job');
+
+  // Hooks preserve completion order and concurrency accounting.
+  const hookedPair = createTaskQueue(2, { onStart: () => {}, onSettle: () => {} });
+  let hookedActive = 0;
+  let hookedMax = 0;
+  const hookedResults = await Promise.all(Array.from({ length: 5 }, (_, index) => hookedPair(async () => {
+    hookedActive += 1;
+    hookedMax = Math.max(hookedMax, hookedActive);
+    await wait(5);
+    hookedActive -= 1;
+    return index;
+  })));
+  assert.deepStrictEqual(hookedResults, [0, 1, 2, 3, 4]);
+  assert.strictEqual(hookedMax, 2);
+
+  // Throwing hooks must never break the queue or swallow results.
+  const explosive = createTaskQueue(1, {
+    onEnqueue: () => { throw new Error('hook-enqueue'); },
+    onStart: () => { throw new Error('hook-start'); },
+    onSettle: () => { throw new Error('hook-settle'); },
+  });
+  assert.strictEqual(await explosive(async () => 7), 7);
+  await assert.rejects(explosive(async () => { throw new Error('job-error'); }), /job-error/);
+
   console.log('task-queue.test.js ok');
 })().catch((err) => {
   console.error(err);

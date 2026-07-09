@@ -97,6 +97,20 @@ let galleryPayload = { items: [], index: 0 };
 let diagnosticsController = null;
 app.isQuitting = false;
 
+// --- Diagnostics glue (dev-only). When the gated controller is absent these are
+// no-op closures, so instrumented hot paths pay a single null-check in production.
+const DIAG_NOOP_END = () => {};
+function diagSpan(category, name, attributes) {
+  if (!diagnosticsController) return DIAG_NOOP_END;
+  return diagnosticsController.startSpan(category, name, attributes);
+}
+function diagEvent(raw) {
+  if (diagnosticsController) diagnosticsController.recordEvent(raw);
+}
+function diagCountSend(channel) {
+  if (diagnosticsController) diagnosticsController.countChannel(channel);
+}
+
 // ---------------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------------
@@ -293,6 +307,7 @@ function syncLiveFolderWatchers() {
 function broadcastLiveFolderChanges(summaries) {
   const changed = (Array.isArray(summaries) ? summaries : []).filter((summary) => summary && summary.changed);
   if (!changed.length || !mainWindow || mainWindow.isDestroyed()) return;
+  diagCountSend('live-folders-changed');
   mainWindow.webContents.send('live-folders-changed', {
     folderIds: changed.map((summary) => summary.id),
   });
@@ -974,7 +989,24 @@ async function ensureWallpaperReady(srcPath) {
   } catch (e) { console.error('ensureWallpaperReady:', e); return srcPath; }
 }
 
+// Thin diagnostics wrapper (span #6 of the MVP-A budget): every wallpaper apply is
+// recorded with its duration and outcome; call sites keep using applyForTheme().
 async function applyForTheme(themeName, isManual = false, targetMonitors = null) {
+  const endSpan = diagSpan('wallpaper', 'apply');
+  try {
+    const result = await applyForThemeCore(themeName, isManual, targetMonitors);
+    // Only known short reasons; a raw error message may carry a file path and
+    // redaction does not exist until stage 4.
+    const reason = result && result.ok ? 'ok' : ((result && result.reason) || 'error');
+    endSpan({ status: ['ok', 'gamemode-blocked', 'no-wallpaper'].includes(reason) ? reason : 'error' });
+    return result;
+  } catch (err) {
+    endSpan({ status: 'error' });
+    throw err;
+  }
+}
+
+async function applyForThemeCore(themeName, isManual = false, targetMonitors = null) {
   const theme = config.separateThemes === false ? 'light' : (themeName || wallpaperThemeName());
   broadcastWallpaperTheme(theme);
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
@@ -1137,6 +1169,8 @@ function createWindow() {
     },
   });
 
+  if (diagnosticsController) diagnosticsController.attachWindowEvents(mainWindow, 'main');
+
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -1188,6 +1222,8 @@ function sanitizeGalleryPayload(payload) {
 }
 
 function createGalleryWindow() {
+  // Span #5 of the MVP-A budget: viewer window creation → ready-to-show.
+  const endOpenSpan = diagSpan('viewer', 'open-to-ready', { count: galleryPayload.items.length });
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   const bounds = display.workArea || display.bounds;
   galleryWindowNormalBounds = { ...bounds };
@@ -1214,6 +1250,8 @@ function createGalleryWindow() {
     },
   });
 
+  if (diagnosticsController) diagnosticsController.attachWindowEvents(galleryWindow, 'viewer');
+
   galleryWindow.loadFile(path.join(__dirname, 'renderer', 'viewer.html'));
 
   galleryWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
@@ -1221,6 +1259,7 @@ function createGalleryWindow() {
   });
 
   galleryWindow.once('ready-to-show', () => {
+    endOpenSpan();
     if (!galleryWindow || galleryWindow.isDestroyed()) return;
     galleryWindow.show();
     bringToFront(galleryWindow);
@@ -1249,6 +1288,7 @@ function openGalleryWindow(payload) {
   if (!galleryWindow || galleryWindow.isDestroyed()) {
     createGalleryWindow();
   } else {
+    diagCountSend('gallery-payload');
     galleryWindow.webContents.send('gallery-payload', galleryPayload);
     bringToFront(galleryWindow);
   }
@@ -1527,6 +1567,7 @@ function quitAndInstallUpdate() {
 function broadcastConfig() {
   trayCtl.refresh();
   if (mainWindow && !mainWindow.isDestroyed()) {
+    diagCountSend('config-changed');
     mainWindow.webContents.send('config-changed', config);
   }
 }
@@ -1809,6 +1850,7 @@ ipcMain.handle('set-config', async (e, patch) => {
   if (patch && 'themeSchedule' in patch) applyThemeSchedule();
   if (patch && 'hotkeys' in patch) registerShortcut();
   if (patch && 'viewerBackground' in patch && galleryWindow && !galleryWindow.isDestroyed()) {
+    diagCountSend('gallery-background');
     galleryWindow.webContents.send('gallery-background', config.viewerBackground);
   }
   if (patch && 'separateThemes' in patch) {
@@ -2456,7 +2498,18 @@ ipcMain.handle('folder-info', (e, dir) => {
 // и нужна justified-сетке. LRU-кэш по "путь|WxH" хранит и промахи.
 const thumbCache = new Map();
 const thumbPending = new Map();
-const runThumbnailTask = createTaskQueue(2);
+// Diagnostics observes every thumbnail job (queue wait + run + depth) through the
+// optional task-queue hooks; with diagnostics off the hook body is a null-check.
+const runThumbnailTask = createTaskQueue(2, {
+  onSettle: ({ ok, startedAt, waitMs, runMs, pending, active }) => diagEvent({
+    kind: 'span',
+    category: 'task-queue',
+    name: 'thumbnail-task',
+    timestampMs: startedAt,
+    durationMs: runMs,
+    attributes: { status: ok ? 'ok' : 'error', waitMs, pending, active },
+  }),
+});
 const THUMB_CAP = 800;
 function cachedThumb(key) {
   const hit = thumbCache.get(key);
@@ -2477,12 +2530,22 @@ async function thumbnailData(p, w, h) {
     const lateHit = cachedThumb(key);
     if (lateHit !== undefined) return lateHit;
     let data = { url: '', width: 0, height: 0 };
+    // Spans #3/#4 of the MVP-A budget. Extract (Promise-based Windows shell call)
+    // and encode (sync JPEG/PNG) are measured SEPARATELY — extract must be
+    // measured, not assumed blocking. Errors stay swallowed like before.
+    let img = null;
+    const endExtract = diagSpan('thumbnail', 'extract', { width: W, height: H });
     try {
-      const img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
-      if (img && !img.isEmpty()) {
+      img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
+      endExtract();
+    } catch { endExtract({ status: 'error' }); }
+    if (img && !img.isEmpty()) {
+      const endEncode = diagSpan('thumbnail', 'encode');
+      try {
         data = thumbnail.encodeThumbnail(img);
-      }
-    } catch {}
+        endEncode({ bytes: data.url ? data.url.length : 0, width: data.width, height: data.height });
+      } catch { endEncode({ status: 'error' }); }
+    }
     thumbCache.set(key, data);
     if (thumbCache.size > THUMB_CAP) {
       const k0 = thumbCache.keys().next().value;
@@ -2543,7 +2606,9 @@ function liveFolderDiscovery(p) {
 }
 
 // Содержимое папки для навигации ВНУТРЬ библиотеки: подпапки + картинки (один уровень).
+// Span #1 of the MVP-A diagnostics budget.
 ipcMain.handle('folder-entries', (e, dir) => {
+  const endSpan = diagSpan('library', 'folder-entries');
   try {
     const { folders, images } = playlist.scanFolderEntries(dir);
     // Attach discovery/modified dates from the live-folder index so the renderer can
@@ -2554,7 +2619,7 @@ ipcMain.handle('folder-entries', (e, dir) => {
         if (im && im.path) meta.set(String(im.path).toLowerCase(), im);
       }
     } catch {}
-    return {
+    const result = {
       folders: folders.map((p) => ({ path: p, name: path.basename(p) })),
       images: images.map((p) => {
         const m = meta.get(String(p).toLowerCase());
@@ -2562,16 +2627,29 @@ ipcMain.handle('folder-entries', (e, dir) => {
       }),
       count: images.length,
     };
-  } catch { return { folders: [], images: [], count: 0 }; }
+    endSpan({ count: images.length, status: 'ok' });
+    return result;
+  } catch {
+    endSpan({ status: 'error' });
+    return { folders: [], images: [], count: 0 };
+  }
 });
 
 // Metadata-rich flat expansion for the "All" view. Pool images are omitted because
 // renderer already has their full records; live-folder entries carry discovery dates.
+// Span #2 of the MVP-A diagnostics budget.
 ipcMain.handle('expand-folders', async () => {
+  const endSpan = diagSpan('library', 'expand-folders');
   try {
     const indexed = folderState.listImages(liveFolderState);
-    return { images: library.ephemeralFolderImages(config.library, indexed) };
-  } catch (err) { console.error('expand-folders:', err); return { images: [] }; }
+    const images = library.ephemeralFolderImages(config.library, indexed);
+    endSpan({ count: images.length, status: 'ok' });
+    return { images };
+  } catch (err) {
+    endSpan({ status: 'error' });
+    console.error('expand-folders:', err);
+    return { images: [] };
+  }
 });
 
 ipcMain.handle('library-recent', async (e, limit) => {
@@ -2866,6 +2944,21 @@ app.whenReady().then(async () => {
   if (DIAGNOSTICS_BOOTSTRAP.enabled) {
     try {
       const { createDiagnosticsController } = require('./diagnostics/main/controller');
+      const { createProcessSampler, createNodeEventLoopProviders } = require('./diagnostics/main/process-sampler');
+      // Distinguish renderer processes by their OS pid so per-process CPU/memory
+      // samples say WHICH window they belong to. The future diagnostics control
+      // window must get its own role here (excluded from the app verdict).
+      const rendererRoleForPid = (pid) => {
+        try {
+          if (mainWindow && !mainWindow.isDestroyed()
+            && mainWindow.webContents.getOSProcessId() === pid) return 'renderer-main';
+        } catch {}
+        try {
+          if (galleryWindow && !galleryWindow.isDestroyed()
+            && galleryWindow.webContents.getOSProcessId() === pid) return 'renderer-viewer';
+        } catch {}
+        return '';
+      };
       diagnosticsController = createDiagnosticsController({
         userDataPath: app.getPath('userData'),
         appInfo: {
@@ -2876,8 +2969,16 @@ app.whenReady().then(async () => {
         ipcMain,
         shell,
         source: { role: 'main', pid: process.pid },
+        samplerFactory: ({ record }) => createProcessSampler({
+          record,
+          appMetrics: () => app.getAppMetrics(),
+          classifyPid: rendererRoleForPid,
+          ...createNodeEventLoopProviders(),
+        }),
       });
       diagnosticsController.registerIpc();
+      diagnosticsController.attachAppEvents(app);
+      diagnosticsController.attachProcessEvents(process);
       const started = await diagnosticsController.startIfNeeded('startup');
       if (started && started.ok !== false) {
         console.log(`[Diagnostics] recording; sessionDir=${diagnosticsController.status().sessionDir}`);

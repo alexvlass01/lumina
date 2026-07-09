@@ -40,6 +40,7 @@ class DiagnosticsController {
     env = process.env,
     source = { role: 'main', pid: process.pid },
     writerFactory = null,
+    samplerFactory = null,
     sessionsRoot = null,
     autoStart = true,
   } = {}) {
@@ -54,9 +55,11 @@ class DiagnosticsController {
     this.env = env;
     this.source = source;
     this.writerFactory = writerFactory;
+    this.samplerFactory = samplerFactory;
     this.autoStart = autoStart;
     this.session = new DiagnosticsSession({ source, now });
     this.writer = null;
+    this.sampler = null;
     this.sessionDir = '';
     this.eventsPath = '';
     this.metaPath = '';
@@ -106,40 +109,172 @@ class DiagnosticsController {
         startedAtIso,
       }));
       await this.recordLifecycle('session-started', { reason });
+      this.startSampler();
       await this.writer.flush();
       return { ok: true, status: this.status() };
     } catch (err) {
       this.lastError = err && err.message ? err.message : String(err);
+      this.stopSampler();
       this.session.degrade(this.lastError);
       return { ok: false, error: this.lastError, status: this.status() };
     }
   }
 
+  // Sampler probes live only while a session records; a sampler failure must not
+  // fail the recording itself (events are still valuable without samples).
+  startSampler() {
+    if (!this.samplerFactory || this.sampler) return;
+    try {
+      this.sampler = this.samplerFactory({ record: (raw) => this.recordEvent(raw) });
+      if (this.sampler) this.sampler.start();
+    } catch (err) {
+      this.lastError = err && err.message ? err.message : String(err);
+      this.sampler = null;
+    }
+  }
+
+  stopSampler() {
+    if (!this.sampler) return;
+    try { this.sampler.stop(); } catch {}
+    this.sampler = null;
+  }
+
   createWriter(filePath) {
+    // A degraded writer also silences the sampler: probes must not keep burning
+    // CPU for a session that can no longer be written.
+    const onDegraded = (reason) => {
+      this.session.degrade(reason);
+      this.stopSampler();
+    };
     if (this.writerFactory) return this.writerFactory({
       filePath,
       fsModule: this.fs,
       now: this.now,
-      onDegraded: (reason) => this.session.degrade(reason),
+      onDegraded,
     });
     return new JsonlWriter({
       filePath,
       fsModule: this.fs,
       now: this.now,
-      onDegraded: (reason) => this.session.degrade(reason),
+      onDegraded,
     });
   }
 
+  // Single main-side entry point: normalize one raw event against the live session
+  // and queue it. Silently no-ops when nothing records, so probes/spans can fire
+  // unconditionally.
+  recordEvent(raw, { reserved = false } = {}) {
+    if (!this.writer) return { accepted: 0, dropped: 0 };
+    const event = this.session.record(raw, { nowMs: this.now() });
+    if (!event) return { accepted: 0, dropped: 0 };
+    return this.writer.enqueue(event, { reserved });
+  }
+
   async recordLifecycle(name, attributes = {}) {
-    const event = this.session.record({
+    return this.recordEvent({
       kind: 'lifecycle',
       category: 'diagnostics',
       name,
       timestampMs: this.now(),
       attributes,
+    }, { reserved: true });
+  }
+
+  // Explicit app span: returns an idempotent end(extraAttributes) closure. The event
+  // carries the span START timestamp plus durationMs; if recording stops before the
+  // span ends, recordEvent drops it (a span that began before the session started
+  // would clamp to offset 0 — acceptable for a dev tool).
+  startSpan(category, name, attributes = {}) {
+    const startedAtMs = this.now();
+    let ended = false;
+    return (extra = {}) => {
+      if (ended) return;
+      ended = true;
+      this.recordEvent({
+        kind: 'span',
+        category,
+        name,
+        timestampMs: startedAtMs,
+        durationMs: Math.max(0, this.now() - startedAtMs),
+        attributes: { ...attributes, ...extra },
+      });
+    };
+  }
+
+  // Aggregated webContents.send counter (flushed by the sampler once per second).
+  countChannel(channel) {
+    if (this.sampler && typeof this.sampler.countChannel === 'function') {
+      this.sampler.countChannel(channel);
+    }
+  }
+
+  // Window lifecycle probes. Listeners stay attached for the window's lifetime
+  // (dev diagnostics run only); recordEvent gates on the active recording.
+  attachWindowEvents(win, label = 'window') {
+    if (!win || typeof win.on !== 'function') return;
+    const windowEvent = (name) => this.recordEvent({
+      kind: 'lifecycle',
+      category: 'window',
+      name,
+      timestampMs: this.now(),
+      attributes: { label },
     });
-    if (!event || !this.writer) return { accepted: 0, dropped: 0 };
-    return this.writer.enqueue(event, { reserved: true });
+    windowEvent('created');
+    for (const name of [
+      'ready-to-show', 'show', 'hide', 'minimize', 'restore', 'focus', 'blur',
+      'enter-full-screen', 'leave-full-screen', 'unresponsive', 'responsive', 'closed',
+    ]) {
+      try { win.on(name, () => windowEvent(name)); } catch {}
+    }
+  }
+
+  // Crashed helper/GPU/renderer processes are prime suspects for stalls — record
+  // reason/exit code, never payloads.
+  attachAppEvents(appObj) {
+    if (!appObj || typeof appObj.on !== 'function') return;
+    appObj.on('child-process-gone', (_event, details) => {
+      const attributes = {
+        role: (details && details.type) || 'unknown',
+        reason: (details && details.reason) || 'unknown',
+      };
+      if (details && Number.isFinite(details.exitCode)) attributes.errorCode = details.exitCode;
+      this.recordEvent({
+        kind: 'lifecycle', category: 'process', name: 'child-process-gone',
+        timestampMs: this.now(), attributes,
+      }, { reserved: true });
+    });
+    appObj.on('render-process-gone', (_event, _webContents, details) => {
+      const attributes = { reason: (details && details.reason) || 'unknown' };
+      if (details && Number.isFinite(details.exitCode)) attributes.errorCode = details.exitCode;
+      this.recordEvent({
+        kind: 'lifecycle', category: 'process', name: 'render-process-gone',
+        timestampMs: this.now(), attributes,
+      }, { reserved: true });
+    });
+  }
+
+  // Error probes. Only the error CLASS name is recorded — message text stays out of
+  // the session until the stage-4 redaction pipeline exists.
+  attachProcessEvents(proc = process) {
+    if (!proc || typeof proc.on !== 'function') return;
+    // uncaughtExceptionMonitor observes without changing Node's fatal behavior.
+    proc.on('uncaughtExceptionMonitor', (err) => {
+      this.recordEvent({
+        kind: 'lifecycle', category: 'error', name: 'uncaught-exception',
+        timestampMs: this.now(),
+        attributes: { reason: err && err.name ? String(err.name) : 'Error' },
+      }, { reserved: true });
+    });
+    // Subscribing suppresses Node's default warning print, so re-print to keep the
+    // dev console honest (diagnostics-gated process only).
+    proc.on('unhandledRejection', (reason) => {
+      console.error('[Diagnostics] unhandledRejection:', reason);
+      this.recordEvent({
+        kind: 'lifecycle', category: 'error', name: 'unhandled-rejection',
+        timestampMs: this.now(),
+        attributes: { reason: reason && reason.name ? String(reason.name) : 'UnhandledRejection' },
+      }, { reserved: true });
+    });
   }
 
   record(events) {
@@ -158,10 +293,13 @@ class DiagnosticsController {
 
   async stopRecording({ reason = 'manual' } = {}) {
     if (!this.writer) {
+      this.stopSampler();
       this.session.complete();
       return { ok: true, status: this.status() };
     }
     try {
+      // Stop probes first: the final counter flush still lands in the live writer.
+      this.stopSampler();
       await this.recordLifecycle('session-stopping', { reason });
       this.session.stop({ nowMs: this.now() });
       const writerStats = await this.writer.stop();
@@ -173,6 +311,7 @@ class DiagnosticsController {
       return { ok: true, status };
     } catch (err) {
       this.lastError = err && err.message ? err.message : String(err);
+      this.stopSampler();
       this.session.degrade(this.lastError);
       return { ok: false, error: this.lastError, status: this.status() };
     }
@@ -184,8 +323,9 @@ class DiagnosticsController {
     try {
       if (this.writer && this.session.snapshot().state === 'recording') {
         await this.stopRecording({ reason });
-      } else if (this.writer) {
-        await this.writer.shutdownBestEffort();
+      } else {
+        this.stopSampler();
+        if (this.writer) await this.writer.shutdownBestEffort();
       }
     } catch {
       // Best-effort shutdown must never block Lumina quit.
@@ -254,6 +394,7 @@ class DiagnosticsController {
       protocolCounters: snapshot.protocolCounters,
       lateBatches: snapshot.lateBatches,
       writer: this.writer ? this.writer.getStats() : null,
+      sampler: !!this.sampler,
     };
   }
 }

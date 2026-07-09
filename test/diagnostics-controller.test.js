@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { EventEmitter } = require('events');
 const { createDiagnosticsController } = require('../diagnostics/main/controller');
 
 let passed = 0;
@@ -89,6 +90,85 @@ function fakeIpcMain() {
   await retentionController.stopRecording({ reason: 'second' });
   const sessionDirs = fs.readdirSync(retentionRoot).filter((name) => name.startsWith('session-'));
   ok('controller applies retention before new sessions', sessionDirs.length === 1);
+
+  // --- Stage "main metrics/probes": sampler lifecycle, spans, window/app/error events ---
+  let probeNow = Date.parse('2026-07-09T14:00:00.000Z');
+  const fakeSampler = {
+    started: 0,
+    stopped: 0,
+    counted: [],
+    record: null,
+    start() { this.started += 1; },
+    stop() { this.stopped += 1; },
+    countChannel(channel) { this.counted.push(channel); },
+  };
+  const probeController = createDiagnosticsController({
+    userDataPath: tmpRoot(),
+    autoStart: false,
+    now: () => probeNow,
+    samplerFactory: ({ record }) => { fakeSampler.record = record; return fakeSampler; },
+  });
+
+  const idleRecord = probeController.recordEvent({ kind: 'span', category: 'library', name: 'idle' });
+  ok('recordEvent before start is a silent no-op', idleRecord.accepted === 0 && idleRecord.dropped === 0);
+  probeController.startSpan('library', 'early')(); // must not throw while idle
+  probeController.countChannel('config-changed'); // sampler absent: silent
+
+  await probeController.startRecording({ reason: 'probe-test' });
+  ok('sampler starts with the recording', fakeSampler.started === 1 && probeController.status().sampler === true);
+
+  fakeSampler.record({ kind: 'sample', category: 'main', name: 'event-loop', attributes: { maxMs: 12 } });
+  probeController.countChannel('config-changed');
+  ok('countChannel delegates to the active sampler', fakeSampler.counted.length === 1 && fakeSampler.counted[0] === 'config-changed');
+
+  const endSpan = probeController.startSpan('library', 'folder-entries', { count: 3 });
+  probeNow += 250;
+  endSpan({ status: 'ok' });
+  endSpan({ status: 'twice' }); // second end must be ignored
+
+  const fakeWin = new EventEmitter();
+  probeController.attachWindowEvents(fakeWin, 'viewer');
+  fakeWin.emit('show');
+
+  const fakeApp = new EventEmitter();
+  probeController.attachAppEvents(fakeApp);
+  fakeApp.emit('child-process-gone', {}, { type: 'GPU', reason: 'crashed', exitCode: 5 });
+
+  const fakeProc = new EventEmitter();
+  probeController.attachProcessEvents(fakeProc);
+  fakeProc.emit('uncaughtExceptionMonitor', new TypeError('secret message'));
+  fakeProc.emit('unhandledRejection', 'expected-diagnostics-test-print');
+
+  probeNow += 50;
+  await probeController.stopRecording({ reason: 'probe-test' });
+  ok('sampler stops with the recording', fakeSampler.stopped === 1 && probeController.status().sampler === false);
+
+  const probeEvents = fs.readFileSync(probeController.status().eventsPath, 'utf8')
+    .trim().split('\n').map((line) => JSON.parse(line));
+  const spanEvents = probeEvents.filter((event) => event.kind === 'span' && event.name === 'folder-entries');
+  ok('startSpan records duration and merged attributes', spanEvents.length === 1 &&
+    spanEvents[0].durationMs === 250 &&
+    spanEvents[0].attributes.count === 3 &&
+    spanEvents[0].attributes.status === 'ok');
+  ok('sampler events flow through recordEvent', probeEvents.some((event) =>
+    event.name === 'event-loop' && event.attributes.maxMs === 12));
+  const windowEvents = probeEvents.filter((event) => event.category === 'window');
+  ok('window probes record created and show with a label',
+    windowEvents.some((event) => event.name === 'created' && event.attributes.label === 'viewer') &&
+    windowEvents.some((event) => event.name === 'show'));
+  const gone = probeEvents.find((event) => event.name === 'child-process-gone');
+  ok('child-process-gone records role, reason and exit code', gone &&
+    gone.attributes.role === 'GPU' && gone.attributes.reason === 'crashed' && gone.attributes.errorCode === 5);
+  const uncaught = probeEvents.find((event) => event.name === 'uncaught-exception');
+  ok('uncaught exception records only the error class', uncaught &&
+    uncaught.attributes.reason === 'TypeError' && !JSON.stringify(probeEvents).includes('secret message'));
+  ok('unhandled rejection is recorded without payload', probeEvents.some((event) =>
+    event.name === 'unhandled-rejection' && event.attributes.reason === 'UnhandledRejection'));
+
+  fakeWin.emit('hide');
+  const idleSpanEnd = probeController.startSpan('library', 'after-stop');
+  idleSpanEnd();
+  ok('probes after stop stay silent', probeController.status().state === 'complete');
 
   console.log('\nAll ' + passed + ' diagnostics controller tests passed.');
 })().catch((err) => {
