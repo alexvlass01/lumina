@@ -141,6 +141,15 @@ function openDiagnosticsControlWindow() {
     },
   });
   diagnosticsControlWindow.setMenuBarVisibility(false);
+  diagnosticsControlWindow.webContents.on('console-message', (e, level, message, line, sourceId) => {
+    console.log(`[Diag Control] ${message} (${sourceId}:${line})`);
+  });
+  diagnosticsControlWindow.webContents.on('preload-error', (e, p, err) => {
+    console.error('[Diag Control] preload-error:', p, err);
+  });
+  diagnosticsControlWindow.webContents.on('did-fail-load', (e, code, desc) => {
+    console.error('[Diag Control] did-fail-load:', code, desc);
+  });
   diagnosticsControlWindow.loadFile(path.join(__dirname, 'diagnostics', 'ui', 'control.html'));
   // Show WITHOUT stealing focus, so the main window stays foreground and keeps rendering
   // (and thus keeps being sampled) while this panel floats beside it.

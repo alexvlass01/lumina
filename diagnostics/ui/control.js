@@ -3,9 +3,12 @@
 // Logic for the dev-only diagnostics control window. Polls status once a second (elapsed
 // time + state only — deliberately no live FPS/charts, per the agreed design) and wires
 // the buttons to the diagnostics IPC exposed on window.diag by control-preload.js.
-
+//
+// NB: window.diag is exposed by contextBridge as a NON-CONFIGURABLE global property, so a
+// top-level `const diag` would throw "Identifier 'diag' has already been declared" and kill
+// the whole script (buttons dead). Read it under a different local name.
 const $ = (sel) => document.querySelector(sel);
-const diag = window.diag || null;
+const api = window.diag || null;
 
 const el = {
   dot: $('#dot'), stateText: $('#stateText'), timer: $('#timer'),
@@ -19,12 +22,9 @@ function fmtElapsed(ms) {
   return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function show(node, on) { node.classList.toggle('hidden', !on); }
-
-let last = null;
+function show(node, on) { if (node) node.classList.toggle('hidden', !on); }
 
 function render(status) {
-  last = status;
   const recording = status.state === 'recording';
   const degraded = status.state === 'degraded' || (status.writer && status.writer.degraded);
 
@@ -60,14 +60,14 @@ function render(status) {
 }
 
 async function refresh() {
-  if (!diag) { el.stateText.textContent = 'Недоступно вне Electron'; return; }
-  try { render(await diag.status()); } catch { /* transient */ }
+  if (!api) { el.stateText.textContent = 'Недоступно вне Electron'; return; }
+  try { render(await api.status()); } catch { /* transient */ }
 }
 
 function bind(node, fn) {
   if (!node) return;
   node.addEventListener('click', async () => {
-    if (!diag) return;
+    if (!api) return;
     node.disabled = true;
     try { await fn(); } catch {}
     node.disabled = false;
@@ -76,20 +76,38 @@ function bind(node, fn) {
 }
 
 // Marking must feel instant and give a flash of confirmation.
-if (el.mark && diag) {
+if (el.mark && api) {
   el.mark.addEventListener('click', async () => {
-    try { await diag.mark('lag'); } catch {}
+    try { await api.mark('lag'); } catch {}
     const original = el.mark.textContent;
     el.mark.textContent = '✓ Помечено';
     setTimeout(() => { el.mark.textContent = original; }, 900);
   });
 }
-bind(el.stop, () => diag.stop());
-bind(el.start, () => diag.start());
-bind(el.report, () => diag.openReport());
-bind(el.folder, () => diag.openFolder());
-bind(el.export, () => diag.exportSanitized());
-bind(el.clear, async () => { await diag.clearSessions(); });
+
+// Stop → build the report, then open it automatically so the user never has to hunt for
+// the file. The manual "open report" button stays available too.
+if (el.stop && api) {
+  el.stop.addEventListener('click', async () => {
+    el.stop.disabled = true;
+    const original = el.stop.textContent;
+    el.stop.textContent = 'Останавливаю…';
+    try {
+      await api.stop();
+      await api.openReport();
+    } catch {}
+    el.stop.textContent = original;
+    el.stop.disabled = false;
+    refresh();
+  });
+}
+
+bind(el.start, () => api.start());
+bind(el.report, () => api.openReport());
+bind(el.folder, () => api.openFolder());
+bind(el.export, () => api.exportSanitized());
+bind(el.clear, () => api.clearSessions());
 
 refresh();
 setInterval(refresh, 1000);
+console.log('[control] ready; diag=' + !!api);
