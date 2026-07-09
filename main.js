@@ -94,6 +94,7 @@ let galleryWindow = null;
 let galleryWindowNormalBounds = null;
 let galleryWindowFullscreen = false; // tracked explicitly: enter/leave-full-screen events are unreliable for frameless windows on Windows
 let galleryPayload = { items: [], index: 0 };
+let diagnosticsController = null;
 app.isQuitting = false;
 
 // ---------------------------------------------------------------------------
@@ -2862,6 +2863,31 @@ app.whenReady().then(async () => {
   ensureComScript();
   ensureComHostScript();
   ensureThemeScript();
+  if (DIAGNOSTICS_BOOTSTRAP.enabled) {
+    try {
+      const { createDiagnosticsController } = require('./diagnostics/main/controller');
+      diagnosticsController = createDiagnosticsController({
+        userDataPath: app.getPath('userData'),
+        appInfo: {
+          name: app.getName(),
+          version: app.getVersion(),
+          isPackaged: app.isPackaged,
+        },
+        ipcMain,
+        shell,
+        source: { role: 'main', pid: process.pid },
+      });
+      diagnosticsController.registerIpc();
+      const started = await diagnosticsController.startIfNeeded('startup');
+      if (started && started.ok !== false) {
+        console.log(`[Diagnostics] recording; sessionDir=${diagnosticsController.status().sessionDir}`);
+      } else {
+        console.warn('[Diagnostics] failed to start recording:', started && started.error);
+      }
+    } catch (err) {
+      console.error('[Diagnostics] controller failed:', err);
+    }
+  }
 
   // keep the OS login item in sync with config (openAtLogin + the --autostart/--hidden args)
   applyLoginItem();
@@ -2966,6 +2992,9 @@ app.whenReady().then(async () => {
 
 // Flush discovery metadata and dispose the persistent PowerShell host on quit.
 app.on('before-quit', () => {
+  if (diagnosticsController) {
+    void diagnosticsController.shutdownBestEffort({ reason: 'before-quit' });
+  }
   if (liveFolderFullScanTimer) clearTimeout(liveFolderFullScanTimer);
   liveFolderFullScanTimer = null;
   for (const retry of liveFolderWatcherRetryTimers.values()) clearTimeout(retry);
