@@ -2,6 +2,16 @@
 
 const { contextBridge, ipcRenderer } = require('electron');
 
+// Dev-only diagnostics probe for the viewer window (see preload.js for the rationale).
+// The viewer has no library cards, so no card selector is passed.
+try {
+  const hasDiag = process.argv.some((a) => typeof a === 'string' && a.indexOf('--lumina-diagnostics-renderer') === 0);
+  if (hasDiag) {
+    const diag = require('../diagnostics/renderer/preload-attach');
+    diag.attachRendererProbe({ ipcRenderer, contextBridge, role: diag.parseRole(process.argv) });
+  }
+} catch { /* diagnostics is optional */ }
+
 contextBridge.exposeInMainWorld('viewerApi', {
   getI18n: () => ipcRenderer.invoke('get-i18n'),
   getPayload: () => ipcRenderer.invoke('gallery-payload'),

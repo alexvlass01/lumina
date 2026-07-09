@@ -2,6 +2,17 @@
 
 const $ = (sel) => document.querySelector(sel);
 
+// Optional dev-diagnostics span bridge (window.luminaDiag injected by the viewer preload
+// only under the diagnostics gate; a no-op end() otherwise).
+function diagSpan(category, name) {
+  return (window.luminaDiag && window.luminaDiag.span(category, name)) || (() => {});
+}
+// Set at the start of each render(); present() fires first-frame on the first shown
+// tier, and the full-tier call sites fire full-quality. Superseded renders just leave
+// the previous closures unfired (idempotent, nothing recorded).
+let renderFirstFrameEnd = null;
+let renderFullEnd = null;
+
 const I18N = { dict: {}, fallback: {} };
 const VIEWER = { items: [], index: 0, token: 0 };
 const POINTER = { x: 0, y: 0, t: 0, button: -1, blocked: false };
@@ -360,6 +371,7 @@ async function present(src, token, entry) {
     const loaded = await loadImage(src);
     if (token !== VIEWER.token) return false;
     showImage(loaded.src);
+    if (renderFirstFrameEnd) { renderFirstFrameEnd(); renderFirstFrameEnd = null; } // budget span #13
     clearLoadingTimer();
     setState('', true);
     updateResolutionInSubtitle(loaded.width, loaded.height, entry);
@@ -490,8 +502,15 @@ function step(delta) {
 }
 
 async function render() {
+  const endNavigate = diagSpan('viewer', 'navigate'); // budget span #15
+  try { return await renderCore(); } finally { endNavigate(); }
+}
+
+async function renderCore() {
   const entry = currentEntry();
   const token = ++VIEWER.token;
+  renderFirstFrameEnd = diagSpan('viewer', 'first-frame'); // fired by present() on first show
+  renderFullEnd = diagSpan('viewer', 'full-quality'); // fired when the full tier is shown
   const title = $('#viewerTitle');
   const subtitle = $('#viewerSubtitle');
   const footer = $('#viewerFooter');
@@ -523,7 +542,11 @@ async function render() {
 
   // 1) Show the best cached tier instantly (full preferred, else the sample).
   if (cached.full) {
-    if (await present(cached.full, token, entry)) { prefetchNeighbors(idx); return; }
+    if (await present(cached.full, token, entry)) {
+      if (renderFullEnd) { renderFullEnd({ status: 'cached' }); renderFullEnd = null; } // budget span #14
+      prefetchNeighbors(idx);
+      return;
+    }
     if (token !== VIEWER.token) return;
     delete cached.full; // stale/broken — fall through and reload
   }
@@ -563,7 +586,10 @@ async function render() {
   try { full = await fullSource(entry, ''); } catch {}
   if (token !== VIEWER.token) return;
   const currentSrc = STAGE.front && STAGE.front.getAttribute('src');
-  if (full && full !== currentSrc && await present(full, token, entry)) cacheTier(idx, 'full', full);
+  if (full && full !== currentSrc && await present(full, token, entry)) {
+    cacheTier(idx, 'full', full);
+    if (renderFullEnd) { renderFullEnd({ status: 'upgraded' }); renderFullEnd = null; } // budget span #14
+  }
   if (token === VIEWER.token) setHd(false);
   prefetchNeighbors(idx);
 }

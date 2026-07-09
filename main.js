@@ -110,6 +110,11 @@ function diagEvent(raw) {
 function diagCountSend(channel) {
   if (diagnosticsController) diagnosticsController.countChannel(channel);
 }
+// Renderer preloads only attach the diagnostics probe when they see this argument, and
+// main only passes it under the dev-only gate — so a packaged build never activates it.
+function diagRendererArgs(role) {
+  return DIAGNOSTICS_BOOTSTRAP.enabled ? [`--lumina-diagnostics-renderer=${role}`] : [];
+}
 
 // ---------------------------------------------------------------------------
 // Config
@@ -1166,6 +1171,7 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: false,
+      additionalArguments: diagRendererArgs('renderer-main'),
     },
   });
 
@@ -1247,6 +1253,7 @@ function createGalleryWindow() {
       nodeIntegration: false,
       sandbox: false,
       backgroundThrottling: false,
+      additionalArguments: diagRendererArgs('renderer-viewer'),
     },
   });
 

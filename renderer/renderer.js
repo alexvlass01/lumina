@@ -1,5 +1,12 @@
 'use strict';
 
+// Optional dev-diagnostics span bridge. window.luminaDiag is injected by preload ONLY
+// under the diagnostics gate; in every normal run it is undefined and diagSpan returns
+// a no-op end() closure, so instrumented call sites cost nothing.
+function diagSpan(category, name) {
+  return (window.luminaDiag && window.luminaDiag.span(category, name)) || (() => {});
+}
+
 // Fallback mock so the UI can be previewed in a plain browser (outside Electron).
 // In the real app window.api is always provided by preload.js, so this is skipped.
 if (!window.api) {
@@ -1055,6 +1062,13 @@ function setLibViewHeader(count = null) {
 }
 
 function renderLibrary() {
+  // Budget span #8 (Library full render): thin wrapper measures the synchronous render
+  // cost across every branch; lazy branches also emit per-chunk spans (#9).
+  const end = diagSpan('renderer', 'library-render');
+  try { return renderLibraryCore(); } finally { end({ label: LIB.filter || 'all' }); }
+}
+
+function renderLibraryCore() {
   // Record what we're about to render so a later tab switch can detect "nothing
   // changed" and skip a needless rebuild. Online does not consume a pending
   // local-folder refresh because the local grid has not been updated yet.
@@ -1682,9 +1696,10 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
     if (drawPromise) return drawPromise;
     if (tok !== allViewToken) return Promise.resolve();
     drawPromise = (async () => {
+      const endSpan = diagSpan('renderer', 'lazy-chunk'); // budget span #9
       const end = Math.min(i + LIB_CHUNK_SIZE, entries.length);
       const chunk = entries.slice(i, end);
-      if (tok !== allViewToken) return;
+      if (tok !== allViewToken) { endSpan(); return; }
       const cards = [];
       for (; i < end; i++) {
         const en = entries[i];
@@ -1698,6 +1713,7 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
       // that competes with visible thumbnails and causes a noticeable scroll pause.
       // loadThumbInto() refines each card's aspect as its thumbnail actually loads.
       if (sentinel) sentinel.hidden = i >= entries.length;
+      endSpan({ count: chunk.length });
     })().finally(() => { drawPromise = null; });
     return drawPromise;
   };
@@ -3276,6 +3292,7 @@ function showPage(name) {
   const gear = $('#btnPrefs');
   if (gear) gear.classList.toggle('active', name === 'prefs');
   activePage = name;
+  const endSwitch = diagSpan('renderer', 'page-switch'); // budget span #7
 
   if (name === 'home') {
     renderHome();
@@ -3294,6 +3311,7 @@ function showPage(name) {
   }
 
   if (page) page.scrollTop = pageScroll[name] || 0;
+  endSwitch({ label: name });
 }
 
 // First-run welcome screen (one-time).
@@ -4212,6 +4230,7 @@ async function init() {
     if (!libraryResizeAnchor) libraryResizeAnchor = libraryViewAnchor || captureLibraryScrollAnchor($('#libGrid'));
     clearTimeout(resizeT);
     resizeT = setTimeout(() => {
+      const endSpan = diagSpan('renderer', 'resize-relayout'); // budget span #12
       const resizeAnchor = libraryResizeAnchor;
       libraryResizeAnchor = null;
       layoutMonitors();
@@ -4220,6 +4239,7 @@ async function init() {
       libraryViewAnchor = captureLibraryScrollAnchor($('#libGrid'));
       if (libLazyKick) libLazyKick();
       if (!$('#viewHome').hidden) renderHome();
+      endSpan();
     }, 60);
   });
 

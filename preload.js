@@ -2,6 +2,17 @@
 
 const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
+// Dev-only diagnostics probe. Attached only when main passed the gated launch argument
+// (unpackaged diagnostics run); a packaged build never sees the arg, so the diagnostics
+// module is never required. Wrapped so a probe fault can never break the real preload.
+try {
+  const hasDiag = process.argv.some((a) => typeof a === 'string' && a.indexOf('--lumina-diagnostics-renderer') === 0);
+  if (hasDiag) {
+    const diag = require('./diagnostics/renderer/preload-attach');
+    diag.attachRendererProbe({ ipcRenderer, contextBridge, role: diag.parseRole(process.argv), cardSelector: '.lib-card' });
+  }
+} catch { /* diagnostics is optional */ }
+
 contextBridge.exposeInMainWorld('api', {
   getPathForFile: (file) => webUtils.getPathForFile(file),
   getConfig: () => ipcRenderer.invoke('get-config'),

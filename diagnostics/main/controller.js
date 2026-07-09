@@ -76,7 +76,13 @@ class DiagnosticsController {
     this.ipcMain.handle('diagnostics-start', (_event, opts) => this.startRecording(opts || {}));
     this.ipcMain.handle('diagnostics-stop', (_event, opts) => this.stopRecording(opts || {}));
     this.ipcMain.handle('diagnostics-mark', (_event, label) => this.mark(label));
-    this.ipcMain.handle('diagnostics-record', (_event, events) => this.record(events));
+    // Renderer/viewer batches arrive here; stamp the sender's webContents id onto each
+    // event so the report can tell the two windows apart even if a role is missing.
+    this.ipcMain.handle('diagnostics-record', (event, events) => this.record(events, {
+      webContentsId: event && event.sender ? event.sender.id : undefined,
+    }));
+    // Clock handshake: renderers align their wall-clock timestamps to main's clock.
+    this.ipcMain.handle('diagnostics-clock', () => ({ now: this.now() }));
     this.ipcMain.handle('diagnostics-open-session-folder', () => this.openSessionFolder());
     this.ipcMain.handle('diagnostics-clear-sessions', () => this.clearSessions());
   }
@@ -277,9 +283,15 @@ class DiagnosticsController {
     });
   }
 
-  record(events) {
+  record(events, { webContentsId } = {}) {
     if (!this.writer) return { ok: false, error: 'not_recording', status: this.status() };
-    const normalized = this.session.recordBatch(events, { generation: this.session.snapshot().generation, nowMs: this.now() });
+    const list = Array.isArray(events) ? events : [events];
+    const stamped = Number.isInteger(webContentsId)
+      ? list.map((raw) => (raw && typeof raw === 'object'
+        ? { ...raw, source: { ...(raw.source && typeof raw.source === 'object' ? raw.source : {}), webContentsId } }
+        : raw))
+      : list;
+    const normalized = this.session.recordBatch(stamped, { generation: this.session.snapshot().generation, nowMs: this.now() });
     const result = normalized.length ? this.writer.enqueue(normalized) : { accepted: 0, dropped: 0 };
     return { ok: true, accepted: result.accepted, dropped: result.dropped, status: this.status() };
   }

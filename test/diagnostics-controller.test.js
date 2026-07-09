@@ -43,6 +43,8 @@ function fakeIpcMain() {
 
   controller.registerIpc();
   ok('registerIpc exposes diagnostics channels', ipcMain.handlers.has('diagnostics-start') && ipcMain.handlers.has('diagnostics-mark'));
+  ok('registerIpc exposes the renderer batch + clock channels',
+    ipcMain.handlers.has('diagnostics-record') && ipcMain.handlers.has('diagnostics-clock'));
 
   const started = await controller.startIfNeeded('startup');
   ok('startIfNeeded creates a recording session', started.ok && controller.status().state === 'recording');
@@ -121,6 +123,9 @@ function fakeIpcMain() {
   probeController.countChannel('config-changed');
   ok('countChannel delegates to the active sampler', fakeSampler.counted.length === 1 && fakeSampler.counted[0] === 'config-changed');
 
+  // Renderer batch: role comes from the event, webContentsId is stamped by the controller.
+  probeController.record([{ kind: 'sample', category: 'renderer', name: 'frame-window', source: { role: 'renderer-main' }, attributes: { count: 5 } }], { webContentsId: 7 });
+
   const endSpan = probeController.startSpan('library', 'folder-entries', { count: 3 });
   probeNow += 250;
   endSpan({ status: 'ok' });
@@ -152,6 +157,9 @@ function fakeIpcMain() {
     spanEvents[0].attributes.status === 'ok');
   ok('sampler events flow through recordEvent', probeEvents.some((event) =>
     event.name === 'event-loop' && event.attributes.maxMs === 12));
+  const rendererBatch = probeEvents.find((event) => event.category === 'renderer' && event.name === 'frame-window');
+  ok('renderer batch keeps its role and gets a stamped webContentsId', rendererBatch &&
+    rendererBatch.source.role === 'renderer-main' && rendererBatch.source.webContentsId === 7);
   const windowEvents = probeEvents.filter((event) => event.category === 'window');
   ok('window probes record created and show with a label',
     windowEvents.some((event) => event.name === 'created' && event.attributes.label === 'viewer') &&
