@@ -28,12 +28,24 @@ const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: �
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
 const cloudDevProfile = require('./src/cloud/dev-profile'); // isolated userData for explicit staging launches
+const diagnosticsGate = require('./src/diagnostics-gate'); // production-safe gate for dev-only diagnostics
 const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 
-// Resolve staging userData before the single-instance lock and before any paths
-// are derived from app.getPath('userData'). This keeps config, wallpapers,
+// Resolve dev-only userData overrides before the single-instance lock and before
+// any paths are derived from app.getPath('userData'). Diagnostics intentionally
+// has its own profile; Cloud staging remains independent and is used only when
+// diagnostics is not explicitly enabled.
+const DIAGNOSTICS_BOOTSTRAP = diagnosticsGate.resolveDiagnosticsBootstrap({
+  isPackaged: app.isPackaged,
+  env: process.env,
+  argv: process.argv,
+  localAppData: process.env.LOCALAPPDATA,
+});
+if (DIAGNOSTICS_BOOTSTRAP.enabled) app.setPath('userData', DIAGNOSTICS_BOOTSTRAP.userDataPath);
+
+// Resolve staging userData after diagnostics. This keeps config, wallpapers,
 // Chromium storage and safeStorage-encrypted Cloud sessions separate from prod.
-const STAGING_USER_DATA = cloudDevProfile.resolveStagingUserData({
+const STAGING_USER_DATA = DIAGNOSTICS_BOOTSTRAP.enabled ? null : cloudDevProfile.resolveStagingUserData({
   isPackaged: app.isPackaged,
   cloudEnv: process.env.LUMINA_CLOUD,
   requestedPath: process.env.LUMINA_DEV_USER_DATA,
@@ -2838,6 +2850,9 @@ app.on('second-instance', () => {
 
 app.whenReady().then(async () => {
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
+  if (DIAGNOSTICS_BOOTSTRAP.enabled) {
+    console.log(`[Diagnostics] enabled; userData=${DIAGNOSTICS_BOOTSTRAP.userDataPath}`);
+  }
   loadConfig();
   ensureAnonId(); // generate the anonymous install id once, before any cloud request
   loadLiveFolderState();
