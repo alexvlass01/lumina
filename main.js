@@ -95,6 +95,7 @@ let galleryWindowNormalBounds = null;
 let galleryWindowFullscreen = false; // tracked explicitly: enter/leave-full-screen events are unreliable for frameless windows on Windows
 let galleryPayload = { items: [], index: 0 };
 let diagnosticsController = null;
+let diagnosticsControlWindow = null;
 app.isQuitting = false;
 
 // --- Diagnostics glue (dev-only). When the gated controller is absent these are
@@ -114,6 +115,39 @@ function diagCountSend(channel) {
 // main only passes it under the dev-only gate — so a packaged build never activates it.
 function diagRendererArgs(role) {
   return DIAGNOSTICS_BOOTSTRAP.enabled ? [`--lumina-diagnostics-renderer=${role}`] : [];
+}
+
+// Small dev-only control window (Start/Stop/mark/report). It is NOT instrumented — it
+// uses its own control-preload (no probe), and its process is tagged 'renderer-
+// diagnostics' so the report excludes it from the app's own smoothness verdict.
+function openDiagnosticsControlWindow() {
+  if (!DIAGNOSTICS_BOOTSTRAP.enabled) return;
+  if (diagnosticsControlWindow && !diagnosticsControlWindow.isDestroyed()) { diagnosticsControlWindow.focus(); return; }
+  diagnosticsControlWindow = new BrowserWindow({
+    width: 300,
+    height: 430,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    show: false,
+    alwaysOnTop: true, // float above the app so the user keeps working in the main window
+    title: 'Lumina Diagnostics',
+    backgroundColor: '#1b1b1b',
+    webPreferences: {
+      preload: path.join(__dirname, 'diagnostics', 'ui', 'control-preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: false,
+    },
+  });
+  diagnosticsControlWindow.setMenuBarVisibility(false);
+  diagnosticsControlWindow.loadFile(path.join(__dirname, 'diagnostics', 'ui', 'control.html'));
+  // Show WITHOUT stealing focus, so the main window stays foreground and keeps rendering
+  // (and thus keeps being sampled) while this panel floats beside it.
+  diagnosticsControlWindow.once('ready-to-show', () => {
+    if (diagnosticsControlWindow && !diagnosticsControlWindow.isDestroyed()) diagnosticsControlWindow.showInactive();
+  });
+  diagnosticsControlWindow.on('closed', () => { diagnosticsControlWindow = null; });
 }
 
 // ---------------------------------------------------------------------------
@@ -1172,6 +1206,10 @@ function createWindow() {
       nodeIntegration: false,
       sandbox: false,
       additionalArguments: diagRendererArgs('renderer-main'),
+      // In diagnostics mode keep rAF running while the window is merely unfocused (the
+      // floating control window must not zero out smoothness sampling). The probe still
+      // stops counting when the window is genuinely hidden/minimized.
+      backgroundThrottling: !DIAGNOSTICS_BOOTSTRAP.enabled,
     },
   });
 
@@ -2964,6 +3002,10 @@ app.whenReady().then(async () => {
           if (galleryWindow && !galleryWindow.isDestroyed()
             && galleryWindow.webContents.getOSProcessId() === pid) return 'renderer-viewer';
         } catch {}
+        try {
+          if (diagnosticsControlWindow && !diagnosticsControlWindow.isDestroyed()
+            && diagnosticsControlWindow.webContents.getOSProcessId() === pid) return 'renderer-diagnostics';
+        } catch {}
         return '';
       };
       diagnosticsController = createDiagnosticsController({
@@ -2992,6 +3034,7 @@ app.whenReady().then(async () => {
       } else {
         console.warn('[Diagnostics] failed to start recording:', started && started.error);
       }
+      openDiagnosticsControlWindow(); // small Start/Stop/report window
     } catch (err) {
       console.error('[Diagnostics] controller failed:', err);
     }

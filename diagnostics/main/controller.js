@@ -5,6 +5,9 @@ const path = require('path');
 const { DiagnosticsSession } = require('../core/session');
 const { JsonlWriter } = require('../core/writer');
 const retention = require('../core/retention');
+const report = require('../core/report');
+const { toChromeTrace } = require('../core/trace-export');
+const { redactValue } = require('../core/redaction');
 
 function retentionLimitFromEnv(env = process.env) {
   const raw = Number.parseInt(String(env.LUMINA_DIAGNOSTICS_RETENTION || ''), 10);
@@ -63,6 +66,7 @@ class DiagnosticsController {
     this.sessionDir = '';
     this.eventsPath = '';
     this.metaPath = '';
+    this.summaryHtmlPath = '';
     this.lastError = '';
     this.registered = false;
     this.shuttingDown = false;
@@ -84,6 +88,8 @@ class DiagnosticsController {
     // Clock handshake: renderers align their wall-clock timestamps to main's clock.
     this.ipcMain.handle('diagnostics-clock', () => ({ now: this.now() }));
     this.ipcMain.handle('diagnostics-open-session-folder', () => this.openSessionFolder());
+    this.ipcMain.handle('diagnostics-open-report', () => this.openReport());
+    this.ipcMain.handle('diagnostics-export-sanitized', () => this.exportSanitized());
     this.ipcMain.handle('diagnostics-clear-sessions', () => this.clearSessions());
   }
 
@@ -303,7 +309,7 @@ class DiagnosticsController {
     return { ok: true, accepted: result.accepted, dropped: result.dropped, status: this.status() };
   }
 
-  async stopRecording({ reason = 'manual' } = {}) {
+  async stopRecording({ reason = 'manual', writeReport = true } = {}) {
     if (!this.writer) {
       this.stopSampler();
       this.session.complete();
@@ -318,9 +324,16 @@ class DiagnosticsController {
       if (writerStats.degraded) this.session.degrade(writerStats.degradedReason);
       else this.session.complete();
       await this.writeFinalMeta(writerStats, reason);
-      const status = this.status();
       this.writer = null;
-      return { ok: true, status };
+      // Build the readable report from the flushed events. Best-effort: a report failure
+      // must not mark the recording itself as failed. Skipped on app-quit (writeReport
+      // false) so shutdown never blocks on reading a large session file.
+      if (writeReport) {
+        try { await this.generateReport(); } catch (err) {
+          this.lastError = err && err.message ? err.message : String(err);
+        }
+      }
+      return { ok: true, status: this.status() };
     } catch (err) {
       this.lastError = err && err.message ? err.message : String(err);
       this.stopSampler();
@@ -334,7 +347,7 @@ class DiagnosticsController {
     this.shuttingDown = true;
     try {
       if (this.writer && this.session.snapshot().state === 'recording') {
-        await this.stopRecording({ reason });
+        await this.stopRecording({ reason, writeReport: false });
       } else {
         this.stopSampler();
         if (this.writer) await this.writer.shutdownBestEffort();
@@ -351,6 +364,74 @@ class DiagnosticsController {
     }
     const error = await this.shell.openPath(this.sessionDir);
     return { ok: !error, error: error || '', status: this.status() };
+  }
+
+  // --- Report artefacts ----------------------------------------------------
+  async readSessionEvents() {
+    if (!this.eventsPath) return [];
+    let raw = '';
+    try { raw = await this.fs.promises.readFile(this.eventsPath, 'utf8'); } catch { return []; }
+    const events = [];
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try { events.push(JSON.parse(trimmed)); } catch { /* skip a torn line */ }
+    }
+    return events;
+  }
+
+  async readSessionMeta() {
+    if (!this.metaPath) return {};
+    try { return JSON.parse(await this.fs.promises.readFile(this.metaPath, 'utf8')); } catch { return {}; }
+  }
+
+  // summary.json + summary.html + trace.json in the session directory. Also writes an
+  // (empty) private-map.json placeholder: the local-only alias→path map lives here, and
+  // the sanitized export is defined as "everything except this file".
+  async generateReport() {
+    if (!this.sessionDir) return { ok: false, error: 'no_session' };
+    const events = await this.readSessionEvents();
+    const meta = await this.readSessionMeta();
+    const summary = report.buildSummary(events, meta);
+    const html = report.renderSummaryHtml(summary, events, meta);
+    const trace = toChromeTrace(events, meta);
+    const write = (name, data) => this.fs.promises.writeFile(path.join(this.sessionDir, name), data, 'utf8');
+    await write('summary.json', `${JSON.stringify(summary, null, 2)}\n`);
+    await write('summary.html', html);
+    await write('trace.json', JSON.stringify(trace));
+    await write('private-map.json', `${JSON.stringify({ note: 'local only; never included in sanitized export', aliases: {} }, null, 2)}\n`);
+    this.summaryHtmlPath = path.join(this.sessionDir, 'summary.html');
+    return { ok: true, summaryHtmlPath: this.summaryHtmlPath };
+  }
+
+  async openReport() {
+    if (!this.shell || typeof this.shell.openPath !== 'function') return { ok: false, error: 'unavailable' };
+    const target = this.summaryHtmlPath && this.fs.existsSync(this.summaryHtmlPath) ? this.summaryHtmlPath : this.sessionDir;
+    if (!target) return { ok: false, error: 'no_report' };
+    const error = await this.shell.openPath(target);
+    return { ok: !error, error: error || '' };
+  }
+
+  // Sanitized export: redact every event/summary string (paths, users, tokens, queries,
+  // data URIs, emails) and write a separate `sanitized/` folder. The private map is never
+  // copied. Safe to hand to another machine.
+  async exportSanitized() {
+    if (!this.sessionDir) return { ok: false, error: 'no_session' };
+    try {
+      const events = (await this.readSessionEvents()).map(redactValue);
+      const meta = redactValue(await this.readSessionMeta());
+      const summary = report.buildSummary(events, meta);
+      const outDir = path.join(this.sessionDir, 'sanitized');
+      await this.fs.promises.mkdir(outDir, { recursive: true });
+      const write = (name, data) => this.fs.promises.writeFile(path.join(outDir, name), data, 'utf8');
+      await write('events.sanitized.jsonl', events.map((e) => JSON.stringify(e)).join('\n') + '\n');
+      await write('summary.sanitized.json', `${JSON.stringify(summary, null, 2)}\n`);
+      await write('summary.sanitized.html', report.renderSummaryHtml(summary, events, meta));
+      if (this.shell && typeof this.shell.openPath === 'function') await this.shell.openPath(outDir);
+      return { ok: true, dir: outDir };
+    } catch (err) {
+      return { ok: false, error: err && err.message ? err.message : String(err) };
+    }
   }
 
   async clearSessions() {
@@ -396,12 +477,16 @@ class DiagnosticsController {
       enabled: true,
       state: snapshot.state,
       sessionId: snapshot.sessionId,
+      startedAtMs: snapshot.startedAtMs,
+      stoppedAtMs: snapshot.stoppedAtMs,
+      degradedReason: snapshot.degradedReason,
       generation: snapshot.generation,
       sequence: snapshot.sequence,
       sessionsRoot: this.sessionsRoot,
       sessionDir: this.sessionDir,
       eventsPath: this.eventsPath,
       metaPath: this.metaPath,
+      summaryHtmlPath: this.summaryHtmlPath,
       lastError: this.lastError,
       protocolCounters: snapshot.protocolCounters,
       lateBatches: snapshot.lateBatches,

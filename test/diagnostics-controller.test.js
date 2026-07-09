@@ -71,6 +71,19 @@ function fakeIpcMain() {
   const meta = JSON.parse(fs.readFileSync(controller.status().metaPath, 'utf8'));
   ok('final meta includes writer stats and app info', meta.writer.enqueued >= 3 && meta.app.name === 'Lumina');
 
+  // Stop generated the readable report artefacts next to the raw session.
+  const reportDir = path.dirname(controller.status().eventsPath);
+  ok('stop writes summary.json/html and trace.json',
+    fs.existsSync(path.join(reportDir, 'summary.html')) &&
+    fs.existsSync(path.join(reportDir, 'summary.json')) &&
+    fs.existsSync(path.join(reportDir, 'trace.json')));
+  const summaryHtml = fs.readFileSync(path.join(reportDir, 'summary.html'), 'utf8');
+  ok('summary.html is a self-contained page', summaryHtml.startsWith('<!doctype html>') && !/<script/i.test(summaryHtml));
+  const exported = await controller.exportSanitized();
+  ok('sanitized export writes a separate folder without the private map',
+    exported.ok && fs.existsSync(path.join(reportDir, 'sanitized', 'summary.sanitized.html')) &&
+    !fs.existsSync(path.join(reportDir, 'sanitized', 'private-map.json')));
+
   const opened = await createDiagnosticsController({
     userDataPath: tmpRoot(),
     shell: { openPath: async () => '' },
