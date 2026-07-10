@@ -177,6 +177,15 @@ class DiagnosticsController {
     const onDegraded = (reason) => {
       this.session.degrade(reason);
       this.stopSampler();
+      // Persist the reason immediately. A degraded writer may be followed by an app
+      // close, so waiting for a manual Stop would leave meta.json claiming that the
+      // session is still recording and erase the only useful failure evidence.
+      if (this.metaPath) {
+        const writerStats = this.writer && typeof this.writer.getStats === 'function'
+          ? this.writer.getStats()
+          : { active: false, degraded: true, degradedReason: reason };
+        void this.writeFinalMeta(writerStats, 'writer-degraded').catch(() => {});
+      }
     };
     if (this.writerFactory) return this.writerFactory({
       filePath,

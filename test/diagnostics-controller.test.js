@@ -128,6 +128,36 @@ function fakeIpcMain() {
     && blockedRetentionController.status().writer.active);
   await blockedRetentionController.stopRecording({ reason: 'locked-retention-test' });
 
+  let forceWriterDegraded = null;
+  const degradedWriterStats = {
+    active: false, degraded: true, degradedReason: 'write_error', enqueued: 0,
+    dropped: 0, droppedByCategory: {}, flushes: 0, flushErrors: 1,
+    bytesWritten: 0, lastFlushDurationMs: 0, maxQueueDepth: 0,
+    pendingBytes: 0, pendingLines: 0,
+  };
+  const degradedMetaController = createDiagnosticsController({
+    userDataPath: tmpRoot(),
+    autoStart: false,
+    writerFactory: ({ onDegraded }) => {
+      forceWriterDegraded = onDegraded;
+      return {
+        start: async () => {},
+        enqueue: () => ({ accepted: 1, dropped: 0 }),
+        flush: async () => {},
+        stop: async () => degradedWriterStats,
+        shutdownBestEffort: async () => degradedWriterStats,
+        getStats: () => degradedWriterStats,
+      };
+    },
+  });
+  await degradedMetaController.startRecording({ reason: 'degraded-meta-test' });
+  forceWriterDegraded('write_error');
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  const degradedMeta = JSON.parse(fs.readFileSync(degradedMetaController.status().metaPath, 'utf8'));
+  ok('writer degradation is persisted immediately without waiting for manual Stop',
+    degradedMeta.state === 'degraded' && degradedMeta.degradedReason === 'write_error'
+    && degradedMeta.stopReason === 'writer-degraded');
+
   // --- Stage "main metrics/probes": sampler lifecycle, spans, window/app/error events ---
   let probeNow = Date.parse('2026-07-09T14:00:00.000Z');
   const fakeSampler = {

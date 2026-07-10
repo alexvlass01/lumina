@@ -27,7 +27,12 @@ class JsonlWriter {
     maxPendingBytes = 8 * 1024 * 1024,
     reservedPendingBytes = 256 * 1024,
     maxFileBytes = 200 * 1024 * 1024,
-    flushTimeoutMs = 5000,
+    // Disabled by default. A wall-clock timeout running on the same main event loop
+    // cannot distinguish slow disk I/O from the exact long main-thread stall that
+    // diagnostics is trying to capture: after the stall the timer may run before the
+    // already-completed append callback and falsely stop the recording. Tests and
+    // special callers can still opt into a timeout explicitly.
+    flushTimeoutMs = 0,
     now = () => Date.now(),
     onDegraded = () => {},
   } = {}) {

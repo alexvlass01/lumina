@@ -78,6 +78,28 @@ function event(category, name = 'sample') {
   await broken.flush();
   ok('write error degrades writer without throwing', broken.getStats().degraded && degradedReason === 'write_error');
 
+  let releaseDelayedWrite = null;
+  const delayedFs = {
+    promises: {
+      mkdir: async () => {},
+      appendFile: () => new Promise((resolve) => { releaseDelayedWrite = resolve; }),
+    },
+  };
+  const delayed = await new JsonlWriter({
+    filePath: path.join(tmpDir(), 'events.jsonl'),
+    fsModule: delayedFs,
+    flushIntervalMs: 0,
+  }).start();
+  delayed.enqueue(event('delayed'));
+  const delayedFlush = delayed.flush();
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  ok('default writer stays active while a delayed append is still pending',
+    delayed.getStats().active && !delayed.getStats().degraded);
+  releaseDelayedWrite();
+  await delayedFlush;
+  ok('delayed append completes without degrading the recording',
+    delayed.getStats().active && !delayed.getStats().degraded && delayed.getStats().flushes === 1);
+
   const slowFs = {
     promises: {
       mkdir: async () => {},
