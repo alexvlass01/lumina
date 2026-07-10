@@ -102,6 +102,8 @@ class DiagnosticsController {
     if (this.session.snapshot().state === 'recording') {
       return { ok: true, status: this.status() };
     }
+    this.lastError = '';
+    this.summaryHtmlPath = '';
     try {
       const root = await retention.ensureRetentionRoot(this.sessionsRoot, { fsModule: this.fs });
       const startedAtMs = this.now();
@@ -112,7 +114,18 @@ class DiagnosticsController {
       this.metaPath = path.join(this.sessionDir, 'meta.json');
       this.writer = this.createWriter(this.eventsPath);
       await this.writer.start();
-      await retention.pruneSessions(root, { keep: this.retentionKeep, fsModule: this.fs });
+      let retentionFailures = 0;
+      try {
+        const pruned = await retention.pruneSessions(root, {
+          keep: this.retentionKeep,
+          fsModule: this.fs,
+        });
+        retentionFailures = Array.isArray(pruned.failed) ? pruned.failed.length : 0;
+      } catch {
+        // Retention is optional housekeeping. Failure to enumerate or delete an old
+        // session must not downgrade the fresh recording that is already writable.
+        retentionFailures = 1;
+      }
       await this.writeMeta(createSessionMeta({
         session: this.session,
         sessionDir: this.sessionDir,
@@ -121,12 +134,19 @@ class DiagnosticsController {
         startedAtIso,
       }));
       await this.recordLifecycle('session-started', { reason });
+      if (retentionFailures) {
+        await this.recordLifecycle('retention-prune-skipped', { count: retentionFailures });
+      }
       this.startSampler();
       await this.writer.flush();
       return { ok: true, status: this.status() };
     } catch (err) {
       this.lastError = err && err.message ? err.message : String(err);
       this.stopSampler();
+      if (this.writer) {
+        try { await this.writer.shutdownBestEffort(); } catch {}
+        this.writer = null;
+      }
       this.session.degrade(this.lastError);
       return { ok: false, error: this.lastError, status: this.status() };
     }

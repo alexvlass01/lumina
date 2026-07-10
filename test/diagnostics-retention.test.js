@@ -43,6 +43,32 @@ function makeSession(root, name, mtimeMs) {
     fs.existsSync(path.join(root, 'session-3')) &&
     fs.existsSync(path.join(root, 'not-a-session')));
 
+  const lockedRoot = await ensureRetentionRoot(tmpRoot());
+  makeSession(lockedRoot, 'session-locked', 1000);
+  makeSession(lockedRoot, 'session-removable', 2000);
+  makeSession(lockedRoot, 'session-newest', 3000);
+  const lockedFs = {
+    ...fs,
+    promises: {
+      ...fs.promises,
+      async rm(target, options) {
+        if (path.basename(target) === 'session-locked') {
+          const err = new Error('resource busy or locked');
+          err.code = 'EBUSY';
+          throw err;
+        }
+        return fs.promises.rm(target, options);
+      },
+    },
+  };
+  const lockedPrune = await pruneSessions(lockedRoot, { keep: 1, fsModule: lockedFs });
+  ok('prune skips a locked old session and continues removing other candidates',
+    lockedPrune.removed.length === 1 && lockedPrune.removed[0] === 'session-removable'
+    && lockedPrune.failed.length === 1 && lockedPrune.failed[0].name === 'session-locked'
+    && lockedPrune.failed[0].code === 'EBUSY'
+    && fs.existsSync(path.join(lockedRoot, 'session-locked'))
+    && fs.existsSync(path.join(lockedRoot, 'session-newest')));
+
   const cleared = await clearSessions(root);
   ok('clear removes all session directories only',
     cleared.removed.length === 2 &&

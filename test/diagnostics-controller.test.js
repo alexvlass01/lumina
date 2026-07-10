@@ -106,6 +106,28 @@ function fakeIpcMain() {
   const sessionDirs = fs.readdirSync(retentionRoot).filter((name) => name.startsWith('session-'));
   ok('controller applies retention before new sessions', sessionDirs.length === 1);
 
+  const blockedRetentionFs = {
+    ...fs,
+    promises: {
+      ...fs.promises,
+      async readdir() {
+        const err = new Error('resource busy or locked');
+        err.code = 'EBUSY';
+        throw err;
+      },
+    },
+  };
+  const blockedRetentionController = createDiagnosticsController({
+    userDataPath: tmpRoot(),
+    fsModule: blockedRetentionFs,
+    autoStart: false,
+  });
+  const blockedRetentionStart = await blockedRetentionController.startRecording({ reason: 'locked-retention' });
+  ok('retention enumeration failure does not block a fresh recording',
+    blockedRetentionStart.ok && blockedRetentionController.status().state === 'recording'
+    && blockedRetentionController.status().writer.active);
+  await blockedRetentionController.stopRecording({ reason: 'locked-retention-test' });
+
   // --- Stage "main metrics/probes": sampler lifecycle, spans, window/app/error events ---
   let probeNow = Date.parse('2026-07-09T14:00:00.000Z');
   const fakeSampler = {
