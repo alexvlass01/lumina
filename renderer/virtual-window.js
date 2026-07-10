@@ -1,0 +1,75 @@
+'use strict';
+
+// Pure math for the virtualized Library grid: which justified-layout rows fall into
+// the (overscanned) viewport, and how tall the two flex spacers must be so the rows
+// OUTSIDE that window keep the scrollbar and scroll offsets exactly where a fully
+// materialized grid would put them. No DOM here — renderer.js applies the result,
+// and plain-node tests drive it directly.
+//
+// Spacer math accounts for the flex `gap`: a spacer that stands in for rows
+// 0..first-1 must be sum(heights) + gap*(first-1) tall, because the flex container
+// inserts one more gap between the spacer and the first real row (same at the bottom).
+
+(function expose(root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.VirtualWindow = api;
+})(typeof window !== 'undefined' ? window : null, function createApi() {
+  // rows: [{ start, end, top, height }] from JustifiedLayout.layoutRows (tops ascending).
+  // Returns the inclusive row range intersecting [viewTop, viewBottom], clamped so that
+  // SOMETHING is always materialized when rows exist (an out-of-range scroll position
+  // during relayout must not blank the grid). Empty rows → { first: 0, last: -1 }.
+  function rowRangeForViewport(rows, viewTop, viewBottom) {
+    const n = Array.isArray(rows) ? rows.length : 0;
+    if (!n) return { first: 0, last: -1 };
+    const top = Number.isFinite(viewTop) ? viewTop : 0;
+    const bottom = Math.max(top, Number.isFinite(viewBottom) ? viewBottom : top);
+
+    // first = the first row whose bottom edge is below viewTop.
+    let lo = 0;
+    let hi = n - 1;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (rows[mid].top + rows[mid].height <= top) lo = mid + 1;
+      else hi = mid;
+    }
+    const first = lo;
+
+    // last = the last row whose top edge is above viewBottom.
+    lo = first;
+    hi = n - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (rows[mid].top < bottom) lo = mid;
+      else hi = mid - 1;
+    }
+    let last = lo;
+    if (rows[last].top >= bottom && last > first) last = first;
+    return { first, last };
+  }
+
+  // Spacer heights replacing the rows outside [first, last]. `top === 0` /
+  // `bottom === 0` means "no spacer needed" — the caller must REMOVE the element
+  // then (a zero-height flex item would still occupy a row and add a stray gap).
+  function padHeights(rows, first, last, gap, totalHeight) {
+    const n = Array.isArray(rows) ? rows.length : 0;
+    const g = Math.max(0, Number(gap) || 0);
+    if (!n || last < first) return { top: 0, bottom: 0 };
+    const total = Number.isFinite(totalHeight)
+      ? totalHeight
+      : rows[n - 1].top + rows[n - 1].height;
+    const top = first > 0 ? Math.max(0, rows[first].top - g) : 0;
+    const bottom = last < n - 1
+      ? Math.max(0, total - (rows[last].top + rows[last].height) - g)
+      : 0;
+    return { top, bottom };
+  }
+
+  // Inclusive card-index range covered by the row range ({ 0, -1 } when empty).
+  function cardRangeForRows(rows, first, last) {
+    if (!Array.isArray(rows) || !rows.length || last < first) return { first: 0, last: -1 };
+    return { first: rows[first].start, last: rows[last].end - 1 };
+  }
+
+  return { rowRangeForViewport, padHeights, cardRangeForRows };
+});

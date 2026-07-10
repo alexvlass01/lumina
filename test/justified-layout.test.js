@@ -35,4 +35,23 @@ ok('extreme portraits and panoramas are capped without overflow',
 
 ok('empty input returns no boxes', J.layout([], 500).length === 0);
 
+// --- layoutRows: row geometry for the virtualized grid ---
+const rich = J.layoutRows([1.5, 1.5, 1.5, 1.5], 1000, { gap: 10, targetHeight: 200 });
+ok('layoutRows returns the same boxes as layout', rich.boxes.length === 4
+  && rich.boxes.every((box, i) => near(box.width, full[i].width) && near(box.height, full[i].height)));
+ok('rows partition the boxes without gaps or overlap', rich.rows.length === 2
+  && rich.rows[0].start === 0 && rich.rows[0].end === 3
+  && rich.rows[1].start === 3 && rich.rows[1].end === 4);
+ok('row tops are cumulative heights plus gaps',
+  rich.rows[0].top === 0 && near(rich.rows[1].top, rich.rows[0].height + 10));
+ok('totalHeight covers all rows and inner gaps',
+  near(rich.totalHeight, rich.rows[0].height + 10 + rich.rows[1].height));
+ok('every box height matches its row height', rich.rows.every((row) => {
+  for (let i = row.start; i < row.end; i++) if (!near(rich.boxes[i].height, row.height)) return false;
+  return true;
+}));
+const emptyRows = J.layoutRows([], 500);
+ok('layoutRows on empty input yields no rows and zero height',
+  emptyRows.rows.length === 0 && emptyRows.totalHeight === 0 && emptyRows.boxes.length === 0);
+
 console.log('\nAll ' + passed + ' justified-layout tests passed.');

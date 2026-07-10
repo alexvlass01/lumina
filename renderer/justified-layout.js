@@ -19,9 +19,13 @@
     return clamp(Number.isFinite(n) && n > 0 ? n : 1.6, minAspect, maxAspect);
   }
 
-  // Returns one { width, height } box per aspect. Complete rows fill the container;
-  // the final row keeps the target height and stays left-aligned instead of stretching.
-  function layout(aspects, containerWidth, options = {}) {
+  // Row-aware layout: one { width, height } box per aspect PLUS the row list
+  // ({ start, end, top, height } — `end` exclusive) and the grid's total height.
+  // The virtualized Library grid needs the row geometry to know which cards fall
+  // into the viewport without materializing any DOM. Same row-breaking algorithm
+  // as always: complete rows fill the container; the final row keeps the target
+  // height and stays left-aligned instead of stretching.
+  function layoutRows(aspects, containerWidth, options = {}) {
     const width = Math.max(1, finite(containerWidth, 1));
     const gap = Math.max(0, finite(options.gap, 12));
     const targetHeight = Math.max(1, finite(options.targetHeight, 160));
@@ -30,6 +34,7 @@
     const safeAspects = (Array.isArray(aspects) ? aspects : [])
       .map((aspect) => normalizeAspect(aspect, minAspect, maxAspect));
     const boxes = new Array(safeAspects.length);
+    const rows = [];
     let rowStart = 0;
     let rowSum = 0;
 
@@ -42,6 +47,7 @@
       for (let i = rowStart; i < end; i++) {
         boxes[i] = { width: safeAspects[i] * height, height };
       }
+      rows.push({ start: rowStart, end, top: 0, height });
       rowStart = end;
       rowSum = 0;
     }
@@ -68,8 +74,21 @@
       }
     }
     finish(safeAspects.length, false);
-    return boxes;
+
+    let top = 0;
+    for (const row of rows) {
+      row.top = top;
+      top += row.height + gap;
+    }
+    const totalHeight = rows.length ? top - gap : 0;
+    return { boxes, rows, totalHeight, gap };
   }
 
-  return { normalizeAspect, layout };
+  // Returns one { width, height } box per aspect (historic API; delegates to
+  // layoutRows so the two can never drift apart).
+  function layout(aspects, containerWidth, options = {}) {
+    return layoutRows(aspects, containerWidth, options).boxes;
+  }
+
+  return { normalizeAspect, layout, layoutRows };
 });

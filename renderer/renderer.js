@@ -14,6 +14,18 @@ if (!window.api) {
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   let mockCloud = { signedIn: false, user: null };
+  // ?bigmock=N (browser preview only): synthesize a large Library of colored SVG
+  // "photos" with varied aspect ratios to exercise the virtualized grid without
+  // Electron. thumbInfo below parses the real width/height back out of the SVG.
+  const bigMock = Number((location.search.match(/[?&]bigmock=(\d+)/) || [])[1]) || 0;
+  for (let i = 0; i < bigMock; i++) {
+    const hue = (i * 47) % 360;
+    const [w, h] = [[320, 200], [200, 300], [320, 180], [260, 260], [420, 200]][i % 5];
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}"><rect width="${w}" height="${h}" fill="hsl(${hue},60%,45%)"/><text x="10" y="28" fill="#fff" font-size="22">${i}</text></svg>`;
+    const p = 'data:image/svg+xml,' + encodeURIComponent(svg);
+    mock.library['big' + i] = { id: 'big' + i, type: 'image', path: p, addedAt: 1000000 + i };
+  }
+  if (bigMock) mock.firstRunDone = true;
   window.api = {
     getConfig: async () => mock,
     setConfig: async (p) => (mock = { ...mock, ...p }),
@@ -162,7 +174,12 @@ if (!window.api) {
     setStartMinimized: async (v) => (mock.startMinimized = v),
     fileUrl: async (p) => p,
     thumb: async (p) => p,
-    thumbInfo: async (p) => ({ url: p, width: 16, height: 10 }),
+    thumbInfo: async (p) => {
+      const m = /width%3D%22(\d+)%22%20height%3D%22(\d+)%22|width="(\d+)"\s+height="(\d+)"/.exec(String(p));
+      const w = m ? Number(m[1] || m[3]) : 16;
+      const h = m ? Number(m[2] || m[4]) : 10;
+      return { url: p, width: w, height: h };
+    },
     thumbAspects: async (entries) => entries.map((entry) => ({ path: entry.path, aspect: 1.6 })),
     quitApp: () => {},
     createShortcuts: async (which) => {
@@ -782,11 +799,11 @@ const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], in
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
 const INTERNET_TAG_SUGGEST_MIN_LEN = 3;
 const GALLERY_MAX_PAYLOAD_ITEMS = 500;
-const LIB_CHUNK_SIZE = 48;
-const LIB_RENDER_PRELOAD_PX = 2800;
 const LIB_THUMB_PRELOAD_PX = 800;
-const LIB_RENDER_PRELOAD_MARGIN = `${LIB_RENDER_PRELOAD_PX}px`;
 const LIB_THUMB_PRELOAD_MARGIN = `${LIB_THUMB_PRELOAD_PX}px`;
+// Virtualized grid: rows within viewport ± this margin stay materialized. Must be
+// larger than the thumb preload margin so thumbnails still start loading off-screen.
+const LIB_VIRTUAL_OVERSCAN_PX = 1600;
 // Cloud C2: capability state (environment/available/reason) fetched once from main.
 const CLOUD = { cap: null, fetched: false };
 // Unified online feed state. view = 'search' | 'favorites'; loaded gates the initial
@@ -807,6 +824,18 @@ function setLibCardAspect(card, aspect, opts = {}) {
   card.dataset.aspect = String(safe);
   const grid = card.closest('.lib-grid');
   if (grid) {
+    // Virtualized grid: the layout is computed from the entries list, so the refined
+    // aspect must land in the virtual state too (keyed by combined index) — the card
+    // itself may be dematerialized and rebuilt later.
+    const virtual = grid.__virtual;
+    if (virtual) {
+      const gi = Number(card.dataset.galleryIndex);
+      if (Number.isFinite(gi) && gi >= 0) virtual.overrides.set(virtual.head.length + gi, safe);
+      else {
+        const headIndex = virtual.head.indexOf(card);
+        if (headIndex >= 0) virtual.overrides.set(headIndex, safe);
+      }
+    }
     if (opts.deferred) scheduleDeferredJustifiedLayout(grid);
     else scheduleJustifiedLayout(grid);
   }
@@ -827,6 +856,14 @@ function primeLibCardAspect(card, item, p) {
 
 function layoutLibGrid(grid, suppliedAnchor = null) {
   if (!grid || !grid.isConnected) return;
+  // Virtualized grid (#libGrid in All/folder views): geometry comes from the full
+  // entries list, not from DOM children — delegate and keep the scroll anchor.
+  if (grid.__virtual && typeof grid.__virtual.relayout === 'function') {
+    const scrollAnchor = suppliedAnchor || captureLibraryScrollAnchor(grid);
+    grid.__virtual.relayout();
+    restoreLibraryScrollAnchor(scrollAnchor, grid);
+    return;
+  }
   const width = grid.clientWidth;
   if (width < 40) return;
   const cards = Array.from(grid.children).filter((el) => el.classList.contains('lib-card'));
@@ -1204,12 +1241,14 @@ function buildLibCard(it, isAssigned) {
       // Shift+click: extend the selection from the anchor to this card (Explorer-style).
       // Without an anchor yet, behave like a plain select of this single card.
       if (LIB.lastSelected && LIB.lastSelected !== it.id) {
-        const cards = Array.from(document.querySelectorAll('.lib-card[data-id]'));
-        const i1 = cards.findIndex((c) => c.dataset.id === LIB.lastSelected);
-        const i2 = cards.findIndex((c) => c.dataset.id === it.id);
+        // In the virtualized views the cards between anchor and target may not be in
+        // the DOM at all — range over the entries ORDER, not over live elements.
+        const ids = orderedSelectableIds();
+        const i1 = ids.indexOf(LIB.lastSelected);
+        const i2 = ids.indexOf(it.id);
         if (i1 !== -1 && i2 !== -1) {
           LIB.selection.clear();
-          for (let i = Math.min(i1, i2); i <= Math.max(i1, i2); i++) LIB.selection.add(cards[i].dataset.id);
+          for (let i = Math.min(i1, i2); i <= Math.max(i1, i2); i++) LIB.selection.add(ids[i]);
         }
       } else {
         LIB.selection.add(it.id);
@@ -1411,14 +1450,46 @@ function resetLibObservers() {
   if (thumbIO) { thumbIO.disconnect(); thumbIO = null; }
   if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
   if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
+  const grid = $('#libGrid');
+  if (grid) grid.__virtual = null; // a new render owns the grid from scratch
   libraryViewAnchor = null;
   libraryResizeAnchor = null;
   libLazyKick = null;
+}
+// Small renderer-side LRU of thumbnail data-URLs. The virtualized grid DESTROYS cards
+// that scroll far away; when the user scrolls back, the rebuilt card takes its
+// background from here synchronously instead of flashing empty for an IPC round-trip.
+// ~300 entries × ~30KB ≈ 10MB — bounded, unlike the unbounded DOM it replaces.
+const LIB_THUMB_URL_CACHE_MAX = 320;
+const thumbUrlCache = new Map(); // pathKey → { url, width, height }
+function cachedThumbUrl(key) {
+  const hit = thumbUrlCache.get(key);
+  if (hit) { thumbUrlCache.delete(key); thumbUrlCache.set(key, hit); } // LRU bump
+  return hit;
+}
+function rememberThumbUrl(key, info) {
+  thumbUrlCache.set(key, info);
+  if (thumbUrlCache.size > LIB_THUMB_URL_CACHE_MAX) {
+    thumbUrlCache.delete(thumbUrlCache.keys().next().value);
+  }
+}
+function applyThumbInfo(card, p, info) {
+  card.dataset.thumbLoaded = 'true';
+  card.classList.remove('missing');
+  card.style.backgroundImage = `url("${info.url}")`;
+  if (info.width > 0 && info.height > 0) {
+    const aspect = info.width / info.height;
+    LIB.aspectCache.set(normPathKey(p), aspect);
+    if (card.dataset.aspectKnown !== 'true') setLibCardAspect(card, aspect, { deferred: true });
+    card.dataset.aspectKnown = 'true';
+  }
 }
 function loadThumbInto(card) {
   if (!card || card.dataset.thumbLoading === 'true' || card.dataset.thumbLoaded === 'true') return;
   const p = card.dataset.thumbPath;
   if (!p) return;
+  const cached = cachedThumbUrl(normPathKey(p));
+  if (cached && cached.url) { applyThumbInfo(card, p, cached); return; }
   card.dataset.thumbLoading = 'true';
   const w = +card.dataset.thumbW || 320;
   const h = +card.dataset.thumbH || 200;
@@ -1428,21 +1499,16 @@ function loadThumbInto(card) {
   request.then((info) => {
     const u = info && info.url;
     if (!u) { card.classList.add('missing'); return; }
-    card.dataset.thumbLoaded = 'true';
-    card.classList.remove('missing');
-    card.style.backgroundImage = `url("${u}")`;
-    if (info.width > 0 && info.height > 0) {
-      const aspect = info.width / info.height;
-      LIB.aspectCache.set(normPathKey(p), aspect);
-      if (card.dataset.aspectKnown !== 'true') setLibCardAspect(card, aspect, { deferred: true });
-      card.dataset.aspectKnown = 'true';
-    }
+    rememberThumbUrl(normPathKey(p), { url: u, width: info.width || 0, height: info.height || 0 });
+    applyThumbInfo(card, p, info);
   }).finally(() => { delete card.dataset.thumbLoading; });
 }
 function lazyThumb(card, p, w, h) {
   card.dataset.thumbPath = p;
   if (w) card.dataset.thumbW = w;
   if (h) card.dataset.thumbH = h;
+  // Cache hit → paint synchronously (a rematerialized card must not blink).
+  if (thumbUrlCache.has(normPathKey(p))) { loadThumbInto(card); return; }
   if ('IntersectionObserver' in window) {
     if (!thumbIO) {
       thumbIO = new IntersectionObserver((ents) => {
@@ -1492,9 +1558,10 @@ async function renderFolderView(tok) {
   if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
   grid.innerHTML = '';
   setGridGallerySource(grid, entries.map(galleryItemFromEntry));
-  folders.forEach((f) => grid.appendChild(buildSubfolderCard(f)));
-  scheduleJustifiedLayout(grid); // lay out subfolders immediately; images stream in below
-  renderEntriesLazily(grid, entries, assignedIds(), tok);
+  // Subfolder cards become the virtual grid's persistent "head": few in number,
+  // built once, attached/detached by the window like any other row content.
+  const headCards = folders.map((f) => buildSubfolderCard(f));
+  renderEntriesLazily(grid, entries, assignedIds(), tok, headCards);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
 
@@ -1561,6 +1628,7 @@ function buildEphemeralImageCard(p) {
     } else if (current && current.isConnected) {
       const replacement = buildLibCard(fresh, assignedIds().has(fresh.id));
       bindCardGalleryItem(replacement, galleryItem, Number.isFinite(oldIndex) ? oldIndex : Number(current.dataset.galleryIndex));
+      syncVirtualCardReplacement(current, replacement, fresh);
       current.replaceWith(replacement);
       scheduleJustifiedLayout($('#libGrid'));
     }
@@ -1665,97 +1733,203 @@ function scheduleDeferredJustifiedLayout(grid) {
   }, 240);
 }
 
-// Append entries in chunks; an IntersectionObserver on #libSentinel pulls the next chunk
-// as the user scrolls. Cards are inserted immediately, while missing aspect ratios are
-// refined in the background so large folders do not pause at the chunk boundary.
-function renderEntriesLazily(grid, entries, assigned, tok) {
+// VIRTUALIZED grid (LF-QA5 fix). The old version appended chunks forever and never
+// removed off-screen cards — a 5000-image folder accumulated ~16k DOM nodes and
+// hundreds of MB of decoded thumbnails, which is exactly what the diagnostics
+// recording showed. Now the justified layout is computed for ALL entries up front
+// (from known/estimated aspects — pure math, no DOM), and only the rows inside the
+// viewport ± overscan are materialized; two flex spacers stand in for everything
+// else, so the scrollbar and offsets match a fully rendered grid exactly.
+// `headCards` are the folder-view subfolder cards: few, built once, kept alive.
+function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   const sentinel = $('#libSentinel');
+  if (sentinel) sentinel.hidden = true; // full height is known up front — no sentinel
   const galleryItems = Array.isArray(grid && grid.__galleryItems) && grid.__galleryItems.length === entries.length
     ? grid.__galleryItems
     : entries.map(galleryItemFromEntry);
   setGridGallerySource(grid, galleryItems);
-  let i = 0;
-  let drawPromise = null;
-  let nearEndFrame = 0;
-  const hasMore = () => i < entries.length;
-  const isNearEnd = () => {
-    const root = libScrollRoot();
-    if (!root) return true;
-    return root.scrollHeight - root.scrollTop - root.clientHeight <= LIB_RENDER_PRELOAD_PX;
-  };
-  const scheduleNearEndDraw = () => {
-    if (nearEndFrame) return;
-    nearEndFrame = requestAnimationFrame(() => {
-      nearEndFrame = 0;
-      if (tok !== allViewToken || !hasMore() || !isNearEnd()) return;
-      drawNext().then(scheduleNearEndDraw);
-    });
-  };
-  libLazyKick = scheduleNearEndDraw;
-  const drawNext = () => {
-    if (drawPromise) return drawPromise;
-    if (tok !== allViewToken) return Promise.resolve();
-    drawPromise = (async () => {
-      const endSpan = diagSpan('renderer', 'lazy-chunk'); // budget span #9
-      const end = Math.min(i + LIB_CHUNK_SIZE, entries.length);
-      const chunk = entries.slice(i, end);
-      if (tok !== allViewToken) { endSpan(); return; }
-      const cards = [];
-      for (; i < end; i++) {
-        const en = entries[i];
-        const card = en.item ? buildLibCard(en.item, assigned.has(en.item.id)) : buildEphemeralImageCard(en.path);
-        bindCardGalleryItem(card, galleryItems[i] || card.__galleryItem, i);
-        grid.appendChild(card);
-        cards.push(card);
-      }
-      scheduleJustifiedLayout(grid);
-      // Do not prefetch aspects for every newly appended chunk: on large folders
-      // that competes with visible thumbnails and causes a noticeable scroll pause.
-      // loadThumbInto() refines each card's aspect as its thumbnail actually loads.
-      if (sentinel) sentinel.hidden = i >= entries.length;
-      endSpan({ count: chunk.length });
-    })().finally(() => { drawPromise = null; });
-    return drawPromise;
-  };
   if (libObserver) { libObserver.disconnect(); libObserver = null; }
   if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
+
+  const head = (headCards || []).filter(Boolean);
+  const virtual = {
+    tok,
+    entries,
+    head,
+    assigned,
+    galleryItems,
+    overrides: new Map(), // combined index → aspect refined after a thumb decoded
+    rows: [],
+    boxes: [],
+    totalHeight: 0,
+    first: 0,
+    last: -1, // materialized row range (inclusive); -1 = nothing yet
+    cards: new Map(), // combined index → live card element
+    topPad: null,
+    bottomPad: null,
+    relayout: null,
+    updateWindow: null,
+  };
+  grid.__virtual = virtual;
+  grid.innerHTML = '';
+
+  // Combined index space: 0..head-1 = persistent subfolder cards, then entries.
+  const aspectAt = (c) => {
+    const override = virtual.overrides.get(c);
+    if (override > 0) return override;
+    if (c < head.length) {
+      const a = Number(head[c].dataset.aspect);
+      return Number.isFinite(a) && a > 0 ? a : 1.6;
+    }
+    const en = entries[c - head.length];
+    return knownLibAspect(en.item, en.path) || 1.6;
+  };
+
+  const buildCardAt = (c) => {
+    if (c < head.length) return head[c];
+    const en = entries[c - head.length];
+    // config gets REPLACED on every mutation; look the item up fresh so a card
+    // rebuilt after scrolling back reflects current favorite/assigned state.
+    const fresh = en.item && config.library && config.library[en.item.id] ? config.library[en.item.id] : en.item;
+    const card = fresh ? buildLibCard(fresh, virtual.assigned.has(fresh.id)) : buildEphemeralImageCard(en.path);
+    bindCardGalleryItem(card, galleryItems[c - head.length] || card.__galleryItem, c - head.length);
+    if (fresh && LIB.selection.has(fresh.id)) card.classList.add('selected');
+    return card;
+  };
+
+  const ensurePad = (which) => {
+    const key = which === 'top' ? 'topPad' : 'bottomPad';
+    if (!virtual[key]) {
+      const pad = document.createElement('div');
+      pad.className = 'lib-vpad';
+      virtual[key] = pad;
+    }
+    return virtual[key];
+  };
+
+  // Materialize rows [first..last]: drop far cards, create missing ones, size the
+  // spacers, and (re)assert child order. Existing nodes are MOVED, not rebuilt.
+  const applyWindow = (first, last, sizesChanged) => {
+    const range = window.VirtualWindow.cardRangeForRows(virtual.rows, first, last);
+    let added = 0;
+    const endSpan = diagSpan('renderer', 'lazy-chunk'); // budget span #9: window materialization
+    for (const [c, card] of Array.from(virtual.cards)) {
+      if (c < range.first || c > range.last) {
+        if (thumbIO) thumbIO.unobserve(card);
+        card.remove();
+        virtual.cards.delete(c);
+      }
+    }
+    for (let c = range.first; c <= range.last; c++) {
+      if (!virtual.cards.has(c)) {
+        virtual.cards.set(c, buildCardAt(c));
+        added += 1;
+      }
+    }
+    const pads = window.VirtualWindow.padHeights(virtual.rows, first, last, 10, virtual.totalHeight);
+    if (pads.top > 0) {
+      const pad = ensurePad('top');
+      pad.style.height = `${pads.top.toFixed(2)}px`;
+      grid.appendChild(pad);
+    } else if (virtual.topPad) virtual.topPad.remove();
+    for (let c = range.first; c <= range.last; c++) {
+      const card = virtual.cards.get(c);
+      grid.appendChild(card); // appendChild moves an already-attached node in order
+      if (sizesChanged || added) {
+        const box = virtual.boxes[c];
+        if (box) {
+          card.style.width = `${box.width.toFixed(2)}px`;
+          card.style.height = `${box.height.toFixed(2)}px`;
+        }
+      }
+    }
+    if (pads.bottom > 0) {
+      const pad = ensurePad('bottom');
+      pad.style.height = `${pads.bottom.toFixed(2)}px`;
+      grid.appendChild(pad);
+    } else if (virtual.bottomPad) virtual.bottomPad.remove();
+    virtual.first = first;
+    virtual.last = last;
+    endSpan({ count: added, active: virtual.cards.size });
+  };
+
+  const updateWindow = (afterLayout = false) => {
+    if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
+    if (grid.offsetParent === null) return; // hidden tab: rects are zero, don't churn
+    const root = libScrollRoot();
+    if (!root || !virtual.rows.length) return;
+    const gridTop = grid.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
+    const viewTop = root.scrollTop - gridTop - LIB_VIRTUAL_OVERSCAN_PX;
+    const viewBottom = root.scrollTop - gridTop + root.clientHeight + LIB_VIRTUAL_OVERSCAN_PX;
+    const range = window.VirtualWindow.rowRangeForViewport(virtual.rows, viewTop, viewBottom);
+    if (!afterLayout && range.first === virtual.first && range.last === virtual.last) return;
+    applyWindow(range.first, range.last, afterLayout);
+  };
+
+  const relayout = () => {
+    if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
+    const width = grid.clientWidth;
+    if (width < 40) return;
+    const total = head.length + entries.length;
+    const aspects = new Array(total);
+    for (let c = 0; c < total; c++) aspects[c] = aspectAt(c);
+    const targetHeight = width >= 1000 ? 178 : width >= 700 ? 160 : 142;
+    const res = window.JustifiedLayout.layoutRows(aspects, width, {
+      gap: 10, targetHeight, minAspect: 0.65, maxAspect: 3,
+    });
+    virtual.rows = res.rows;
+    virtual.boxes = res.boxes;
+    virtual.totalHeight = res.totalHeight;
+    if (!res.rows.length) { grid.innerHTML = ''; virtual.cards.clear(); virtual.first = 0; virtual.last = -1; return; }
+    updateWindow(true);
+  };
+  virtual.relayout = relayout;
+  virtual.updateWindow = updateWindow;
+
   const root = libScrollRoot();
-  if (root) {
-    const onScroll = () => {
-      scheduleNearEndDraw();
+  let scrollFrame = 0;
+  const onScroll = () => {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0;
+      updateWindow(false);
       rememberLibraryScrollAnchor(grid);
-    };
+    });
+  };
+  const kick = () => updateWindow(true);
+  libLazyKick = kick;
+  if (root) {
     root.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
     libScrollCleanup = () => {
       root.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
-      if (nearEndFrame) { cancelAnimationFrame(nearEndFrame); nearEndFrame = 0; }
+      if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
       if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
-      if (libLazyKick === scheduleNearEndDraw) libLazyKick = null;
+      if (grid.__virtual === virtual) grid.__virtual = null;
+      if (libLazyKick === kick) libLazyKick = null;
     };
     rememberLibraryScrollAnchor(grid);
   }
-  if (sentinel && 'IntersectionObserver' in window) {
-    drawNext().then(() => {
-      if (tok !== allViewToken || i >= entries.length) return;
-      libObserver = new IntersectionObserver((ents) => {
-        if (tok === allViewToken && i < entries.length && ents.some((x) => x.isIntersecting)) {
-          drawNext().then(scheduleNearEndDraw);
-        }
-      }, { root, rootMargin: LIB_RENDER_PRELOAD_MARGIN });
-      libObserver.observe(sentinel);
-      scheduleNearEndDraw();
-    });
-  } else {
-    (async () => { while (i < entries.length && tok === allViewToken) await drawNext(); })();
-  }
+  relayout();
 }
 
 // Faint Explorer-style status line: shows the hovered item's name at the bottom.
 function setLibStatus(text) {
   const el = $('#libStatus');
   if (el) el.textContent = text || '';
+}
+
+// Pool-item ids in the grid's display order, for Shift-range selection. The virtual
+// grid keeps most cards out of the DOM, so the order comes from its entries; the
+// eager pool views (favorites/tags/folders) still walk the live cards.
+function orderedSelectableIds() {
+  const grid = $('#libGrid');
+  const virtual = grid && grid.__virtual;
+  if (virtual) {
+    return virtual.entries.filter((en) => en.item && en.item.id).map((en) => en.item.id);
+  }
+  return Array.from(document.querySelectorAll('.lib-card[data-id]')).map((card) => card.dataset.id);
 }
 
 function makeLibCardFocusable(card) {
@@ -1986,6 +2160,10 @@ function refreshAssignedHighlights() {
   document.querySelectorAll('#libGrid .lib-card[data-id]').forEach((card) => {
     setCardAssigned(card, assigned.has(card.dataset.id));
   });
+  // Virtual grid: cards rebuilt on a later scroll-back must use the NEW assigned set,
+  // not the one captured at render time.
+  const grid = $('#libGrid');
+  if (grid && grid.__virtual) grid.__virtual.assigned = assigned;
   // The grid now matches the new assigned state, so record the key — a later tab
   // switch back to Library reuses this DOM (and its scroll) instead of rebuilding.
   lastLibRenderKey = libRenderKey();
@@ -2036,6 +2214,23 @@ function ephemeralCardByPath(path) {
   return null;
 }
 
+// After an in-place card.replaceWith(...), the virtual grid's index→element map (and
+// the upgraded entry, if any) must follow the swap — otherwise the next window update
+// re-appends the detached OLD node and the grid shows a stale card.
+function syncVirtualCardReplacement(oldCard, newCard, upgradedItem = null) {
+  const grid = $('#libGrid');
+  const virtual = grid && grid.__virtual;
+  if (!virtual) return;
+  for (const [c, el] of virtual.cards) {
+    if (el === oldCard) { virtual.cards.set(c, newCard); break; }
+  }
+  const gi = Number(oldCard && oldCard.dataset ? oldCard.dataset.galleryIndex : NaN);
+  if (upgradedItem && Number.isFinite(gi) && virtual.entries[gi]) {
+    virtual.entries[gi].item = upgradedItem;
+    virtual.entries[gi].id = upgradedItem.id;
+  }
+}
+
 // When the ONLY content change is pool image(s) added whose path is already shown as an
 // ephemeral folder card — i.e. a materialize, e.g. from assigning a folder photo — upgrade
 // those exact cards to real pool cards in place instead of rebuilding/flashing the whole
@@ -2055,6 +2250,7 @@ function tryUpgradeMaterializedCards(prevPoolIds) {
   for (const { it, card } of pairs) {
     const replacement = buildLibCard(it, assigned.has(it.id));
     bindCardGalleryItem(replacement, card.__galleryItem || galleryItemFromPath(it.path), Number(card.dataset.galleryIndex));
+    syncVirtualCardReplacement(card, replacement, it);
     card.replaceWith(replacement);
   }
   scheduleJustifiedLayout($('#libGrid'));
