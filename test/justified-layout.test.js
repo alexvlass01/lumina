@@ -35,6 +35,18 @@ ok('extreme portraits and panoramas are capped without overflow',
 
 ok('empty input returns no boxes', J.layout([], 500).length === 0);
 
+// A 562px container used to produce three serialized widths whose sum was 562.01px.
+// Flexbox then wrapped the third card even though the layout model kept it in row one,
+// breaking both visual width and virtual scroll geometry.
+const cssSafe = J.layoutRows(new Array(20).fill(1.6), 562, { gap: 10, targetHeight: 142 });
+ok('CSS-rounded complete rows never overflow and wrap their final card',
+  cssSafe.rows.slice(0, -1).every((row) => {
+    const serializedWidth = cssSafe.boxes.slice(row.start, row.end)
+      .reduce((sum, box) => sum + Number(box.width.toFixed(2)), 0)
+      + 10 * (row.end - row.start - 1);
+    return serializedWidth <= 562 && 562 - serializedWidth < 0.05;
+  }));
+
 // --- layoutRows: row geometry for the virtualized grid ---
 const rich = J.layoutRows([1.5, 1.5, 1.5, 1.5], 1000, { gap: 10, targetHeight: 200 });
 ok('layoutRows returns the same boxes as layout', rich.boxes.length === 4

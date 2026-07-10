@@ -1762,6 +1762,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     rows: [],
     boxes: [],
     totalHeight: 0,
+    layoutWidth: 0,
     first: 0,
     last: -1, // materialized row range (inclusive); -1 = nothing yet
     cards: new Map(), // combined index → live card element
@@ -1870,6 +1871,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
     const width = grid.clientWidth;
     if (width < 40) return;
+    virtual.layoutWidth = width;
     const total = head.length + entries.length;
     const aspects = new Array(total);
     for (let c = 0; c < total; c++) aspects[c] = aspectAt(c);
@@ -1888,6 +1890,8 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
 
   const root = libScrollRoot();
   let scrollFrame = 0;
+  let widthFrame = 0;
+  let widthObserver = null;
   const onScroll = () => {
     if (scrollFrame) return;
     scrollFrame = requestAnimationFrame(() => {
@@ -1901,10 +1905,30 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   if (root) {
     root.addEventListener('scroll', onScroll, { passive: true });
     window.addEventListener('resize', onScroll);
+    // The first layout can make the page tall enough for its vertical scrollbar to
+    // appear. That shrinks the grid without firing window.resize (e.g. 692 → 682 px),
+    // so the old row widths no longer fit and flex-wrap moves the last card. Observe
+    // the actual container width and relayout only when that width really changed;
+    // height-only changes from thumbnail aspect refinement must not cause a loop.
+    if ('ResizeObserver' in window) {
+      widthObserver = new ResizeObserver(() => {
+        if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
+        if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5 || widthFrame) return;
+        widthFrame = requestAnimationFrame(() => {
+          widthFrame = 0;
+          if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
+          layoutLibGrid(grid);
+          rememberLibraryScrollAnchor(grid);
+        });
+      });
+      widthObserver.observe(grid);
+    }
     libScrollCleanup = () => {
       root.removeEventListener('scroll', onScroll);
       window.removeEventListener('resize', onScroll);
       if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
+      if (widthFrame) { cancelAnimationFrame(widthFrame); widthFrame = 0; }
+      if (widthObserver) { widthObserver.disconnect(); widthObserver = null; }
       if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
       if (grid.__virtual === virtual) grid.__virtual = null;
       if (libLazyKick === kick) libLazyKick = null;
@@ -1912,6 +1936,16 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     rememberLibraryScrollAnchor(grid);
   }
   relayout();
+  // ResizeObserver's first delivery can use the post-layout width as its baseline and
+  // therefore not report the scrollbar-induced shrink as a change. Recheck once on
+  // the next frame so the initial 692→682px transition is always reconciled.
+  if (root && !widthFrame) {
+    widthFrame = requestAnimationFrame(() => {
+      widthFrame = 0;
+      if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
+      if (Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) layoutLibGrid(grid);
+    });
+  }
 }
 
 // Faint Explorer-style status line: shows the hovered item's name at the bottom.
