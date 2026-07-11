@@ -69,6 +69,24 @@ ok('listImages exposes persisted discovery metadata', listed.length === 3
   && listed.find((x) => x.path === b).addedAt === 13000
   && listed.every((x) => x.folderId === 'folder-1'));
 
+let aspectState = F.reconcileFolder(result.state, {
+  folderId: 'folder-overlap', rootPath: path.join(root, 'nested'), folderAddedAt: 1000,
+  now: 16000, status: 'complete', entries: [{ path: c, modifiedAt: 50 }],
+}).state;
+const aspectUpdate = F.setAspects(aspectState, [{ path: c, aspect: 0.75 }]);
+aspectState = aspectUpdate.state;
+const aspectMatches = F.listImages(aspectState).filter((x) => x.path.toLowerCase() === c.toLowerCase());
+ok('setAspects persists one learned aspect in every overlapping live-folder record',
+  aspectUpdate.changed && aspectUpdate.updated === 2 && aspectMatches.length === 2
+  && aspectMatches.every((x) => x.aspect === 0.75));
+const aspectRepeat = F.setAspects(aspectState, [
+  { path: c, aspect: 0.75 },
+  { path: a, aspect: 0 },
+  { path: path.join(root, 'missing.jpg'), aspect: 1.5 },
+]);
+ok('setAspects is idempotent and ignores invalid or unknown paths',
+  !aspectRepeat.changed && aspectRepeat.updated === 0);
+
 const sanitized = F.normalizeState({ version: 1, folders: { bad: { rootPath: root, files: {
   '../escape.jpg': { firstSeenAt: 1 },
   'C:/absolute.jpg': { firstSeenAt: 2 },
@@ -78,6 +96,14 @@ ok('stored traversal and absolute paths are rejected', Object.keys(sanitized.fol
   && sanitized.folders.bad.files['safe.jpg'].firstSeenAt === 3
   && sanitized.folders.bad.baselineComplete === false);
 ok('version 1 state migrates without losing discovery history', sanitized.version === F.VERSION);
+const version2Aspect = F.normalizeState({ version: 2, folders: { old: { rootPath: root, files: {
+  'a.jpg': { relativePath: 'a.jpg', firstSeenAt: 1, modifiedAt: 2, aspect: 1.25 },
+  'b.jpg': { relativePath: 'b.jpg', firstSeenAt: 1, modifiedAt: 2, aspect: -4 },
+} } } });
+ok('version 2 state migrates valid aspects and drops invalid values',
+  version2Aspect.version === F.VERSION
+  && version2Aspect.folders.old.files['a.jpg'].aspect === 1.25
+  && !Object.prototype.hasOwnProperty.call(version2Aspect.folders.old.files['b.jpg'], 'aspect'));
 ok('knownPathKeys returns normalized absolute paths', F.knownPathKeys(result.state, 'folder-1').has(a.toLowerCase()));
 
 let progressive = F.reconcileFolder(F.emptyState(), {
@@ -108,15 +134,17 @@ try {
     legacy: { rootPath: root, files: { 'a.jpg': { relativePath: 'a.jpg', firstSeenAt: 7, modifiedAt: 8 } } },
   } }), 'utf8');
   const migrated = F.loadState(statePath);
-  ok('version 1 file loads as resumable version 2 state', !migrated.recovered
+  ok('version 1 file loads as resumable current-version state', !migrated.recovered
     && migrated.state.version === F.VERSION
     && migrated.state.folders.legacy.files['a.jpg'].firstSeenAt === 7
     && migrated.state.folders.legacy.baselineComplete === false);
 
-  const saved = F.saveState(statePath, result.state);
+  const saved = F.saveState(statePath, aspectState);
   const loaded = F.loadState(statePath);
   ok('state round-trips through disk', !loaded.recovered
-    && JSON.stringify(loaded.state) === JSON.stringify(saved));
+    && JSON.stringify(loaded.state) === JSON.stringify(saved)
+    && F.listImages(loaded.state).filter((x) => x.path.toLowerCase() === c.toLowerCase())
+      .every((x) => x.aspect === 0.75));
 
   fs.writeFileSync(statePath, '{broken json', 'utf8');
   const recovered = F.loadState(statePath, { now: 4242 });

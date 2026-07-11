@@ -7,7 +7,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = 2;
+const VERSION = 3;
 const VALID_SCAN_STATUSES = new Set(['complete', 'partial', 'unavailable']);
 const DEFAULT_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
 
@@ -18,6 +18,11 @@ function emptyState() {
 function finiteTime(value, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function finiteAspect(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 function normalizeRelativePath(value) {
@@ -67,6 +72,8 @@ function normalizeState(raw) {
         firstSeenAt: finiteTime(file.firstSeenAt),
         modifiedAt: finiteTime(file.modifiedAt),
       };
+      const aspect = finiteAspect(file.aspect);
+      if (aspect) files[key].aspect = aspect;
     }
     out.folders[folderId] = {
       rootPath: folder.rootPath,
@@ -125,6 +132,8 @@ function reconcileFolder(rawState, options = {}) {
         firstSeenAt: baselinePending ? baselineAt : now,
         modifiedAt: finiteTime(entry && entry.modifiedAt),
       };
+      const aspect = finiteAspect(entry && entry.aspect);
+      if (aspect) metadata.aspect = aspect;
       folder.files[rel.key] = metadata;
       added++;
       changed = true;
@@ -141,6 +150,7 @@ function reconcileFolder(rawState, options = {}) {
       firstSeenAt: metadata.firstSeenAt,
       addedAt: metadata.firstSeenAt,
       modifiedAt: metadata.modifiedAt,
+      aspect: finiteAspect(metadata.aspect),
     });
   }
 
@@ -170,6 +180,35 @@ function removeFolder(rawState, folderId) {
   return { state, removed };
 }
 
+// Persist dimensions learned by the thumbnail pipeline without rescanning folders.
+// The live in-memory state is already normalized, so mutate only matching metadata
+// entries and return the same object. One path may belong to overlapping roots; all
+// matching records receive the aspect so either source remains stable on its own.
+function setAspects(rawState, updates) {
+  const state = rawState && rawState.version === VERSION && rawState.folders
+    ? rawState
+    : normalizeState(rawState);
+  const input = Array.isArray(updates) ? updates : [];
+  let changed = false;
+  let updated = 0;
+
+  for (const update of input) {
+    const filePath = update && typeof update.path === 'string' ? update.path : '';
+    const aspect = finiteAspect(update && update.aspect);
+    if (!filePath || !aspect) continue;
+    for (const folder of Object.values(state.folders)) {
+      const rel = relativeEntry(folder.rootPath, filePath);
+      if (!rel) continue;
+      const file = folder.files[rel.key];
+      if (!file || Math.abs(finiteAspect(file.aspect) - aspect) < 0.0001) continue;
+      file.aspect = aspect;
+      changed = true;
+      updated++;
+    }
+  }
+  return { state, changed, updated };
+}
+
 function listImages(rawState, folderIds = null) {
   const state = normalizeState(rawState);
   const requested = Array.isArray(folderIds) ? new Set(folderIds) : null;
@@ -183,6 +222,7 @@ function listImages(rawState, folderIds = null) {
         firstSeenAt: file.firstSeenAt,
         addedAt: file.firstSeenAt,
         modifiedAt: file.modifiedAt,
+        aspect: finiteAspect(file.aspect),
       });
     }
   }
@@ -288,7 +328,7 @@ async function scanFolderTree(rootPath, options = {}) {
 
 function validateStoredState(raw) {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw)
-    && (raw.version === 1 || raw.version === VERSION)
+    && (raw.version === 1 || raw.version === 2 || raw.version === VERSION)
     && raw.folders && typeof raw.folders === 'object' && !Array.isArray(raw.folders);
 }
 
@@ -338,6 +378,7 @@ module.exports = {
   normalizeState,
   reconcileFolder,
   removeFolder,
+  setAspects,
   listImages,
   knownPathKeys,
   scanFolderTree,

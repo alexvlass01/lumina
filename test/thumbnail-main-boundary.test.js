@@ -19,8 +19,26 @@ assert.ok(block.includes("ipcMain.handle('thumb-aspects'"), 'thumb-aspects IPC r
 assert.ok(block.includes('thumbPending.get(key)'), 'matching pending work stays deduplicated');
 assert.ok(block.includes('runThumbnailTask(async () =>'), 'thumbnail work stays in the bounded task queue');
 assert.ok(block.includes('}, { priority }).finally'), 'current virtual window priority reaches the task queue');
+assert.ok(block.includes('queueLiveFolderAspect(p, data.width / data.height)'),
+  'successful thumbnails enqueue persistent live-folder aspect metadata');
+assert.ok(main.includes('library.setAspect(config.library, id, update.path, update.aspect)'),
+  'materialized live-folder images receive the same persistent aspect metadata');
+assert.ok(main.includes('if (configChanged) configMod.save(config, CONFIG_PATH);'),
+  'aspect-only pool backfill is saved without a renderer config broadcast');
 assert.ok(block.includes('const key = `${p}|${W}`;'), 'dedup key matches the helper scalar size');
 assert.ok(!main.includes('createThumbnailFromPath'), 'main no longer runs Windows thumbnail extraction');
 assert.ok(main.includes('void thumbnailHost.dispose();'), 'app shutdown disposes the helper');
+assert.ok(main.includes('flushPendingLiveFolderAspects();\n  flushLiveFolderState();'),
+  'shutdown flushes learned aspects before saving folder state');
+assert.ok(main.includes('aspect: (m && m.aspect) || 0'),
+  'folder navigation exposes persisted aspect metadata to renderer');
+
+const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+assert.ok(renderer.includes('knownLibAspect(en.item, en.path, en.aspect)'),
+  'virtual layout uses persisted folder aspects before creating cards');
+assert.ok(renderer.includes('buildEphemeralImageCard(en.path, en.aspect)'),
+  'ephemeral cards start with their persisted aspect metadata');
+assert.ok(renderer.includes('Math.abs(current - window.JustifiedLayout.normalizeAspect(aspect, 0.65, 3))'),
+  'a replaced file can correct stale persisted geometry from its real thumbnail');
 
 console.log('thumbnail-main-boundary.test.js ok');

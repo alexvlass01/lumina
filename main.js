@@ -276,10 +276,13 @@ function persistSlideshowPosition() {
 let liveFolderState = folderState.emptyState();
 let folderStateDirty = false;
 let folderStateSaveTimer = null;
+let liveFolderAspectTimer = null;
+const pendingLiveFolderAspects = new Map();
 let folderRefreshQueue = Promise.resolve();
 const folderScanFreshAt = new Map();
 const FOLDER_SCAN_FRESH_MS = 5000;
 const FOLDER_STATE_SAVE_DEBOUNCE_MS = 5000;
+const LIVE_FOLDER_ASPECT_FLUSH_MS = 750;
 let liveFolderWatcher = null;
 const liveFolderWatcherRetryTimers = new Map();
 let liveFolderFullScanTimer = null;
@@ -315,6 +318,39 @@ function scheduleLiveFolderStateSave() {
   if (folderStateSaveTimer) clearTimeout(folderStateSaveTimer);
   folderStateSaveTimer = setTimeout(flushLiveFolderState, FOLDER_STATE_SAVE_DEBOUNCE_MS);
   if (folderStateSaveTimer && typeof folderStateSaveTimer.unref === 'function') folderStateSaveTimer.unref();
+}
+
+function flushPendingLiveFolderAspects() {
+  if (liveFolderAspectTimer) { clearTimeout(liveFolderAspectTimer); liveFolderAspectTimer = null; }
+  if (!pendingLiveFolderAspects.size) return 0;
+  const updates = Array.from(pendingLiveFolderAspects.values());
+  pendingLiveFolderAspects.clear();
+  const result = folderState.setAspects(liveFolderState, updates);
+  liveFolderState = result.state;
+  if (result.changed) scheduleLiveFolderStateSave();
+  // A live-folder image may already be materialized in the pool (favorite/assigned).
+  // Keep that additive metadata in sync too, otherwise "All" would omit the
+  // folder-backed record and fall back to an unstable default aspect after restart.
+  let configChanged = false;
+  for (const update of updates) {
+    const id = library.idFor(update.path);
+    if (library.setAspect(config.library, id, update.path, update.aspect)) configChanged = true;
+  }
+  // Metadata backfill must not broadcast config: rebuilding the visible grid here
+  // would reintroduce the very movement this batch is intended to remove.
+  if (configChanged) configMod.save(config, CONFIG_PATH);
+  return result.updated;
+}
+
+function queueLiveFolderAspect(p, aspect) {
+  const value = Number(aspect);
+  if (!p || typeof p !== 'string' || !Number.isFinite(value) || value <= 0 || !isPathUnderLiveFolder(p)) return;
+  let key;
+  try { key = path.resolve(p).toLowerCase(); } catch { return; }
+  pendingLiveFolderAspects.set(key, { path: p, aspect: value });
+  if (liveFolderAspectTimer) return;
+  liveFolderAspectTimer = setTimeout(flushPendingLiveFolderAspects, LIVE_FOLDER_ASPECT_FLUSH_MS);
+  if (liveFolderAspectTimer && typeof liveFolderAspectTimer.unref === 'function') liveFolderAspectTimer.unref();
 }
 
 function forgetLiveFolder(id) {
@@ -2602,12 +2638,18 @@ async function thumbnailData(p, w, h, priority = 0) {
   const H = Number.isFinite(requestedHeight) ? Math.max(16, Math.min(1024, Math.round(requestedHeight))) : 200;
   const key = `${p}|${W}`;
   const hit = cachedThumb(key);
-  if (hit !== undefined) return hit;
+  if (hit !== undefined) {
+    if (hit.width > 0 && hit.height > 0) queueLiveFolderAspect(p, hit.width / hit.height);
+    return hit;
+  }
   const pending = thumbPending.get(key);
   if (pending) return pending;
   const job = runThumbnailTask(async () => {
     const lateHit = cachedThumb(key);
-    if (lateHit !== undefined) return lateHit;
+    if (lateHit !== undefined) {
+      if (lateHit.width > 0 && lateHit.height > 0) queueLiveFolderAspect(p, lateHit.width / lateHit.height);
+      return lateHit;
+    }
     let data = { url: '', width: 0, height: 0 };
     let cacheable = true;
     // Extraction and encoding run in the isolated Windows helper. Main keeps only
@@ -2640,6 +2682,7 @@ async function thumbnailData(p, w, h, priority = 0) {
         thumbCache.delete(k0);
       }
     }
+    if (data.width > 0 && data.height > 0) queueLiveFolderAspect(p, data.width / data.height);
     return data;
   }, { priority }).finally(() => {
     thumbPending.delete(key);
@@ -2662,8 +2705,8 @@ ipcMain.handle('thumb-info', (e, p, w, h, priority) => (
 
 // Resolve proportions before renderer inserts the next justified-grid chunk. A small
 // worker pool avoids hammering Windows shell with dozens of simultaneous thumbnail jobs.
-// Pool-item aspects are persisted as additive metadata; folder-expanded images stay
-// ephemeral and are cached only by thumbnailData/renderer.
+// Pool-item aspects are persisted as additive metadata; folder-expanded images are
+// persisted separately in folder-state by thumbnailData's batched backfill.
 ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
   if (!isTrustedThumbnailSender(e)) return [];
   const input = Array.isArray(entries) ? entries.slice(0, 100) : [];
@@ -2720,7 +2763,12 @@ ipcMain.handle('folder-entries', (e, dir) => {
       folders: folders.map((p) => ({ path: p, name: path.basename(p) })),
       images: images.map((p) => {
         const m = meta.get(String(p).toLowerCase());
-        return { path: p, addedAt: (m && m.addedAt) || 0, modifiedAt: (m && m.modifiedAt) || 0 };
+        return {
+          path: p,
+          addedAt: (m && m.addedAt) || 0,
+          modifiedAt: (m && m.modifiedAt) || 0,
+          aspect: (m && m.aspect) || 0,
+        };
       }),
       count: images.length,
     };
@@ -2772,7 +2820,11 @@ ipcMain.handle('library-materialize', (e, p, type) => {
   let extra;
   if (itemType === 'image') {
     const disc = liveFolderDiscovery(p);
-    if (disc) extra = { addedAt: disc.firstSeenAt || disc.modifiedAt || Date.now(), modifiedAt: disc.modifiedAt };
+    if (disc) extra = {
+      addedAt: disc.firstSeenAt || disc.modifiedAt || Date.now(),
+      modifiedAt: disc.modifiedAt,
+      aspect: disc.aspect,
+    };
   }
   const id = library.addPath(config.library, itemType, p, extra);
   if (id) saveConfig();
@@ -3202,6 +3254,7 @@ app.on('before-quit', () => {
   liveFolderFullScanTimer = null;
   for (const retry of liveFolderWatcherRetryTimers.values()) clearTimeout(retry);
   liveFolderWatcherRetryTimers.clear();
+  flushPendingLiveFolderAspects();
   flushLiveFolderState();
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
   void thumbnailHost.dispose();

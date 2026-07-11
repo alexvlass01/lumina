@@ -159,9 +159,19 @@ function ephemeralFolderImages(library, folderImages) {
     if (poolIds.has(id)) continue;
     const addedAt = Number.isFinite(Number(image.addedAt)) ? Number(image.addedAt) : 0;
     const modifiedAt = Number.isFinite(Number(image.modifiedAt)) ? Number(image.modifiedAt) : 0;
+    const aspect = aspectOf(image);
     const current = byId.get(id);
     if (!current || addedAt < current.addedAt) {
-      byId.set(id, { id, path: image.path, addedAt, modifiedAt });
+      const retainedAspect = aspect || (current && current.aspect) || 0;
+      byId.set(id, {
+        id,
+        path: image.path,
+        addedAt,
+        modifiedAt,
+        ...(retainedAspect ? { aspect: retainedAspect } : {}),
+      });
+    } else if (!current.aspect && aspect) {
+      current.aspect = aspect;
     }
   }
   return Array.from(byId.values());

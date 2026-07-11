@@ -843,15 +843,18 @@ function setLibCardAspect(card, aspect, opts = {}) {
   }
 }
 
-function knownLibAspect(item, p) {
+function knownLibAspect(item, p, fallbackAspect = 0) {
   const direct = item && Number(item.aspect);
   if (Number.isFinite(direct) && direct > 0) return direct;
   if (item && item.width > 0 && item.height > 0) return item.width / item.height;
-  return LIB.aspectCache.get(normPathKey(p || (item && item.path))) || 0;
+  const cached = LIB.aspectCache.get(normPathKey(p || (item && item.path))) || 0;
+  if (cached) return cached;
+  const fallback = Number(fallbackAspect);
+  return Number.isFinite(fallback) && fallback > 0 ? fallback : 0;
 }
 
-function primeLibCardAspect(card, item, p) {
-  const aspect = knownLibAspect(item, p);
+function primeLibCardAspect(card, item, p, fallbackAspect = 0) {
+  const aspect = knownLibAspect(item, p, fallbackAspect);
   card.dataset.aspectKnown = aspect > 0 ? 'true' : 'false';
   setLibCardAspect(card, aspect || 1.6);
 }
@@ -1507,7 +1510,14 @@ function applyThumbInfo(card, p, info) {
   if (info.width > 0 && info.height > 0) {
     const aspect = info.width / info.height;
     LIB.aspectCache.set(normPathKey(p), aspect);
-    if (card.dataset.aspectKnown !== 'true') setLibCardAspect(card, aspect, { deferred: true });
+    // A file can be replaced in-place after its aspect was persisted. Matching
+    // metadata is a no-op; genuinely changed geometry is corrected once and then
+    // main's thumbnail backfill persists the new value for subsequent renders.
+    const current = Number(card.dataset.aspect);
+    if (card.dataset.aspectKnown !== 'true' || !Number.isFinite(current)
+      || Math.abs(current - window.JustifiedLayout.normalizeAspect(aspect, 0.65, 3)) >= 0.005) {
+      setLibCardAspect(card, aspect, { deferred: true });
+    }
     card.dataset.aspectKnown = 'true';
   }
 }
@@ -1561,7 +1571,7 @@ async function renderFolderView(tok) {
   try { res = await window.api.folderEntries(dir); } catch { res = null; }
   if (tok !== allViewToken) return; // navigated away while awaiting
   const folders = (res && res.folders) || [];
-  let images = (res && res.images) || []; // [{ path, addedAt, modifiedAt }]
+  let images = (res && res.images) || []; // [{ path, addedAt, modifiedAt, aspect }]
   const q = LIB.q.trim().toLowerCase();
   if (q) images = images.filter((im) => baseName(im.path).toLowerCase().includes(q));
   // Same entry shape, sorting and chunked rendering as "All": a folder image already
@@ -1572,8 +1582,15 @@ async function renderFolderView(tok) {
   const entries = images.map((im) => {
     const item = pmap.get(normPathKey(im.path));
     return item
-      ? { path: im.path, item, id: item.id }
-      : { path: im.path, item: null, id: im.path, addedAt: im.addedAt, modifiedAt: im.modifiedAt };
+      ? { path: im.path, item, id: item.id, aspect: im.aspect }
+      : {
+        path: im.path,
+        item: null,
+        id: im.path,
+        addedAt: im.addedAt,
+        modifiedAt: im.modifiedAt,
+        aspect: im.aspect,
+      };
   });
   sortItems(entries, {
     added: (x) => (x.item ? x.item.addedAt : x.addedAt),
@@ -1622,13 +1639,13 @@ function buildSubfolderCard(f) {
 
 // Image living inside a folder, not yet in the pool. Preview can open it directly;
 // actions that mutate library state first materialize it by reference (no copy).
-function buildEphemeralImageCard(p) {
+function buildEphemeralImageCard(p, aspect = 0) {
   const card = document.createElement('div');
   card.className = 'lib-card';
   card.title = baseName(p);
   card.dataset.path = p; // lets onConfig upgrade this exact card in place once it's materialized
   makeLibCardFocusable(card);
-  primeLibCardAspect(card, null, p);
+  primeLibCardAspect(card, null, p, aspect);
   lazyThumb(card, p, 320, 200);
   card.__galleryItem = galleryItemFromPath(p);
   const materialize = async () => {
@@ -1698,6 +1715,7 @@ async function renderAllView(tok) {
       id: fi.id,
       addedAt: fi.addedAt,
       modifiedAt: fi.modifiedAt,
+      aspect: fi.aspect,
     })));
   const q = LIB.q.trim().toLowerCase();
   if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
@@ -1816,7 +1834,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
       return Number.isFinite(a) && a > 0 ? a : 1.6;
     }
     const en = entries[c - head.length];
-    return knownLibAspect(en.item, en.path) || 1.6;
+    return knownLibAspect(en.item, en.path, en.aspect) || 1.6;
   };
 
   const buildCardAt = (c) => {
@@ -1825,7 +1843,13 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     // config gets REPLACED on every mutation; look the item up fresh so a card
     // rebuilt after scrolling back reflects current favorite/assigned state.
     const fresh = en.item && config.library && config.library[en.item.id] ? config.library[en.item.id] : en.item;
-    const card = fresh ? buildLibCard(fresh, virtual.assigned.has(fresh.id)) : buildEphemeralImageCard(en.path);
+    const card = fresh
+      ? buildLibCard(fresh, virtual.assigned.has(fresh.id))
+      : buildEphemeralImageCard(en.path, en.aspect);
+    if (fresh && knownLibAspect(fresh, en.path) <= 0 && Number(en.aspect) > 0) {
+      card.dataset.aspectKnown = 'true';
+      setLibCardAspect(card, en.aspect);
+    }
     bindCardGalleryItem(card, galleryItems[c - head.length] || card.__galleryItem, c - head.length);
     if (fresh && LIB.selection.has(fresh.id)) card.classList.add('selected');
     return card;

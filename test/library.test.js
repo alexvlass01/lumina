@@ -201,13 +201,19 @@ ok('flattenImages: no scanDeep -> pool images only',
 
 const ephemeral = L.ephemeralFolderImages(lib5, [
   { path: 'C:/photos/a.jpg', addedAt: 500, modifiedAt: 50 }, // pool wins -> omitted
-  { path: 'C:/photos/new.jpg', addedAt: 300, modifiedAt: 30 },
+  { path: 'C:/photos/new.jpg', addedAt: 300, modifiedAt: 30, aspect: 1.75 },
   { path: 'c:\\PHOTOS\\NEW.JPG', addedAt: 200, modifiedAt: 20 }, // same normalized path, earlier discovery wins
 ]);
 ok('ephemeralFolderImages: pool wins and duplicate keeps earliest discovery', ephemeral.length === 1
   && ephemeral[0].id === L.idFor('C:/photos/new.jpg')
   && ephemeral[0].addedAt === 200
-  && ephemeral[0].modifiedAt === 20);
+  && ephemeral[0].modifiedAt === 20
+  && ephemeral[0].aspect === 1.75);
+ok('ephemeralFolderImages: learned aspect survives overlap deduplication',
+  L.ephemeralFolderImages({}, [
+    { path: 'C:/same.jpg', addedAt: 1 },
+    { path: 'c:\\SAME.JPG', addedAt: 2, aspect: 0.8 },
+  ])[0].aspect === 0.8);
 
 const recentLib = {};
 L.addItem(recentLib, L.makeItem('image', 'C:/pool.jpg', { addedAt: 150 }));
