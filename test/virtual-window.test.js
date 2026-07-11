@@ -59,6 +59,29 @@ ok('card range maps rows to inclusive card indices',
   cardRange.first === rows[mid.first].start && cardRange.last === rows[mid.last].end - 1);
 ok('empty row range maps to an empty card range', V.cardRangeForRows(rows, 0, -1).last === -1);
 
+// --- logical scroll anchor survives a width-dependent relayout ---
+const anchorCard = 137;
+const oldRowIndex = V.rowIndexForCard(rows, anchorCard);
+ok('row lookup finds the row containing a virtual card',
+  oldRowIndex >= 0 && rows[oldRowIndex].start <= anchorCard && rows[oldRowIndex].end > anchorCard);
+ok('row lookup rejects cards outside the layout',
+  V.rowIndexForCard(rows, -1) === -1 && V.rowIndexForCard(rows, 9999) === -1);
+
+const gridTop = 260;
+const desiredViewportTop = 34;
+const narrower = J.layoutRows(new Array(300).fill(1.6), 720, { gap: 10, targetHeight: 160 });
+const restoredScrollTop = V.scrollTopForCardAnchor(
+  narrower.rows,
+  anchorCard,
+  gridTop,
+  desiredViewportTop
+);
+const newRow = narrower.rows[V.rowIndexForCard(narrower.rows, anchorCard)];
+ok('logical anchor keeps the same card row at the same viewport position after relayout',
+  near(gridTop + newRow.top - restoredScrollTop, desiredViewportTop));
+ok('invalid logical anchors do not produce a scroll target',
+  V.scrollTopForCardAnchor(narrower.rows, 9999, gridTop, desiredViewportTop) === null);
+
 // --- mixed aspect ratios keep the math consistent ---
 const aspects = Array.from({ length: 500 }, (_, i) => [0.7, 1, 1.5, 2.4, 1.78][i % 5]);
 const mixed = J.layoutRows(aspects, 860, { gap: 10, targetHeight: 160 });

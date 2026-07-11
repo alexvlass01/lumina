@@ -71,5 +71,41 @@
     return { first: rows[first].start, last: rows[last].end - 1 };
   }
 
-  return { rowRangeForViewport, padHeights, cardRangeForRows };
+  // Find the justified-layout row containing a combined virtual card index.
+  // Keeping this as pure math lets renderer restore a logical scroll anchor even
+  // when virtualization removed the old DOM card during a resize relayout.
+  function rowIndexForCard(rows, cardIndex) {
+    const n = Array.isArray(rows) ? rows.length : 0;
+    const index = Number(cardIndex);
+    if (!n || !Number.isInteger(index) || index < 0) return -1;
+    let lo = 0;
+    let hi = n - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const row = rows[mid];
+      if (index < row.start) hi = mid - 1;
+      else if (index >= row.end) lo = mid + 1;
+      else return mid;
+    }
+    return -1;
+  }
+
+  // Absolute scrollTop that keeps the anchored card row at the same viewport Y.
+  // gridTop is the grid's position in scroll-content coordinates; anchorTop is the
+  // card row's desired position relative to the scroll viewport.
+  function scrollTopForCardAnchor(rows, cardIndex, gridTop, anchorTop) {
+    const rowIndex = rowIndexForCard(rows, cardIndex);
+    const grid = Number(gridTop);
+    const top = Number(anchorTop);
+    if (rowIndex < 0 || !Number.isFinite(grid) || !Number.isFinite(top)) return null;
+    return Math.max(0, grid + rows[rowIndex].top - top);
+  }
+
+  return {
+    rowRangeForViewport,
+    padHeights,
+    cardRangeForRows,
+    rowIndexForCard,
+    scrollTopForCardAnchor,
+  };
 });

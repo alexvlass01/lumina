@@ -20,7 +20,14 @@ function createTaskQueue(limit, hooks = null) {
 
   const pump = () => {
     while (active < max && queue.length) {
-      const job = queue.shift();
+      // Higher-priority work represents the renderer's current virtual window.
+      // Preserve FIFO order within the same priority so ordinary callers retain
+      // the queue's historical behaviour.
+      let nextIndex = 0;
+      for (let i = 1; i < queue.length; i++) {
+        if (queue[i].priority > queue[nextIndex].priority) nextIndex = i;
+      }
+      const job = queue.splice(nextIndex, 1)[0];
       active += 1;
       const startedAt = now();
       const waitMs = Math.max(0, startedAt - job.enqueuedAt);
@@ -46,9 +53,11 @@ function createTaskQueue(limit, hooks = null) {
     }
   };
 
-  return function enqueue(fn) {
+  return function enqueue(fn, options = null) {
     return new Promise((resolve, reject) => {
-      queue.push({ fn, resolve, reject, enqueuedAt: now() });
+      const rawPriority = options && Number(options.priority);
+      const priority = Number.isFinite(rawPriority) ? rawPriority : 0;
+      queue.push({ fn, resolve, reject, enqueuedAt: now(), priority });
       emit('onEnqueue', { pending: queue.length, active });
       pump();
     });

@@ -30,6 +30,21 @@ function wait(ms) {
   ]);
   assert.strictEqual(order, 'ab');
 
+  // A newly visible virtual window may outrank stale queued thumbnail work, while
+  // jobs with equal priority remain FIFO. The active job is never interrupted.
+  const prioritized = createTaskQueue(1);
+  let releaseBlocker;
+  const blocker = prioritized(() => new Promise((resolve) => { releaseBlocker = resolve; }));
+  const priorityOrder = [];
+  const lowA = prioritized(async () => { priorityOrder.push('low-a'); }, { priority: 1 });
+  const highA = prioritized(async () => { priorityOrder.push('high-a'); }, { priority: 5 });
+  const highB = prioritized(async () => { priorityOrder.push('high-b'); }, { priority: 5 });
+  const lowB = prioritized(async () => { priorityOrder.push('low-b'); }, { priority: 1 });
+  await Promise.resolve(); // let the active blocker enter its task body
+  releaseBlocker();
+  await Promise.all([blocker, lowA, highA, highB, lowB]);
+  assert.deepStrictEqual(priorityOrder, ['high-a', 'high-b', 'low-a', 'low-b']);
+
   // Hooks: timing/counters are reported, results and errors pass through untouched.
   let fakeNow = 1000;
   const calls = { enqueue: [], start: [], settle: [] };

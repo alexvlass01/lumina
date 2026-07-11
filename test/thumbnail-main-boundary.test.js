@@ -17,6 +17,8 @@ assert.ok(block.includes("ipcMain.handle('thumb'"), 'thumb IPC remains registere
 assert.ok(block.includes("ipcMain.handle('thumb-info'"), 'thumb-info IPC remains registered');
 assert.ok(block.includes("ipcMain.handle('thumb-aspects'"), 'thumb-aspects IPC remains registered');
 assert.ok(block.includes('thumbPending.get(key)'), 'matching pending work stays deduplicated');
+assert.ok(block.includes('runThumbnailTask(async () =>'), 'thumbnail work stays in the bounded task queue');
+assert.ok(block.includes('}, { priority }).finally'), 'current virtual window priority reaches the task queue');
 assert.ok(block.includes('const key = `${p}|${W}`;'), 'dedup key matches the helper scalar size');
 assert.ok(!main.includes('createThumbnailFromPath'), 'main no longer runs Windows thumbnail extraction');
 assert.ok(main.includes('void thumbnailHost.dispose();'), 'app shutdown disposes the helper');

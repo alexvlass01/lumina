@@ -791,6 +791,8 @@ let justifiedFrame = 0;
 const justifiedPending = new Set();
 let aspectLayoutTimer = 0;
 let libLazyKick = null;
+let thumbRequestPriority = 0;
+let lastLibraryScrollAt = 0;
 let libraryResizeAnchor = null;
 let libraryViewAnchor = null;
 let libraryAnchorFrame = 0;
@@ -862,6 +864,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
     const scrollAnchor = suppliedAnchor || captureLibraryScrollAnchor(grid);
     grid.__virtual.relayout();
     restoreLibraryScrollAnchor(scrollAnchor, grid);
+    if (grid.id === 'libGrid') libraryViewAnchor = captureLibraryScrollAnchor(grid);
     return;
   }
   const width = grid.clientWidth;
@@ -881,6 +884,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
     card.style.height = `${box.height.toFixed(2)}px`;
   });
   restoreLibraryScrollAnchor(scrollAnchor, grid);
+  if (grid.id === 'libGrid') libraryViewAnchor = captureLibraryScrollAnchor(grid);
 }
 
 function scheduleJustifiedLayout(grid) {
@@ -1422,10 +1426,33 @@ function captureLibraryScrollAnchor(grid) {
     card,
     key: libraryCardAnchorKey(card),
     top: rect.top - rootRect.top,
+    combinedIndex: Number.isInteger(Number(card.dataset.virtualIndex))
+      ? Number(card.dataset.virtualIndex)
+      : null,
   };
 }
 function restoreLibraryScrollAnchor(anchor, grid) {
   if (!anchor || !anchor.root || !grid || !grid.isConnected) return;
+  const virtual = grid.__virtual;
+  if (virtual && Number.isInteger(anchor.combinedIndex)
+    && window.VirtualWindow && typeof window.VirtualWindow.scrollTopForCardAnchor === 'function') {
+    const rootRect = anchor.root.getBoundingClientRect();
+    const gridTop = grid.getBoundingClientRect().top - rootRect.top + anchor.root.scrollTop;
+    const target = window.VirtualWindow.scrollTopForCardAnchor(
+      virtual.rows,
+      anchor.combinedIndex,
+      gridTop,
+      anchor.top
+    );
+    if (Number.isFinite(target)) {
+      anchor.root.scrollTop = target;
+      pageScroll.library = anchor.root.scrollTop;
+      // relayout initially materializes around the old scroll position. Refresh once
+      // more around the restored logical anchor so a resize cannot leave a blank grid.
+      if (typeof virtual.updateWindow === 'function') virtual.updateWindow(true);
+      return;
+    }
+  }
   let card = anchor.card;
   if (!card || !card.isConnected) {
     card = Array.from(grid.children).find((candidate) => libraryCardAnchorKey(candidate) === anchor.key);
@@ -1494,7 +1521,7 @@ function loadThumbInto(card) {
   const w = +card.dataset.thumbW || 320;
   const h = +card.dataset.thumbH || 200;
   const request = window.api.thumbInfo
-    ? window.api.thumbInfo(p, w, h)
+    ? window.api.thumbInfo(p, w, h, Number(card.dataset.thumbPriority) || 0)
     : window.api.thumb(p, w, h).then((url) => ({ url, width: 0, height: 0 }));
   request.then((info) => {
     const u = info && info.url;
@@ -1726,11 +1753,17 @@ function refreshChunkAspects(entries, cards, tok) {
 function scheduleDeferredJustifiedLayout(grid) {
   if (grid) justifiedPending.add(grid);
   if (aspectLayoutTimer) clearTimeout(aspectLayoutTimer);
-  aspectLayoutTimer = setTimeout(() => {
+  const flush = () => {
+    const scrollQuietFor = Date.now() - lastLibraryScrollAt;
+    if (scrollQuietFor < 320) {
+      aspectLayoutTimer = setTimeout(flush, 320 - scrollQuietFor);
+      return;
+    }
     aspectLayoutTimer = 0;
     if (!justifiedPending.size) return;
     scheduleJustifiedLayout();
-  }, 240);
+  };
+  aspectLayoutTimer = setTimeout(flush, 240);
 }
 
 // VIRTUALIZED grid (LF-QA5 fix). The old version appended chunks forever and never
@@ -1812,6 +1845,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   // spacers, and (re)assert child order. Existing nodes are MOVED, not rebuilt.
   const applyWindow = (first, last, sizesChanged) => {
     const range = window.VirtualWindow.cardRangeForRows(virtual.rows, first, last);
+    const requestPriority = ++thumbRequestPriority;
     let added = 0;
     const endSpan = diagSpan('renderer', 'lazy-chunk'); // budget span #9: window materialization
     for (const [c, card] of Array.from(virtual.cards)) {
@@ -1835,6 +1869,8 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     } else if (virtual.topPad) virtual.topPad.remove();
     for (let c = range.first; c <= range.last; c++) {
       const card = virtual.cards.get(c);
+      card.dataset.virtualIndex = String(c);
+      card.dataset.thumbPriority = String(requestPriority);
       grid.appendChild(card); // appendChild moves an already-attached node in order
       if (sizesChanged || added) {
         const box = virtual.boxes[c];
@@ -1893,6 +1929,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   let widthFrame = 0;
   let widthObserver = null;
   const onScroll = () => {
+    lastLibraryScrollAt = Date.now();
     if (scrollFrame) return;
     scrollFrame = requestAnimationFrame(() => {
       scrollFrame = 0;

@@ -2592,7 +2592,7 @@ function cachedThumb(key) {
   thumbCache.set(key, hit);
   return hit;
 }
-async function thumbnailData(p, w, h) {
+async function thumbnailData(p, w, h, priority = 0) {
   if (!p || typeof p !== 'string' || p.includes('\0') || !path.isAbsolute(p)) {
     return { url: '', width: 0, height: 0 };
   }
@@ -2641,7 +2641,7 @@ async function thumbnailData(p, w, h) {
       }
     }
     return data;
-  }).finally(() => {
+  }, { priority }).finally(() => {
     thumbPending.delete(key);
   });
   thumbPending.set(key, job);
@@ -2656,8 +2656,8 @@ ipcMain.handle('thumb', async (e, p, w, h) => {
   const data = await thumbnailData(p, w, h);
   return data.url;
 });
-ipcMain.handle('thumb-info', (e, p, w, h) => (
-  isTrustedThumbnailSender(e) ? thumbnailData(p, w, h) : { url: '', width: 0, height: 0 }
+ipcMain.handle('thumb-info', (e, p, w, h, priority) => (
+  isTrustedThumbnailSender(e) ? thumbnailData(p, w, h, priority) : { url: '', width: 0, height: 0 }
 ));
 
 // Resolve proportions before renderer inserts the next justified-grid chunk. A small
