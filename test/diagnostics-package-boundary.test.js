@@ -29,10 +29,19 @@ for (const leak of ['/plans/knowledge_index.md', '/STATUS.md', '/ROADMAP.md', '/
   ok(`package command excludes ${leak}`,
     ignorePatterns.some((pattern) => pattern.test(leak)));
 }
+ok('package command excludes thumbnail helper sources, build scripts and intermediate tree',
+  ignorePatterns.some((pattern) => pattern.test('/native/thumbnail-helper/Program.cs'))
+  && ignorePatterns.some((pattern) => pattern.test('/scripts/build-thumbnail-helper.js'))
+  && ignorePatterns.some((pattern) => pattern.test('/.build/thumbnail-helper/build.json')));
+ok('package command ships the compiled thumbnail helper as an extra resource',
+  /--extra-resource="?\.build\/thumbnail-helper"?/.test(pkg.scripts.package));
+ok('package lifecycle verifies the compiled helper after packing',
+  pkg.scripts.postpackage === 'node scripts/verify-thumbnail-package.js');
 ok('package command still ships runtime dirs',
   !ignorePatterns.some((pattern) => pattern.test('/src/library.js'))
   && !ignorePatterns.some((pattern) => pattern.test('/renderer/renderer.js'))
-  && !ignorePatterns.some((pattern) => pattern.test('/locales/en.json')));
+  && !ignorePatterns.some((pattern) => pattern.test('/locales/en.json'))
+  && !ignorePatterns.some((pattern) => pattern.test('/src/thumbnail-host.js')));
 ok('diagnostics launcher does not enable Cloud staging',
   !/LUMINA_CLOUD=staging/.test(pkg.scripts['dev:diagnostics']));
 ok('diagnostics launcher requires env and CLI opt-in',

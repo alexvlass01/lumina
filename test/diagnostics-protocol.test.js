@@ -46,6 +46,31 @@ ok('attribute whitelist keeps only allowed keys', attrs.queueDepth === 2 && attr
 ok('unavailable/null is preserved instead of becoming zero', Object.prototype.hasOwnProperty.call(attrs, 'unavailable') && attrs.unavailable === null);
 ok('invalid and oversized attributes are counted', counters.droppedAttributes >= 1 && counters.invalidAttributes >= 1 && counters.oversizedAttributes >= 1);
 
+const thumbnailAttrs = sanitizeAttributes({
+  pid: 456,
+  id: 17,
+  op: 'thumbnail',
+  size: 320,
+  totalMs: 42,
+  durationMs: 39,
+  encodedBytes: 12345,
+  mime: 'image/jpeg',
+  windowsCache: 'hit',
+  lowQuality: false,
+  retry: 1,
+  protocolVersion: 1,
+  helperVersion: '1.0.0',
+  errorCode: 'extract_timeout',
+});
+ok('thumbnail helper diagnostics keep performance metadata',
+  thumbnailAttrs.pid === 456
+  && thumbnailAttrs.totalMs === 42
+  && thumbnailAttrs.durationMs === 39
+  && thumbnailAttrs.encodedBytes === 12345
+  && thumbnailAttrs.windowsCache === 'hit'
+  && thumbnailAttrs.helperVersion === '1.0.0'
+  && thumbnailAttrs.errorCode === 'extract_timeout');
+
 const valueEvent = protocol.normalize({
   kind: 'metric',
   category: 'fps',

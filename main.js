@@ -23,7 +23,7 @@ const { createTrayController } = require('./src/tray'); // системный т
 const schedule = require('./src/schedule'); // чистая математика расписаний день/ночь (время/солнце)
 const { createStealthController } = require('./src/stealth-session'); // отменяемая «невидимая смена» (под тестами)
 const { createTaskQueue } = require('./src/task-queue'); // small async queue for expensive OS thumbnail jobs
-const thumbnail = require('./src/thumbnail');
+const { ThumbnailHost, resolveThumbnailHelperPath } = require('./src/thumbnail-host');
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
@@ -111,6 +111,26 @@ function diagEvent(raw) {
 function diagCountSend(channel) {
   if (diagnosticsController) diagnosticsController.countChannel(channel);
 }
+
+const thumbnailHost = new ThumbnailHost({
+  executablePath: resolveThumbnailHelperPath({
+    isPackaged: app.isPackaged,
+    resourcesPath: process.resourcesPath,
+    appPath: app.getAppPath(),
+  }),
+  onEvent: (name, attributes) => {
+    const totalMs = Number(attributes && attributes.totalMs);
+    const isResponse = name === 'response' && Number.isFinite(totalMs);
+    diagEvent({
+      kind: isResponse ? 'span' : 'lifecycle',
+      category: 'thumbnail-helper',
+      name,
+      timestampMs: isResponse ? Date.now() - Math.max(0, totalMs) : Date.now(),
+      ...(isResponse ? { durationMs: Math.max(0, totalMs) } : {}),
+      attributes,
+    });
+  },
+});
 // Renderer preloads only attach the diagnostics probe when they see this argument, and
 // main only passes it under the dev-only gate — so a packaged build never activates it.
 function diagRendererArgs(role) {
@@ -2549,7 +2569,7 @@ ipcMain.handle('folder-info', (e, dir) => {
 // Маленький тамбнейл для библиотечных превью (через Windows shell) → data-URL. Без него
 // карточки грузили бы полноразмерные (до 4K) файлы → тормоза декодирования + «лесенка»
 // при даунскейле. Вместе с URL держим размер thumbnail: его пропорция совпадает с оригиналом
-// и нужна justified-сетке. LRU-кэш по "путь|WxH" хранит и промахи.
+// и нужна justified-сетке. Windows cache принимает scalar width, поэтому LRU-key = "путь|W".
 const thumbCache = new Map();
 const thumbPending = new Map();
 // Diagnostics observes every thumbnail job (queue wait + run + depth) through the
@@ -2573,9 +2593,14 @@ function cachedThumb(key) {
   return hit;
 }
 async function thumbnailData(p, w, h) {
-  if (!p || typeof p !== 'string') return { url: '', width: 0, height: 0 };
-  const W = w || 320; const H = h || 200;
-  const key = `${p}|${W}x${H}`;
+  if (!p || typeof p !== 'string' || p.includes('\0') || !path.isAbsolute(p)) {
+    return { url: '', width: 0, height: 0 };
+  }
+  const requestedWidth = Number(w);
+  const requestedHeight = Number(h);
+  const W = Number.isFinite(requestedWidth) ? Math.max(16, Math.min(1024, Math.round(requestedWidth))) : 320;
+  const H = Number.isFinite(requestedHeight) ? Math.max(16, Math.min(1024, Math.round(requestedHeight))) : 200;
+  const key = `${p}|${W}`;
   const hit = cachedThumb(key);
   if (hit !== undefined) return hit;
   const pending = thumbPending.get(key);
@@ -2584,26 +2609,36 @@ async function thumbnailData(p, w, h) {
     const lateHit = cachedThumb(key);
     if (lateHit !== undefined) return lateHit;
     let data = { url: '', width: 0, height: 0 };
-    // Spans #3/#4 of the MVP-A budget. Extract (Promise-based Windows shell call)
-    // and encode (sync JPEG/PNG) are measured SEPARATELY — extract must be
-    // measured, not assumed blocking. Errors stay swallowed like before.
-    let img = null;
-    const endExtract = diagSpan('thumbnail', 'extract', { width: W, height: H });
+    let cacheable = true;
+    // Extraction and encoding run in the isolated Windows helper. Main keeps only
+    // the lightweight JSONL round-trip and the bounded in-memory result cache.
+    const endRequest = diagSpan('thumbnail', 'helper-roundtrip', { width: W, height: H });
     try {
-      img = await nativeImage.createThumbnailFromPath(p, { width: W, height: H });
-      endExtract();
-    } catch { endExtract({ status: 'error' }); }
-    if (img && !img.isEmpty()) {
-      const endEncode = diagSpan('thumbnail', 'encode');
-      try {
-        data = thumbnail.encodeThumbnail(img);
-        endEncode({ bytes: data.url ? data.url.length : 0, width: data.width, height: data.height });
-      } catch { endEncode({ status: 'error' }); }
+      const result = await thumbnailHost.thumbnail(p, W, 82);
+      const mime = result && result.mime === 'image/png' ? 'image/png' : 'image/jpeg';
+      const body = result && typeof result.dataBase64 === 'string' ? result.dataBase64 : '';
+      const width = Number(result && result.width) || 0;
+      const height = Number(result && result.height) || 0;
+      if (body && width > 0 && height > 0) {
+        data = { url: 'data:' + mime + ';base64,' + body, width, height };
+      }
+      endRequest({
+        status: data.url ? 'ok' : 'empty',
+        bytes: Number(result && result.encodedBytes) || 0,
+        width,
+        height,
+        windowsCache: String(result && result.windowsCache || ''),
+      });
+    } catch (error) {
+      cacheable = !(error && error.retriable);
+      endRequest({ status: 'error', errorCode: String(error && error.code || 'helper_failed') });
     }
-    thumbCache.set(key, data);
-    if (thumbCache.size > THUMB_CAP) {
-      const k0 = thumbCache.keys().next().value;
-      thumbCache.delete(k0);
+    if (cacheable) {
+      thumbCache.set(key, data);
+      if (thumbCache.size > THUMB_CAP) {
+        const k0 = thumbCache.keys().next().value;
+        thumbCache.delete(k0);
+      }
     }
     return data;
   }).finally(() => {
@@ -2612,17 +2647,25 @@ async function thumbnailData(p, w, h) {
   thumbPending.set(key, job);
   return job;
 }
+function isTrustedThumbnailSender(event) {
+  return !!(event && mainWindow && !mainWindow.isDestroyed()
+    && event.sender === mainWindow.webContents);
+}
 ipcMain.handle('thumb', async (e, p, w, h) => {
+  if (!isTrustedThumbnailSender(e)) return '';
   const data = await thumbnailData(p, w, h);
   return data.url;
 });
-ipcMain.handle('thumb-info', (e, p, w, h) => thumbnailData(p, w, h));
+ipcMain.handle('thumb-info', (e, p, w, h) => (
+  isTrustedThumbnailSender(e) ? thumbnailData(p, w, h) : { url: '', width: 0, height: 0 }
+));
 
 // Resolve proportions before renderer inserts the next justified-grid chunk. A small
 // worker pool avoids hammering Windows shell with dozens of simultaneous thumbnail jobs.
 // Pool-item aspects are persisted as additive metadata; folder-expanded images stay
 // ephemeral and are cached only by thumbnailData/renderer.
 ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
+  if (!isTrustedThumbnailSender(e)) return [];
   const input = Array.isArray(entries) ? entries.slice(0, 100) : [];
   const result = new Array(input.length);
   let cursor = 0;
@@ -3150,7 +3193,7 @@ app.whenReady().then(async () => {
   });
 });
 
-// Flush discovery metadata and dispose the persistent PowerShell host on quit.
+// Flush discovery metadata and dispose persistent helper processes on quit.
 app.on('before-quit', () => {
   if (diagnosticsController) {
     void diagnosticsController.shutdownBestEffort({ reason: 'before-quit' });
@@ -3161,6 +3204,7 @@ app.on('before-quit', () => {
   liveFolderWatcherRetryTimers.clear();
   flushLiveFolderState();
   if (liveFolderWatcher) liveFolderWatcher.closeAll();
+  void thumbnailHost.dispose();
   wpHost.dispose();
 });
 
