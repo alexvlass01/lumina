@@ -298,42 +298,30 @@ namespace Lumina.ThumbnailHelper
 
             int targetStride = checked(width * 4);
             byte[] pixels = new byte[checked(targetStride * height)];
-            int sourceStride = Math.Abs(section.Bitmap.WidthBytes);
-
-            if (section.Bitmap.Bits != IntPtr.Zero && sourceStride >= targetStride)
+            BitmapInfoHeader header = new BitmapInfoHeader
             {
-                bool topDown = section.Header.Height < 0;
-                for (int y = 0; y < height; y++)
-                {
-                    int sourceY = topDown ? y : (height - 1 - y);
-                    IntPtr row = IntPtr.Add(section.Bitmap.Bits, checked(sourceY * sourceStride));
-                    Marshal.Copy(row, pixels, y * targetStride, targetStride);
-                }
+                Size = (uint)Marshal.SizeOf(typeof(BitmapInfoHeader)),
+                Width = width,
+                // A negative height asks GDI for a normalized top-down buffer. Reading
+                // dsBm.bmBits directly was unreliable for Shell-owned DIB sections and
+                // inverted every thumbnail on the owner's machine.
+                Height = -height,
+                Planes = 1,
+                BitCount = 32,
+                Compression = BiRgb,
+                SizeImage = (uint)pixels.Length
+            };
+            IntPtr dc = GetDC(IntPtr.Zero);
+            if (dc == IntPtr.Zero)
+                throw new HelperFailure("encode_failed", "Thumbnail bitmap could not be opened", false);
+            try
+            {
+                if (GetDIBits(dc, bitmapHandle, 0, (uint)height, pixels, ref header, DibRgbColors) == 0)
+                    throw new HelperFailure("encode_failed", "Thumbnail pixels could not be read", false);
             }
-            else
+            finally
             {
-                BitmapInfoHeader header = new BitmapInfoHeader
-                {
-                    Size = (uint)Marshal.SizeOf(typeof(BitmapInfoHeader)),
-                    Width = width,
-                    Height = -height,
-                    Planes = 1,
-                    BitCount = 32,
-                    Compression = BiRgb,
-                    SizeImage = (uint)pixels.Length
-                };
-                IntPtr dc = GetDC(IntPtr.Zero);
-                if (dc == IntPtr.Zero)
-                    throw new HelperFailure("encode_failed", "Thumbnail bitmap could not be opened", false);
-                try
-                {
-                    if (GetDIBits(dc, bitmapHandle, 0, (uint)height, pixels, ref header, DibRgbColors) == 0)
-                        throw new HelperFailure("encode_failed", "Thumbnail pixels could not be read", false);
-                }
-                finally
-                {
-                    ReleaseDC(IntPtr.Zero, dc);
-                }
+                ReleaseDC(IntPtr.Zero, dc);
             }
 
             return pixels;

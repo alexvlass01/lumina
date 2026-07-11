@@ -79,6 +79,75 @@ function makePng(width, height, transparent) {
   ]);
 }
 
+function paethPredictor(a, b, c) {
+  const p = a + b - c;
+  const pa = Math.abs(p - a);
+  const pb = Math.abs(p - b);
+  const pc = Math.abs(p - c);
+  if (pa <= pb && pa <= pc) return a;
+  return pb <= pc ? b : c;
+}
+
+function decodePng(buffer) {
+  assert.strictEqual(buffer.subarray(0, 8).toString('hex'), '89504e470d0a1a0a');
+  let offset = 8;
+  let width = 0;
+  let height = 0;
+  let colorType = 0;
+  const compressed = [];
+  while (offset + 12 <= buffer.length) {
+    const length = buffer.readUInt32BE(offset);
+    const type = buffer.subarray(offset + 4, offset + 8).toString('ascii');
+    const data = buffer.subarray(offset + 8, offset + 8 + length);
+    if (type === 'IHDR') {
+      width = data.readUInt32BE(0);
+      height = data.readUInt32BE(4);
+      assert.strictEqual(data[8], 8, 'fixture output must be 8-bit PNG');
+      colorType = data[9];
+      assert.strictEqual(data[12], 0, 'interlaced PNG is not expected');
+    } else if (type === 'IDAT') {
+      compressed.push(data);
+    } else if (type === 'IEND') {
+      break;
+    }
+    offset += 12 + length;
+  }
+  const bytesPerPixel = { 2: 3, 4: 2, 6: 4 }[colorType];
+  assert.ok(bytesPerPixel, 'unexpected PNG color type ' + colorType);
+  const raw = zlib.inflateSync(Buffer.concat(compressed));
+  const stride = width * bytesPerPixel;
+  const pixels = Buffer.alloc(stride * height);
+  let input = 0;
+  for (let y = 0; y < height; y++) {
+    const filter = raw[input++];
+    for (let x = 0; x < stride; x++) {
+      const value = raw[input++];
+      const left = x >= bytesPerPixel ? pixels[y * stride + x - bytesPerPixel] : 0;
+      const up = y > 0 ? pixels[(y - 1) * stride + x] : 0;
+      const upperLeft = y > 0 && x >= bytesPerPixel
+        ? pixels[(y - 1) * stride + x - bytesPerPixel]
+        : 0;
+      let decoded = value;
+      if (filter === 1) decoded += left;
+      else if (filter === 2) decoded += up;
+      else if (filter === 3) decoded += Math.floor((left + up) / 2);
+      else if (filter === 4) decoded += paethPredictor(left, up, upperLeft);
+      else assert.strictEqual(filter, 0, 'unexpected PNG filter ' + filter);
+      pixels[y * stride + x] = decoded & 0xff;
+    }
+  }
+  return { width, height, colorType, bytesPerPixel, pixels };
+}
+
+function averageGreenRow(image, row) {
+  const stride = image.width * image.bytesPerPixel;
+  let total = 0;
+  for (let x = 0; x < image.width; x++) {
+    total += image.pixels[row * stride + x * image.bytesPerPixel + 1];
+  }
+  return total / image.width;
+}
+
 (async () => {
   if (process.platform !== 'win32') {
     console.log('thumbnail-helper-integration.test.js skipped: Windows only');
@@ -125,6 +194,11 @@ function makePng(width, height, transparent) {
     assert.ok(transparent.width > 0 && transparent.height > 0);
     const png = Buffer.from(transparent.dataBase64, 'base64');
     assert.strictEqual(png.subarray(1, 4).toString('ascii'), 'PNG');
+    const decodedPng = decodePng(png);
+    assert.ok(
+      averageGreenRow(decodedPng, 0) < averageGreenRow(decodedPng, decodedPng.height - 1),
+      'thumbnail must keep the source top-to-bottom orientation'
+    );
 
     // The helper must release Shell/HBITMAP/file handles after every response.
     const renamedPath = path.join(tempRoot, 'после ответа.png');
