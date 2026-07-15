@@ -167,9 +167,9 @@ if (!window.api) {
       mock.slideshowIndex[monitorId][theme] = index;
       return mock;
     },
-    setSlideshowToPath: async () => mock,
+    setSlideshowToPath: async () => ({ config: mock, apply: { ok: true } }),
     applyNow: async () => ({ ok: false, reason: 'no-wallpaper' }),
-    nextWallpaper: async () => mock,
+    nextWallpaper: async () => ({ config: mock, apply: { ok: false, reason: 'no-wallpaper' } }),
     setAutostart: async (v) => (mock.autostart = v),
     setStartMinimized: async (v) => (mock.startMinimized = v),
     fileUrl: async (p) => p,
@@ -276,6 +276,23 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// Honest outcome reporting for manual wallpaper actions (plan: error_notifications T1).
+// Takes an applyForTheme-shaped result ({ok, reason}) and shows a HUMAN error toast for
+// known failures. Returns true when an error was shown, so callers skip their success
+// toast. `ignoreNoWallpaper` is for flows where an empty slot is EXPECTED and silence
+// is correct (e.g. removing the last item of a slot — see LF-QA7).
+const APPLY_ERROR_KEYS = {
+  'no-wallpaper': 'toast.applyNoWallpaper',
+  'gamemode-blocked': 'toast.applyGameMode',
+  'not-in-playlist': 'toast.applyMissingFile',
+};
+function toastApplyError(res, opts = {}) {
+  if (!res || res.ok !== false) return false;
+  if (opts.ignoreNoWallpaper && res.reason === 'no-wallpaper') return false;
+  toast(t(APPLY_ERROR_KEYS[res.reason] || 'toast.applyFailed'));
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -575,13 +592,15 @@ function renderStrip(theme) {
           const mon = editTargetId();
           if (!mon) return;
           // apply by PATH (folders expand, so the strip index != the slideshow index)
-          config = await window.api.setSlideshowToPath(mon, theme, it.path);
+          const res = await window.api.setSlideshowToPath(mon, theme, it.path);
+          config = (res && res.config) || res || config;
           // Clear preview cache so setPreview reloads with the new image
           const preview = theme === 'dark' ? $('#previewDark') : $('#previewLight');
           if (preview) preview.removeAttribute('data-bg-path');
           renderSlot(theme);
           renderHome();
-          toast(t('toast.applied'));
+          // Honest outcome: «Applied» only when the pick actually took effect.
+          if (!toastApplyError(res && res.apply)) toast(t('toast.applied'));
         });
       }
     }
@@ -594,7 +613,11 @@ function renderStrip(theme) {
       config = await window.api.removeSlotItem(editTargetId(), theme, idx);
       renderSlot(theme);
       renderHome();
-      if (theme === currentTheme) window.api.applyNow();
+      // Re-apply after removal; an emptied slot ('no-wallpaper') is expected silence
+      // (LF-QA7), only a real apply failure deserves a toast.
+      if (theme === currentTheme) {
+        window.api.applyNow().then((r) => toastApplyError(r, { ignoreNoWallpaper: true })).catch(() => {});
+      }
     });
     el.appendChild(rm);
     strip.appendChild(el);
@@ -4124,8 +4147,10 @@ async function init() {
   if (btnNextWall) btnNextWall.addEventListener('click', async () => {
     btnNextWall.disabled = true;
     try {
-      await window.api.nextWallpaper(config.singleWallpaper ? null : homeSelectedMonitorId);
-      toast(t('toast.nextWallpaper'));
+      const res = await window.api.nextWallpaper(config.singleWallpaper ? null : homeSelectedMonitorId);
+      config = (res && res.config) || res || config;
+      // «Switched» only when it really switched; otherwise say what went wrong.
+      if (!toastApplyError(res && res.apply)) toast(t('toast.nextWallpaper'));
     } finally {
       setTimeout(() => { renderHome(); renderPreviews(); }, 350);
     }
@@ -4296,8 +4321,12 @@ async function init() {
     buildMonitorMap();   // show/hide the monitor map
     renderPreviews();    // previews now reflect global vs per-monitor
     renderHome();
-    await window.api.applyNow();
-    toast(on ? t('toast.singleOn') : t('toast.singleOff'));
+    const applied = await window.api.applyNow();
+    // The toggle itself succeeded; an apply error outranks the toggle toast
+    // (an empty slot is fine — nothing to re-apply yet).
+    if (!toastApplyError(applied, { ignoreNoWallpaper: true })) {
+      toast(on ? t('toast.singleOn') : t('toast.singleOff'));
+    }
   });
 
   $('#swStartup').addEventListener('click', async () => {
@@ -4323,7 +4352,8 @@ async function init() {
     applyPreviewStyle();
     renderHome();
     const res = await window.api.applyNow();
-    if (res.ok) toast(t('toast.styleUpdated'));
+    if (res && res.ok) toast(t('toast.styleUpdated'));
+    else toastApplyError(res, { ignoreNoWallpaper: true }); // no wallpaper yet → silence, as before
   });
 
   // viewer background select — live (the open viewer, if any, updates via gallery-background)
@@ -4760,7 +4790,9 @@ function initDragDrop() {
       renderHome();
       if (res && res.added > 0) {
         toast(t('toast.photosAdded', { n: res.added }));
-        if (theme === currentTheme) window.api.applyNow(theme);
+        if (theme === currentTheme) {
+          window.api.applyNow(theme).then((r) => toastApplyError(r)).catch(() => {});
+        }
       }
     });
   });

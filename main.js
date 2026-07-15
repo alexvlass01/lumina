@@ -1219,6 +1219,9 @@ async function runSlideshowInterval() {
   await tickSlideshow(true, false);
 }
 
+// Returns the applyForTheme result on the paths that actually apply, so manual
+// triggers (Home button, hotkey) can report an honest outcome to the user.
+// Auto-only early exits keep returning undefined — their callers ignore it.
 async function tickSlideshow(advance, isManual = false) {
   clearSlideshowTimer();
   if (!config.slideshow || !config.slideshow.enabled) return;
@@ -1229,14 +1232,14 @@ async function tickSlideshow(advance, isManual = false) {
   if (!isManual && config.gameModeBlock && await isGameOrFullscreenRunning()) {
     console.log('[GameMode] Slideshow rotation blocked. Will retry in 1 minute.');
     retrySlideshowIntervalSoon();
-    return;
+    return { ok: false, reason: 'gamemode-blocked' };
   }
 
   const theme = wallpaperThemeName();
   if (advance) { advanceIndices(theme); saveConfig(); }
-  await applyForTheme(theme, isManual);
-  if (!intervalEnabled) return;
-  scheduleSlideshowTimer();
+  const result = await applyForTheme(theme, isManual);
+  if (intervalEnabled) scheduleSlideshowTimer();
+  return result;
 }
 
 // ---------------------------------------------------------------------------
@@ -2875,8 +2878,10 @@ ipcMain.handle('cycle-theme-override', async () => {
 // Ручная смена обоев на следующий кадр (кнопка на Главной / хоткей). Крутит слайдшоу,
 // если включено, иначе просто сдвигает индекс плейлиста и применяет.
 ipcMain.handle('next-wallpaper', async (e, monitorId) => {
-  await triggerNextWallpaper(monitorId ? [monitorId] : null);
-  return config;
+  // apply carries the honest outcome ({ok, reason}) so the Home button can stop
+  // showing a success toast when the wallpaper did not actually change.
+  const apply = await triggerNextWallpaper(monitorId ? [monitorId] : null);
+  return { config, apply: apply || { ok: true } };
 });
 
 // Jump to a specific playlist item for a monitor+theme and apply immediately.
@@ -2901,24 +2906,31 @@ ipcMain.handle('set-slideshow-index', async (e, monitorId, theme, index) => {
 // «Установить именно эту картинку» по клику на миниатюру. Индекс слайдшоу адресует
 // РАЗВЁРНУТЫЙ плейлист (папка = много файлов), поэтому ищем индекс по ПУТИ, а не по
 // позиции в стрипе (иначе при папке в плейлисте ставится не то фото).
+// Returns { config, apply } — apply is the honest outcome of the pick, so the
+// Design strip can stop toasting «Applied» when the file is gone from the playlist
+// or Windows rejected the wallpaper (the old shape returned config alone and the
+// renderer had no way to know the click silently did nothing).
 ipcMain.handle('set-slideshow-to-path', async (e, monitorId, theme, p) => {
-  if (!monitorId || !p) return config;
+  if (!monitorId || !p) return { config, apply: { ok: false, reason: 'not-in-playlist' } };
   const t = theme === 'dark' ? 'dark' : 'light';
   const list = playlist.resolveSlot(slotFor(monitorId, t), config.library, { forceFolderScan: true });
   const idx = list.findIndex((candidate) => String(candidate).toLowerCase() === String(p).toLowerCase());
-  if (idx < 0) return config; // путь не в развёрнутом плейлисте (исключён/файла нет)
+  // путь не в развёрнутом плейлисте (исключён/файла нет)
+  if (idx < 0) return { config, apply: { ok: false, reason: 'not-in-playlist' } };
   storeSlideshowPosition(monitorId, t, { index: idx, path: list[idx] });
   saveConfig();
   // Picking a specific frame is a manual choice → cancel any pending stealth advance.
   if (t === wallpaperThemeName()) {
     cancelPendingStealth();
     try {
-      await applyForTheme(t, true);
+      const apply = await applyForTheme(t, true);
+      return { config, apply: apply || { ok: true } };
     } finally {
       rescheduleSlideshowAfterManualWallpaperChange();
     }
   }
-  return config;
+  // Frame stored for the inactive theme — it will show when that theme activates.
+  return { config, apply: { ok: true } };
 });
 
 ipcMain.handle('detect-location', async () => {
