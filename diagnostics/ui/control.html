@@ -31,6 +31,7 @@ button.go { background: #1c71d8; border-color: #1c71d8; color: #fff; font-weight
 .group { margin-top: 10px; padding-top: 10px; border-top: 1px solid #2f2f2f; }
 .hidden { display: none; }
 #warn { color: #f5c211; font-size: 12px; margin: 8px 0 0; }
+#notificationStatus { color: #9aa0a6; font-size: 12px; margin: 6px 2px 0; min-height: 17px; }
 #hint { color: #7a7a7a; font-size: 11.5px; margin-top: 12px; line-height: 1.45; }
 .mono { font-family: ui-monospace, Consolas, monospace; }
 </style>
@@ -43,6 +44,11 @@ button.go { background: #1c71d8; border-color: #1c71d8; color: #fff; font-weight
 <button id="btnMark" class="primary">🔴 Только что лагнуло</button>
 <button id="btnStop">⏹ Остановить запись</button>
 <button id="btnStart" class="go hidden">⏺ Начать запись</button>
+
+<div class="group">
+  <button id="btnTestNotification">🔔 Проверить уведомление Windows</button>
+  <p id="notificationStatus">Принудительная доставка без записи ложного сбоя в журнал.</p>
+</div>
 
 <div id="after" class="group hidden">
   <button id="btnReport">📄 Открыть отчёт (summary.html)</button>

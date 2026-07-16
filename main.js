@@ -26,6 +26,7 @@ const { createTaskQueue } = require('./src/task-queue'); // small async queue fo
 const { ThumbnailHost, resolveThumbnailHelperPath } = require('./src/thumbnail-host');
 const { createFailureNotifier } = require('./src/failure-notifier'); // edge-trigger «работало→сломалось» (T2)
 const { createEventLog } = require('./src/event-log'); // bounded журнал сбоев/восстановлений (T3)
+const { createNotificationDelivery } = require('./src/notification-delivery'); // отдельная проверка доставки Windows Notification
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
@@ -122,6 +123,12 @@ function diagCountSend(channel) {
 // ---------------------------------------------------------------------------
 const failureNotifier = createFailureNotifier();
 const eventLog = createEventLog({ filePath: path.join(app.getPath('userData'), 'event-log.json') });
+const deliverSystemNotification = createNotificationDelivery({
+  NotificationClass: Notification,
+  translate: (key) => tMain(key),
+  onClick: () => showWindow(),
+  logError: (err) => console.error('[Notify] failed to show notification:', err),
+});
 
 // Journal + (optionally) a Windows notification, once per working→broken edge.
 // `notify:false` channels journal quietly (e.g. a live folder on an unplugged disk —
@@ -130,14 +137,7 @@ function reportChannelFailure(channel, messageKey, { titleKey, bodyKey, notify =
   if (!failureNotifier.fail(channel)) return; // still broken — stay silent until it recovers
   eventLog.append({ channel, kind: 'failure', messageKey, params });
   if (!notify || config.notifyOnFailure === false) return;
-  try {
-    if (!Notification.isSupported()) return;
-    const note = new Notification({ title: tMain(titleKey || messageKey), body: tMain(bodyKey || messageKey) });
-    note.on('click', () => showWindow());
-    note.show();
-  } catch (err) {
-    console.error('[Notify] failed to show notification:', err);
-  }
+  deliverSystemNotification({ titleKey: titleKey || messageKey, bodyKey: bodyKey || messageKey });
 }
 
 function reportChannelSuccess(channel, messageKey, { params } = {}) {
@@ -212,7 +212,7 @@ function openDiagnosticsControlWindow() {
   if (diagnosticsControlWindow && !diagnosticsControlWindow.isDestroyed()) { diagnosticsControlWindow.focus(); return; }
   diagnosticsControlWindow = new BrowserWindow({
     width: 300,
-    height: 430,
+    height: 520,
     resizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -3238,6 +3238,13 @@ app.whenReady().then(async () => {
         }),
       });
       diagnosticsController.registerIpc();
+      // Force-delivery test is deliberately separate from failure policy/journal.
+      // It ignores notifyOnFailure and does not create a fake failure entry: the
+      // Diagnostics button answers only whether Electron -> Windows delivery works.
+      ipcMain.handle('diagnostics-test-notification', () => deliverSystemNotification({
+        titleKey: 'notify.testTitle',
+        bodyKey: 'notify.testBody',
+      }));
       diagnosticsController.attachAppEvents(app);
       diagnosticsController.attachProcessEvents(process);
       const started = await diagnosticsController.startIfNeeded('startup');

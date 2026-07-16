@@ -302,7 +302,9 @@
     "themeFailedTitle": "Lumina не змогла перемкнути тему Windows",
     "themeFailedBody": "Зміна світлої/темної теми за розкладом не вдалася. Натисніть, щоб відкрити Lumina.",
     "thumbsFailedTitle": "Прев'ю Lumina недоступні",
-    "thumbsFailedBody": "Служба мініатюр перестала відповідати. Натисніть, щоб відкрити Lumina."
+    "thumbsFailedBody": "Служба мініатюр перестала відповідати. Натисніть, щоб відкрити Lumina.",
+    "testTitle": "Перевірка сповіщень Lumina",
+    "testBody": "Системні сповіщення Lumina працюють."
   },
   "toast": {
     "applied": "Шпалери застосовано",

@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('diag', {
   start: () => ipcRenderer.invoke('diagnostics-start', { reason: 'manual' }),
   stop: () => ipcRenderer.invoke('diagnostics-stop', { reason: 'manual' }),
   mark: (label) => ipcRenderer.invoke('diagnostics-mark', label || 'lag'),
+  testNotification: () => ipcRenderer.invoke('diagnostics-test-notification'),
   openReport: () => ipcRenderer.invoke('diagnostics-open-report'),
   openFolder: () => ipcRenderer.invoke('diagnostics-open-session-folder'),
   exportSanitized: () => ipcRenderer.invoke('diagnostics-export-sanitized'),

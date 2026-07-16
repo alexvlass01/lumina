@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('assert');
+const fs = require('fs');
 const pkg = require('../package.json');
 
 let passed = 0;
@@ -47,5 +48,15 @@ ok('diagnostics launcher does not enable Cloud staging',
 ok('diagnostics launcher requires env and CLI opt-in',
   /LUMINA_DIAGNOSTICS=1/.test(pkg.scripts['dev:diagnostics']) &&
   /--diagnostics/.test(pkg.scripts['dev:diagnostics']));
+
+const controlHtml = fs.readFileSync(require.resolve('../diagnostics/ui/control.html'), 'utf8');
+const controlJs = fs.readFileSync(require.resolve('../diagnostics/ui/control.js'), 'utf8');
+const controlPreload = fs.readFileSync(require.resolve('../diagnostics/ui/control-preload.js'), 'utf8');
+ok('diagnostics control exposes a dedicated force-delivery notification test',
+  /id="btnTestNotification"/.test(controlHtml)
+  && /api\.testNotification\(\)/.test(controlJs)
+  && /diagnostics-test-notification/.test(controlPreload));
+ok('force-delivery copy explains that it does not create a fake journal failure',
+  /без записи ложного сбоя в журнал/.test(controlHtml));
 
 console.log('\nAll ' + passed + ' diagnostics package-boundary tests passed.');

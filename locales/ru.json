@@ -302,7 +302,9 @@
     "themeFailedTitle": "Lumina не смогла переключить тему Windows",
     "themeFailedBody": "Смена светлой/тёмной темы по расписанию не удалась. Нажмите, чтобы открыть Lumina.",
     "thumbsFailedTitle": "Превью Lumina недоступны",
-    "thumbsFailedBody": "Служба миниатюр перестала отвечать. Нажмите, чтобы открыть Lumina."
+    "thumbsFailedBody": "Служба миниатюр перестала отвечать. Нажмите, чтобы открыть Lumina.",
+    "testTitle": "Проверка уведомлений Lumina",
+    "testBody": "Системные уведомления Lumina работают."
   },
   "toast": {
     "applied": "Обои применены",

@@ -13,6 +13,7 @@ const api = window.diag || null;
 const el = {
   dot: $('#dot'), stateText: $('#stateText'), timer: $('#timer'),
   mark: $('#btnMark'), stop: $('#btnStop'), start: $('#btnStart'),
+  testNotification: $('#btnTestNotification'), notificationStatus: $('#notificationStatus'),
   after: $('#after'), report: $('#btnReport'), folder: $('#btnFolder'),
   export: $('#btnExport'), clear: $('#btnClear'), warn: $('#warn'),
 };
@@ -103,6 +104,20 @@ if (el.stop && api) {
 }
 
 bind(el.start, () => api.start());
+if (el.testNotification && api) {
+  el.testNotification.addEventListener('click', async () => {
+    el.testNotification.disabled = true;
+    try {
+      const result = await api.testNotification();
+      el.notificationStatus.textContent = result && result.ok
+        ? '✓ Запрос отправлен Windows. Проверьте появившийся баннер.'
+        : `⚠ Не удалось показать уведомление (${(result && result.reason) || 'unknown'}).`;
+    } catch {
+      el.notificationStatus.textContent = '⚠ IPC-проверка уведомления не сработала.';
+    }
+    el.testNotification.disabled = false;
+  });
+}
 bind(el.report, () => api.openReport());
 bind(el.folder, () => api.openFolder());
 bind(el.export, () => api.exportSanitized());

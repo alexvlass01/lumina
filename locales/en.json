@@ -302,7 +302,9 @@
     "themeFailedTitle": "Lumina couldn't switch the Windows theme",
     "themeFailedBody": "The scheduled light/dark switch failed. Click to open Lumina.",
     "thumbsFailedTitle": "Lumina previews are unavailable",
-    "thumbsFailedBody": "The thumbnail helper stopped responding. Click to open Lumina."
+    "thumbsFailedBody": "The thumbnail helper stopped responding. Click to open Lumina.",
+    "testTitle": "Lumina notification test",
+    "testBody": "Windows notifications from Lumina are working."
   },
   "toast": {
     "applied": "Wallpaper applied",
