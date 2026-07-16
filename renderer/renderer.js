@@ -206,6 +206,7 @@ if (!window.api) {
     onLiveFoldersChanged: () => {},
     onMonitors: () => {},
     onUpdate: () => {},
+    onWindowResizePhase: () => {},
   };
 }
 
@@ -830,6 +831,7 @@ let libraryAnchorFrame = 0;
 let libraryResizeFinishTimer = 0;
 let libraryResizeLastChangeAt = 0;
 let libraryResizeActive = false;
+let libraryManualWidthResizeActive = false;
 const LIB_RESIZE_SETTLE_MS = 120;
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
@@ -903,8 +905,12 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
       || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null)
       || (grid.id === 'libGrid' ? libraryViewAnchor : null)
       || captureLibraryScrollAnchor(grid);
-    grid.__virtual.relayout();
-    restoreLibraryScrollAnchor(scrollAnchor, grid);
+    // Geometry must exist before anchor restoration, but materializing against the
+    // OLD scrollTop can span thousands of rows after a large width change. Defer the
+    // first bounded DOM pass until the logical anchor has moved scrollTop to its new row.
+    grid.__virtual.relayout({ deferWindow: true });
+    restoreLibraryScrollAnchor(scrollAnchor, grid, { refreshVirtual: false });
+    grid.__virtual.updateWindow(true);
     if (grid.id === 'libGrid' && !currentLibraryResizeAnchor()) {
       libraryViewAnchor = scrollAnchor || captureLibraryScrollAnchor(grid);
     }
@@ -1479,7 +1485,7 @@ function captureLibraryScrollAnchor(grid) {
       : null,
   };
 }
-function restoreLibraryScrollAnchor(anchor, grid) {
+function restoreLibraryScrollAnchor(anchor, grid, opts = {}) {
   if (!anchor || !anchor.root || !grid || !grid.isConnected) return;
   const virtual = grid.__virtual;
   if (virtual && Number.isInteger(anchor.combinedIndex)
@@ -1495,9 +1501,12 @@ function restoreLibraryScrollAnchor(anchor, grid) {
     if (Number.isFinite(target)) {
       anchor.root.scrollTop = target;
       pageScroll.library = anchor.root.scrollTop;
-      // relayout initially materializes around the old scroll position. Refresh once
-      // more around the restored logical anchor so a resize cannot leave a blank grid.
-      if (typeof virtual.updateWindow === 'function') virtual.updateWindow(true);
+      // Ordinary callers refresh around the restored logical anchor here. The
+      // geometry-first layout path suppresses this and performs its bounded DOM pass
+      // immediately after restoration instead.
+      if (opts.refreshVirtual !== false && typeof virtual.updateWindow === 'function') {
+        virtual.updateWindow(true);
+      }
       return;
     }
   }
@@ -1535,7 +1544,16 @@ function touchLibraryResizeAnchor() {
 }
 function scheduleLibraryResizeFinish(grid) {
   if (libraryResizeFinishTimer) clearTimeout(libraryResizeFinishTimer);
-  if (!libraryResizeActive && !currentLibraryResizeAnchor()) return;
+  // A quiet mouse is not the end of a native border drag. Windows/Electron sends
+  // an explicit `resized` phase when the edge is actually released.
+  if (libraryManualWidthResizeActive) {
+    libraryResizeFinishTimer = 0;
+    return;
+  }
+  const pendingVirtual = grid && grid.__virtual;
+  const needsCanonical = pendingVirtual
+    && (pendingVirtual.resizeRows || pendingVirtual.resizeNeedsCanonical);
+  if (!libraryResizeActive && !currentLibraryResizeAnchor() && !needsCanonical) return;
   const quietFor = Date.now() - libraryResizeLastChangeAt;
   const wait = Math.max(0, LIB_RESIZE_SETTLE_MS - quietFor);
   libraryResizeFinishTimer = setTimeout(() => {
@@ -1543,6 +1561,7 @@ function scheduleLibraryResizeFinish(grid) {
     const pending = libraryResizeSession.snapshot();
     const pendingChangeAt = libraryResizeLastChangeAt;
     requestAnimationFrame(() => {
+      if (libraryManualWidthResizeActive) return;
       const latest = libraryResizeSession.snapshot();
       if (libraryResizeLastChangeAt !== pendingChangeAt
         || latest.anchor !== pending.anchor || latest.revision !== pending.revision) {
@@ -1552,6 +1571,11 @@ function scheduleLibraryResizeFinish(grid) {
       if (!grid || !grid.isConnected || grid.offsetParent === null) {
         libraryResizeSession.cancel();
         libraryResizeActive = false;
+        if (grid && grid.__virtual) {
+          grid.__virtual.resizeNeedsCanonical = grid.__virtual.resizeNeedsCanonical
+            || !!grid.__virtual.resizeRows;
+          grid.__virtual.resizeRows = null;
+        }
         return;
       }
       const virtual = grid.__virtual;
@@ -1565,7 +1589,15 @@ function scheduleLibraryResizeFinish(grid) {
       // changes) is stable. Keep the ORIGINAL logical card authoritative: a wider
       // row may prepend neighbours, and recapturing its first card here would make
       // the original anchor drop by one row on the next restore/maximize burst.
-      if (pending.anchor) restoreLibraryScrollAnchor(pending.anchor, grid);
+      // A manual width drag used fixed row membership. Rebuild the canonical rows
+      // exactly once after release, while the expanding DOM window is still active,
+      // then restore the original logical anchor and prune overscan below.
+      if (virtual && (virtual.resizeRows || virtual.resizeNeedsCanonical)
+        && typeof virtual.relayout === 'function') {
+        layoutLibGrid(grid, pending.anchor);
+      } else if (pending.anchor) {
+        restoreLibraryScrollAnchor(pending.anchor, grid);
+      }
       if (pending.anchor && libraryResizeSession.finish(pending.revision)) {
         libraryViewAnchor = pending.anchor;
       }
@@ -1577,16 +1609,26 @@ function scheduleLibraryResizeFinish(grid) {
   }, wait);
 }
 function cancelLibraryResizeAnchorForUserInput() {
-  if (!libraryResizeActive && !currentLibraryResizeAnchor()) return;
+  const grid = $('#libGrid');
+  const pendingVirtual = grid && grid.__virtual;
+  if (!libraryResizeActive && !currentLibraryResizeAnchor()
+    && !(pendingVirtual && (pendingVirtual.resizeRows || pendingVirtual.resizeNeedsCanonical))) return;
+  const userAnchor = captureLibraryScrollAnchor(grid);
   libraryResizeSession.cancel();
   libraryResizeActive = false;
+  libraryManualWidthResizeActive = false;
   if (libraryResizeFinishTimer) {
     clearTimeout(libraryResizeFinishTimer);
     libraryResizeFinishTimer = 0;
   }
-  libraryViewAnchor = captureLibraryScrollAnchor($('#libGrid'));
-  const virtual = $('#libGrid') && $('#libGrid').__virtual;
-  if (virtual && typeof virtual.updateWindow === 'function') virtual.updateWindow(true);
+  const virtual = grid && grid.__virtual;
+  if (virtual && (virtual.resizeRows || virtual.resizeNeedsCanonical)
+    && typeof virtual.relayout === 'function') {
+    layoutLibGrid(grid, userAnchor);
+  } else if (virtual && typeof virtual.updateWindow === 'function') {
+    virtual.updateWindow(true);
+  }
+  libraryViewAnchor = userAnchor || captureLibraryScrollAnchor(grid);
 }
 function rememberLibraryScrollAnchor(grid) {
   if (libraryAnchorFrame || libraryResizeActive || currentLibraryResizeAnchor()) return;
@@ -1940,6 +1982,8 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     boxes: [],
     totalHeight: 0,
     layoutWidth: 0,
+    resizeRows: null, // stable {start,end,fill} membership during a native width drag
+    resizeNeedsCanonical: false,
     first: 0,
     last: -1, // materialized row range (inclusive); -1 = nothing yet
     cards: new Map(), // combined index → live card element
@@ -2076,7 +2120,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     applyWindow(range.first, range.last);
   };
 
-  const relayout = () => {
+  const relayout = (opts = {}) => {
     if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
     const width = grid.clientWidth;
     if (width < 40) return;
@@ -2085,14 +2129,36 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     const aspects = new Array(total);
     for (let c = 0; c < total; c++) aspects[c] = aspectAt(c);
     const targetHeight = window.VirtualWindow.responsiveTargetHeight(width);
-    const res = window.JustifiedLayout.layoutRows(aspects, width, {
-      gap: 10, targetHeight, minAspect: 0.65, maxAspect: 3,
-    });
+    const layoutOptions = { gap: 10, targetHeight, minAspect: 0.65, maxAspect: 3 };
+    let res = null;
+    let usedFixedTopology = false;
+    if (libraryManualWidthResizeActive) {
+      if (!virtual.resizeRows && virtual.rows.length) {
+        virtual.resizeRows = window.JustifiedLayout.captureRowTopology(virtual.rows, total);
+      }
+      if (virtual.resizeRows) {
+        res = window.JustifiedLayout.layoutRowsWithTopology(
+          aspects, width, virtual.resizeRows, layoutOptions
+        );
+        usedFixedTopology = !!res;
+      }
+    } else {
+      virtual.resizeRows = null;
+    }
+    if (!res) {
+      res = window.JustifiedLayout.layoutRows(aspects, width, layoutOptions);
+      // A render that starts in the middle of a native drag has no old rows to
+      // freeze. Its first canonical result becomes the template for later frames.
+      if (libraryManualWidthResizeActive) {
+        virtual.resizeRows = window.JustifiedLayout.captureRowTopology(res.rows, total);
+      }
+    }
+    virtual.resizeNeedsCanonical = usedFixedTopology;
     virtual.rows = res.rows;
     virtual.boxes = res.boxes;
     virtual.totalHeight = res.totalHeight;
     if (!res.rows.length) { grid.innerHTML = ''; virtual.cards.clear(); virtual.first = 0; virtual.last = -1; return; }
-    updateWindow(true);
+    if (!opts.deferWindow) updateWindow(true);
   };
   virtual.relayout = relayout;
   virtual.updateWindow = updateWindow;
@@ -2150,6 +2216,8 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
       if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
       if (widthFrame) { cancelAnimationFrame(widthFrame); widthFrame = 0; }
       if (widthObserver) { widthObserver.disconnect(); widthObserver = null; }
+      virtual.resizeRows = null;
+      virtual.resizeNeedsCanonical = false;
       if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
       if (grid.__virtual === virtual) grid.__virtual = null;
       if (libLazyKick === kick) libLazyKick = null;
@@ -4723,7 +4791,28 @@ async function init() {
   });
 
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) return;
+    if (document.hidden) {
+      // A hidden/replaced view must never retain a row template from an interrupted
+      // native drag. The next visible layout starts canonical.
+      libraryManualWidthResizeActive = false;
+      libraryResizeSession.cancel();
+      libraryResizeActive = false;
+      if (libraryResizeFinishTimer) {
+        clearTimeout(libraryResizeFinishTimer);
+        libraryResizeFinishTimer = 0;
+      }
+      const hiddenGrid = $('#libGrid');
+      if (hiddenGrid && hiddenGrid.__virtual) {
+        hiddenGrid.__virtual.resizeNeedsCanonical = hiddenGrid.__virtual.resizeNeedsCanonical
+          || !!hiddenGrid.__virtual.resizeRows;
+        hiddenGrid.__virtual.resizeRows = null;
+      }
+      return;
+    }
+    const visibleGrid = $('#libGrid');
+    if (visibleGrid && visibleGrid.__virtual && visibleGrid.__virtual.resizeNeedsCanonical) {
+      layoutLibGrid(visibleGrid, libraryViewAnchor);
+    }
     // Re-showing the window (un-minimize, viewer closed over it) must NOT rebuild
     // the grid on its own — that emptied the grid at a deep scroll position and
     // reloaded every thumbnail. Only catch up if live folders changed while hidden.
@@ -4742,6 +4831,26 @@ async function init() {
   window.api.onCloudSession((s) => {
     CLOUDAUTH.state = s; CLOUDAUTH.fetched = true;
     if (LIB.filter === 'online' && onlineSources().lumina) { renderCloudAccount(); applyFavToggleUI(); }
+  });
+
+  // Electron's native phase signal distinguishes a real border drag from an
+  // instant maximize/restore. Only the former freezes justified row membership.
+  window.api.onWindowResizePhase((phase) => {
+    const grid = $('#libGrid');
+    if (phase === 'start') {
+      libraryManualWidthResizeActive = true;
+      const virtual = grid && grid.__virtual;
+      if (virtual && virtual.rows.length) {
+        const total = virtual.head.length + virtual.entries.length;
+        virtual.resizeRows = window.JustifiedLayout.captureRowTopology(virtual.rows, total);
+      }
+      beginLibraryResizeAnchor(grid);
+      return;
+    }
+    if (phase === 'end' && libraryManualWidthResizeActive) {
+      libraryManualWidthResizeActive = false;
+      scheduleLibraryResizeFinish(grid);
+    }
   });
 
   // keep thumbnails fitted when the window (and thus cards) resize

@@ -1380,6 +1380,31 @@ function createWindow() {
 
   if (diagnosticsController) diagnosticsController.attachWindowEvents(mainWindow, 'main');
 
+  // Windows exposes the real lifetime of a manual border drag. Renderer uses it
+  // to keep justified row membership fixed until the user actually releases the
+  // edge; a quiet-time debounce alone would end the mode while the mouse is merely
+  // paused. Maximize/restore and setBounds do not emit will-resize, so they retain
+  // the normal one-shot canonical layout.
+  let manualWidthResize = false;
+  const sendResizePhase = (phase) => {
+    if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) return;
+    mainWindow.webContents.send('window-resize-phase', phase);
+  };
+  mainWindow.on('will-resize', (_event, newBounds, details) => {
+    if (manualWidthResize) return;
+    const edge = String(details && details.edge || '');
+    const changesWidth = edge.includes('left') || edge.includes('right')
+      || (newBounds && Math.abs(newBounds.width - mainWindow.getBounds().width) >= 1);
+    if (!changesWidth) return;
+    manualWidthResize = true;
+    sendResizePhase('start');
+  });
+  mainWindow.on('resized', () => {
+    if (!manualWidthResize) return;
+    manualWidthResize = false;
+    sendResizePhase('end');
+  });
+
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
   mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {

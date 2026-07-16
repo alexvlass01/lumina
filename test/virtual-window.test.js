@@ -96,6 +96,37 @@ for (const width of resizeWidths) {
 }
 ok('owner QA width sequence keeps one expanding DOM window through the resize burst', true);
 
+// The final fixed -> canonical transition must restore the logical scroll target
+// BEFORE materializing the new geometry. At a deep position in 5k items, using the
+// old fixed-layout scrollTop would otherwise bridge thousands of cards in one pass.
+const deepAspects = new Array(5000).fill(1.6);
+const deepSeed = J.layoutRows(deepAspects, 1600, { gap: 10, targetHeight: 178 });
+const deepTopology = J.captureRowTopology(deepSeed.rows, deepAspects.length);
+const deepFixed = J.layoutRowsWithTopology(deepAspects, 558, deepTopology, { gap: 10, targetHeight: 142 });
+const deepCanonical = J.layoutRows(deepAspects, 558, { gap: 10, targetHeight: 142 });
+const deepAnchor = 4000;
+const fixedScrollTop = V.scrollTopForCardAnchor(deepFixed.rows, deepAnchor, 0, 20);
+const canonicalScrollTop = V.scrollTopForCardAnchor(deepCanonical.rows, deepAnchor, 0, 20);
+const rangeAt = (scrollTop) => V.rowRangeForViewport(
+  deepCanonical.rows,
+  scrollTop - 1600,
+  scrollTop + 900 + 1600
+);
+const falseViewport = rangeAt(fixedScrollTop);
+const falseExpanded = V.expandRowRangeForCards(
+  deepCanonical.rows, falseViewport, deepAnchor - 100, deepAnchor + 100
+);
+const falseCards = V.cardRangeForRows(deepCanonical.rows, falseExpanded.first, falseExpanded.last);
+const restoredCards = V.cardRangeForRows(
+  deepCanonical.rows,
+  rangeAt(canonicalScrollTop).first,
+  rangeAt(canonicalScrollTop).last
+);
+ok('geometry-first settle avoids a thousands-card materialization bridge at deep scroll',
+  falseCards.last - falseCards.first > 3000
+  && restoredCards.last - restoredCards.first < 100
+  && restoredCards.first <= deepAnchor && restoredCards.last >= deepAnchor);
+
 // --- logical scroll anchor survives a width-dependent relayout ---
 const oldRowIndex = V.rowIndexForCard(rows, anchorCard);
 ok('row lookup finds the row containing a virtual card',
