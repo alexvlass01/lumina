@@ -829,6 +829,7 @@ let libraryViewAnchor = null;
 let libraryAnchorFrame = 0;
 let libraryResizeFinishTimer = 0;
 let libraryResizeLastChangeAt = 0;
+let libraryResizeActive = false;
 const LIB_RESIZE_SETTLE_MS = 120;
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
@@ -917,7 +918,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
     || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null)
     || (grid.id === 'libGrid' ? libraryViewAnchor : null)
     || captureLibraryScrollAnchor(grid);
-  const targetHeight = width >= 1000 ? 178 : width >= 700 ? 160 : 142;
+  const targetHeight = window.VirtualWindow.responsiveTargetHeight(width);
   const boxes = window.JustifiedLayout.layout(
     cards.map((card) => Number(card.dataset.aspect) || 1.6),
     width,
@@ -1516,67 +1517,82 @@ function currentLibraryResizeAnchor() {
   return libraryResizeSession.current();
 }
 function beginLibraryResizeAnchor(grid) {
+  if (!grid || !grid.isConnected || grid.offsetParent === null) {
+    libraryResizeSession.cancel();
+    libraryResizeActive = false;
+    return null;
+  }
+  libraryResizeActive = true;
+  libraryResizeLastChangeAt = Date.now();
   const candidate = libraryViewAnchor || captureLibraryScrollAnchor(grid);
   const snapshot = libraryResizeSession.begin(candidate);
-  if (snapshot.anchor) libraryResizeLastChangeAt = Date.now();
   return snapshot.anchor;
 }
 function touchLibraryResizeAnchor() {
+  if (libraryResizeActive) libraryResizeLastChangeAt = Date.now();
   const snapshot = libraryResizeSession.touch();
-  if (snapshot.anchor) libraryResizeLastChangeAt = Date.now();
   return snapshot.anchor;
 }
-function scheduleLibraryResizeAnchorFinish(grid) {
+function scheduleLibraryResizeFinish(grid) {
   if (libraryResizeFinishTimer) clearTimeout(libraryResizeFinishTimer);
-  if (!currentLibraryResizeAnchor()) return;
+  if (!libraryResizeActive && !currentLibraryResizeAnchor()) return;
   const quietFor = Date.now() - libraryResizeLastChangeAt;
   const wait = Math.max(0, LIB_RESIZE_SETTLE_MS - quietFor);
   libraryResizeFinishTimer = setTimeout(() => {
     libraryResizeFinishTimer = 0;
     const pending = libraryResizeSession.snapshot();
-    if (!pending.anchor) return;
+    const pendingChangeAt = libraryResizeLastChangeAt;
     requestAnimationFrame(() => {
       const latest = libraryResizeSession.snapshot();
-      if (latest.anchor !== pending.anchor || latest.revision !== pending.revision) {
-        scheduleLibraryResizeAnchorFinish(grid);
+      if (libraryResizeLastChangeAt !== pendingChangeAt
+        || latest.anchor !== pending.anchor || latest.revision !== pending.revision) {
+        scheduleLibraryResizeFinish(grid);
         return;
       }
-      if (!grid || !grid.isConnected) {
+      if (!grid || !grid.isConnected || grid.offsetParent === null) {
         libraryResizeSession.cancel();
+        libraryResizeActive = false;
         return;
       }
       const virtual = grid.__virtual;
       if (virtual && Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) {
         touchLibraryResizeAnchor();
         layoutLibGrid(grid, pending.anchor);
-        scheduleLibraryResizeAnchorFinish(grid);
+        scheduleLibraryResizeFinish(grid);
         return;
       }
       // One final correction after the actual grid width (including scrollbar
       // changes) is stable. Keep the ORIGINAL logical card authoritative: a wider
       // row may prepend neighbours, and recapturing its first card here would make
       // the original anchor drop by one row on the next restore/maximize burst.
-      restoreLibraryScrollAnchor(pending.anchor, grid);
-      if (libraryResizeSession.finish(pending.revision)) {
+      if (pending.anchor) restoreLibraryScrollAnchor(pending.anchor, grid);
+      if (pending.anchor && libraryResizeSession.finish(pending.revision)) {
         libraryViewAnchor = pending.anchor;
       }
+      libraryResizeActive = false;
+      // The live resize window is an expanding union so no loaded card blinks.
+      // Once geometry is stable, prune only the off-screen overscan boundary.
+      if (virtual && typeof virtual.updateWindow === 'function') virtual.updateWindow(true);
     });
   }, wait);
 }
 function cancelLibraryResizeAnchorForUserInput() {
-  if (!currentLibraryResizeAnchor()) return;
+  if (!libraryResizeActive && !currentLibraryResizeAnchor()) return;
   libraryResizeSession.cancel();
+  libraryResizeActive = false;
   if (libraryResizeFinishTimer) {
     clearTimeout(libraryResizeFinishTimer);
     libraryResizeFinishTimer = 0;
   }
   libraryViewAnchor = captureLibraryScrollAnchor($('#libGrid'));
+  const virtual = $('#libGrid') && $('#libGrid').__virtual;
+  if (virtual && typeof virtual.updateWindow === 'function') virtual.updateWindow(true);
 }
 function rememberLibraryScrollAnchor(grid) {
-  if (libraryAnchorFrame || currentLibraryResizeAnchor()) return;
+  if (libraryAnchorFrame || libraryResizeActive || currentLibraryResizeAnchor()) return;
   libraryAnchorFrame = requestAnimationFrame(() => {
     libraryAnchorFrame = 0;
-    if (!currentLibraryResizeAnchor()) libraryViewAnchor = captureLibraryScrollAnchor(grid);
+    if (!libraryResizeActive && !currentLibraryResizeAnchor()) libraryViewAnchor = captureLibraryScrollAnchor(grid);
   });
 }
 function resetLibObservers() {
@@ -1585,9 +1601,13 @@ function resetLibObservers() {
   if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
   if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
   const grid = $('#libGrid');
-  if (grid) grid.__virtual = null; // a new render owns the grid from scratch
+  if (grid) {
+    grid.__virtual = null; // a new render owns the grid from scratch
+    grid.classList.remove('is-virtualized');
+  }
   libraryViewAnchor = null;
   libraryResizeSession.cancel();
+  libraryResizeActive = false;
   if (libraryResizeFinishTimer) { clearTimeout(libraryResizeFinishTimer); libraryResizeFinishTimer = 0; }
   libLazyKick = null;
 }
@@ -1908,6 +1928,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
 
   const head = (headCards || []).filter(Boolean);
+  grid.classList.add('is-virtualized');
   const virtual = {
     tok,
     entries,
@@ -1972,16 +1993,18 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
 
   // Materialize rows [first..last]: drop far cards, create missing ones, size the
   // spacers, and (re)assert child order. Existing nodes are MOVED, not rebuilt.
-  const applyWindow = (first, last, sizesChanged) => {
+  const applyWindow = (first, last) => {
     const range = window.VirtualWindow.cardRangeForRows(virtual.rows, first, last);
     const requestPriority = ++thumbRequestPriority;
     let added = 0;
+    let dropped = 0;
     const endSpan = diagSpan('renderer', 'lazy-chunk'); // budget span #9: window materialization
     for (const [c, card] of Array.from(virtual.cards)) {
       if (c < range.first || c > range.last) {
         if (thumbIO) thumbIO.unobserve(card);
         card.remove();
         virtual.cards.delete(c);
+        dropped += 1;
       }
     }
     for (let c = range.first; c <= range.last; c++) {
@@ -1991,32 +2014,43 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
       }
     }
     const pads = window.VirtualWindow.padHeights(virtual.rows, first, last, 10, virtual.totalHeight);
+    const desiredChildren = [];
     if (pads.top > 0) {
       const pad = ensurePad('top');
-      pad.style.height = `${pads.top.toFixed(2)}px`;
-      grid.appendChild(pad);
-    } else if (virtual.topPad) virtual.topPad.remove();
+      const height = `${pads.top.toFixed(2)}px`;
+      if (pad.style.height !== height) pad.style.height = height;
+      desiredChildren.push(pad);
+    }
     for (let c = range.first; c <= range.last; c++) {
       const card = virtual.cards.get(c);
       card.dataset.virtualIndex = String(c);
       card.dataset.thumbPriority = String(requestPriority);
-      grid.appendChild(card); // appendChild moves an already-attached node in order
-      if (sizesChanged || added) {
-        const box = virtual.boxes[c];
-        if (box) {
-          card.style.width = `${box.width.toFixed(2)}px`;
-          card.style.height = `${box.height.toFixed(2)}px`;
-        }
+      desiredChildren.push(card);
+      const box = virtual.boxes[c];
+      if (box) {
+        const width = `${box.width.toFixed(2)}px`;
+        const height = `${box.height.toFixed(2)}px`;
+        if (card.style.width !== width) card.style.width = width;
+        if (card.style.height !== height) card.style.height = height;
       }
     }
     if (pads.bottom > 0) {
       const pad = ensurePad('bottom');
-      pad.style.height = `${pads.bottom.toFixed(2)}px`;
-      grid.appendChild(pad);
-    } else if (virtual.bottomPad) virtual.bottomPad.remove();
+      const height = `${pads.bottom.toFixed(2)}px`;
+      if (pad.style.height !== height) pad.style.height = height;
+      desiredChildren.push(pad);
+    }
+    const dom = window.VirtualGridDom.reconcileChildren(grid, desiredChildren);
     virtual.first = first;
     virtual.last = last;
-    endSpan({ count: added, active: virtual.cards.size });
+    endSpan({
+      count: added,
+      active: virtual.cards.size,
+      dropped,
+      inserted: dom.inserted,
+      moved: dom.moved,
+      removed: dom.removed,
+    });
   };
 
   const updateWindow = (afterLayout = false) => {
@@ -2027,9 +2061,19 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     const gridTop = grid.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
     const viewTop = root.scrollTop - gridTop - LIB_VIRTUAL_OVERSCAN_PX;
     const viewBottom = root.scrollTop - gridTop + root.clientHeight + LIB_VIRTUAL_OVERSCAN_PX;
-    const range = window.VirtualWindow.rowRangeForViewport(virtual.rows, viewTop, viewBottom);
+    let range = window.VirtualWindow.rowRangeForViewport(virtual.rows, viewTop, viewBottom);
+    if (libraryResizeActive && virtual.cards.size
+      && typeof window.VirtualWindow.expandRowRangeForCards === 'function') {
+      const activeIndices = Array.from(virtual.cards.keys());
+      range = window.VirtualWindow.expandRowRangeForCards(
+        virtual.rows,
+        range,
+        Math.min(...activeIndices),
+        Math.max(...activeIndices)
+      );
+    }
     if (!afterLayout && range.first === virtual.first && range.last === virtual.last) return;
-    applyWindow(range.first, range.last, afterLayout);
+    applyWindow(range.first, range.last);
   };
 
   const relayout = () => {
@@ -2040,7 +2084,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     const total = head.length + entries.length;
     const aspects = new Array(total);
     for (let c = 0; c < total; c++) aspects[c] = aspectAt(c);
-    const targetHeight = width >= 1000 ? 178 : width >= 700 ? 160 : 142;
+    const targetHeight = window.VirtualWindow.responsiveTargetHeight(width);
     const res = window.JustifiedLayout.layoutRows(aspects, width, {
       gap: 10, targetHeight, minAspect: 0.65, maxAspect: 3,
     });
@@ -2085,12 +2129,12 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
       widthObserver = new ResizeObserver(() => {
         if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
         if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5 || widthFrame) return;
-        if (currentLibraryResizeAnchor()) touchLibraryResizeAnchor();
+        if (libraryResizeActive) touchLibraryResizeAnchor();
         widthFrame = requestAnimationFrame(() => {
           widthFrame = 0;
           if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
           layoutLibGrid(grid);
-          if (currentLibraryResizeAnchor()) scheduleLibraryResizeAnchorFinish(grid);
+          if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
           else rememberLibraryScrollAnchor(grid);
         });
       });
@@ -4709,9 +4753,10 @@ async function init() {
     resizeT = setTimeout(() => {
       const endSpan = diagSpan('renderer', 'resize-relayout'); // budget span #12
       layoutMonitors();
-      layoutLibGrid(grid);
+      const virtual = grid && grid.__virtual;
+      if (!virtual || Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) layoutLibGrid(grid);
       layoutLibGrid($('#whGrid'));
-      if (currentLibraryResizeAnchor()) scheduleLibraryResizeAnchorFinish(grid);
+      if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
       else if (!libraryViewAnchor) libraryViewAnchor = captureLibraryScrollAnchor(grid);
       if (libLazyKick) libLazyKick();
       if (!$('#viewHome').hidden) renderHome();

@@ -12,6 +12,19 @@ const near = (a, b, epsilon = 0.01) => Math.abs(a - b) <= epsilon;
 const { rows, totalHeight, gap } = J.layoutRows(new Array(300).fill(1.6), 1000, { gap: 10, targetHeight: 178 });
 ok('fixture produced a tall multi-row grid', rows.length >= 50 && totalHeight > 5000);
 
+// --- responsive target height has no 18px one-pixel breakpoint jumps ---
+ok('responsive height preserves the established density plateaus',
+  V.responsiveTargetHeight(560) === 142
+  && V.responsiveTargetHeight(700) === 160
+  && V.responsiveTargetHeight(900) === 160
+  && V.responsiveTargetHeight(1000) === 178);
+ok('responsive height is continuous at the former 700/1000 breakpoints',
+  Math.abs(V.responsiveTargetHeight(699.99) - V.responsiveTargetHeight(700)) < 0.01
+  && Math.abs(V.responsiveTargetHeight(999.99) - V.responsiveTargetHeight(1000)) < 0.01);
+const responsiveWidths = [500, 660, 670, 680, 690, 700, 900, 960, 970, 980, 990, 1000, 1200];
+ok('responsive height remains monotonic across both blends', responsiveWidths.every((width, index) =>
+  index === 0 || V.responsiveTargetHeight(width) >= V.responsiveTargetHeight(responsiveWidths[index - 1])));
+
 // --- rowRangeForViewport ---
 const atTop = V.rowRangeForViewport(rows, -1600, 800 + 1600);
 ok('window at the top starts at row 0', atTop.first === 0 && atTop.last > 0 && atTop.last < rows.length - 1);
@@ -59,8 +72,31 @@ ok('card range maps rows to inclusive card indices',
   cardRange.first === rows[mid.first].start && cardRange.last === rows[mid.last].end - 1);
 ok('empty row range maps to an empty card range', V.cardRangeForRows(rows, 0, -1).last === -1);
 
-// --- logical scroll anchor survives a width-dependent relayout ---
+// --- live resize retention: an already materialized boundary must not churn ---
 const anchorCard = 137;
+const retained = V.cardRangeForRows(rows, mid.first, mid.last);
+const resizeWidths = [718, 1698, 1068, 558, 1122]; // grid widths from the owner QA window sequence
+let retainedFirst = retained.first;
+let retainedLast = retained.last;
+for (const width of resizeWidths) {
+  const resized = J.layoutRows(new Array(300).fill(1.6), width, {
+    gap: 10,
+    targetHeight: V.responsiveTargetHeight(width),
+  });
+  const anchorRow = resized.rows[V.rowIndexForCard(resized.rows, anchorCard)];
+  const viewport = V.rowRangeForViewport(resized.rows, anchorRow.top - 1600, anchorRow.top + 900 + 1600);
+  const expanded = V.expandRowRangeForCards(resized.rows, viewport, retainedFirst, retainedLast);
+  const cards = V.cardRangeForRows(resized.rows, expanded.first, expanded.last);
+  assert.ok(cards.first <= retainedFirst && cards.last >= retainedLast,
+    `resize width ${width} retains every previously materialized boundary card`);
+  assert.ok(expanded.first <= expanded.last && cards.first <= anchorCard && cards.last >= anchorCard,
+    `resize width ${width} keeps a non-empty window around the logical anchor`);
+  retainedFirst = cards.first;
+  retainedLast = cards.last;
+}
+ok('owner QA width sequence keeps one expanding DOM window through the resize burst', true);
+
+// --- logical scroll anchor survives a width-dependent relayout ---
 const oldRowIndex = V.rowIndexForCard(rows, anchorCard);
 ok('row lookup finds the row containing a virtual card',
   oldRowIndex >= 0 && rows[oldRowIndex].start <= anchorCard && rows[oldRowIndex].end > anchorCard);

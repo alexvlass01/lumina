@@ -15,6 +15,26 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   if (root) root.VirtualWindow = api;
 })(typeof window !== 'undefined' ? window : null, function createApi() {
+  // Preserve the established 142 / 160 / 178px density plateaus, but blend into
+  // the larger value just before each old breakpoint. A one-pixel resize at
+  // 699/700 or 999/1000 must not change the preferred row height by 18px at once.
+  function responsiveTargetHeight(width) {
+    const w = Number(width);
+    if (!Number.isFinite(w) || w <= 660) return 142;
+    if (w < 700) {
+      const t = (w - 660) / 40;
+      const eased = t * t * (3 - 2 * t);
+      return 142 + 18 * eased;
+    }
+    if (w <= 960) return 160;
+    if (w < 1000) {
+      const t = (w - 960) / 40;
+      const eased = t * t * (3 - 2 * t);
+      return 160 + 18 * eased;
+    }
+    return 178;
+  }
+
   // rows: [{ start, end, top, height }] from JustifiedLayout.layoutRows (tops ascending).
   // Returns the inclusive row range intersecting [viewTop, viewBottom], clamped so that
   // SOMETHING is always materialized when rows exist (an out-of-range scroll position
@@ -71,6 +91,25 @@
     return { first: rows[first].start, last: rows[last].end - 1 };
   }
 
+  // During a live resize keep the rows that already own materialized cards in the
+  // DOM as well as the rows required by the new viewport. Width-dependent row
+  // breaks can otherwise make boundary cards detach/rebuild on alternating frames,
+  // which is visible as thumbnail blinking even though their data URL is cached.
+  function expandRowRangeForCards(rows, range, firstCard, lastCard) {
+    const n = Array.isArray(rows) ? rows.length : 0;
+    if (!n) return { first: 0, last: -1 };
+    let first = Number.isInteger(range && range.first) ? range.first : 0;
+    let last = Number.isInteger(range && range.last) ? range.last : first;
+    first = Math.max(0, Math.min(n - 1, first));
+    last = Math.max(first, Math.min(n - 1, last));
+
+    const retainedFirst = rowIndexForCard(rows, firstCard);
+    const retainedLast = rowIndexForCard(rows, lastCard);
+    if (retainedFirst >= 0) first = Math.min(first, retainedFirst);
+    if (retainedLast >= 0) last = Math.max(last, retainedLast);
+    return { first, last };
+  }
+
   // Find the justified-layout row containing a combined virtual card index.
   // Keeping this as pure math lets renderer restore a logical scroll anchor even
   // when virtualization removed the old DOM card during a resize relayout.
@@ -102,9 +141,11 @@
   }
 
   return {
+    responsiveTargetHeight,
     rowRangeForViewport,
     padHeights,
     cardRangeForRows,
+    expandRowRangeForCards,
     rowIndexForCard,
     scrollTopForCardAnchor,
   };

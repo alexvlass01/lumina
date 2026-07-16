@@ -35,6 +35,9 @@ ok('invalid event is rejected and counted', invalid === null && counters.invalid
 
 const attrs = sanitizeAttributes({
   queueDepth: 2,
+  inserted: 3,
+  moved: 1,
+  removed: 2,
   unknown: 'x',
   reason: 'ok',
   label: 'x'.repeat(1001),
@@ -42,7 +45,9 @@ const attrs = sanitizeAttributes({
   unavailable: null,
   bytes: { bad: true },
 }, counters);
-ok('attribute whitelist keeps only allowed keys', attrs.queueDepth === 2 && attrs.reason === 'ok' && attrs.unknown === undefined);
+ok('attribute whitelist keeps only allowed keys', attrs.queueDepth === 2
+  && attrs.inserted === 3 && attrs.moved === 1 && attrs.removed === 2
+  && attrs.reason === 'ok' && attrs.unknown === undefined);
 ok('unavailable/null is preserved instead of becoming zero', Object.prototype.hasOwnProperty.call(attrs, 'unavailable') && attrs.unavailable === null);
 ok('invalid and oversized attributes are counted', counters.droppedAttributes >= 1 && counters.invalidAttributes >= 1 && counters.oversizedAttributes >= 1);
 
