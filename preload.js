@@ -101,5 +101,4 @@ contextBridge.exposeInMainWorld('api', {
   onLiveFoldersChanged: (cb) => ipcRenderer.on('live-folders-changed', (_e, change) => cb(change)),
   onMonitors: (cb) => ipcRenderer.on('monitors-changed', (_e, d) => cb(d)),
   onUpdate: (cb) => ipcRenderer.on('update-status', (_e, st) => cb(st)),
-  onWindowResizePhase: (cb) => ipcRenderer.on('window-resize-phase', (_e, phase) => cb(phase)),
 });

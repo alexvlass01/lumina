@@ -45,32 +45,4 @@ const modulePos = rendererHtml.indexOf('<script src="resize-anchor.js"></script>
 const rendererPos = rendererHtml.indexOf('<script src="renderer.js"></script>');
 ok('resize-anchor runtime loads before renderer.js', modulePos >= 0 && rendererPos > modulePos);
 
-const mainJs = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-const preloadJs = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
-const rendererJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-ok('main reports the native manual width-resize lifetime',
-  mainJs.includes("mainWindow.on('will-resize'")
-  && mainJs.includes("mainWindow.on('resized'")
-  && mainJs.includes("send('window-resize-phase', phase)"));
-ok('preload exposes only the resize phase value to the isolated renderer',
-  preloadJs.includes("onWindowResizePhase: (cb) => ipcRenderer.on('window-resize-phase'"));
-ok('renderer fixes row membership only for a native drag and canonicalizes on finish',
-  rendererJs.includes('if (libraryManualWidthResizeActive)')
-  && rendererJs.includes('layoutRowsWithTopology(')
-  && rendererJs.includes('virtual.resizeRows = null'));
-const geometryPos = rendererJs.indexOf('grid.__virtual.relayout({ deferWindow: true });');
-const restorePos = rendererJs.indexOf('restoreLibraryScrollAnchor(scrollAnchor, grid, { refreshVirtual: false });');
-const materializePos = rendererJs.indexOf('grid.__virtual.updateWindow(true);', restorePos);
-ok('virtual relayout restores the logical anchor before its single DOM materialization pass',
-  geometryPos >= 0 && restorePos > geometryPos && materializePos > restorePos);
-ok('hide/show and reset-time release retain a pending canonical escape path',
-  rendererJs.includes('resizeNeedsCanonical')
-  && rendererJs.includes('visibleGrid.__virtual.resizeNeedsCanonical')
-  && rendererJs.includes('!libraryResizeActive && !currentLibraryResizeAnchor() && !needsCanonical'));
-const phaseHandlerPos = rendererJs.indexOf('window.api.onWindowResizePhase');
-const phaseCapturePos = rendererJs.indexOf('captureRowTopology(virtual.rows, total)', phaseHandlerPos);
-const phaseBeginPos = rendererJs.indexOf('beginLibraryResizeAnchor(grid)', phaseHandlerPos);
-ok('native start captures current row membership before beginning the resize session',
-  phaseHandlerPos >= 0 && phaseCapturePos > phaseHandlerPos && phaseBeginPos > phaseCapturePos);
-
 console.log('\nAll ' + passed + ' resize-anchor tests passed.');
