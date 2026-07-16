@@ -34,6 +34,12 @@ const cloudDevProfile = require('./src/cloud/dev-profile'); // isolated userData
 const diagnosticsGate = require('./src/diagnostics-gate'); // production-safe gate for dev-only diagnostics
 const galleryPayloadMod = require('./src/gallery-payload'); // viewer payload sanitizing/windowing
 
+// Match the AppUserModelID written into the Start Menu shortcut by our
+// electron-winstaller/Squirrel package (`name: Lumina`, `exe: Lumina.exe`).
+// Packaged Electron discovers this identity automatically, but source/dev runs
+// otherwise surface as `electron.app.Electron` in Windows notification banners.
+const WINDOWS_APP_USER_MODEL_ID = 'com.squirrel.Lumina.Lumina';
+
 // Resolve dev-only userData overrides before the single-instance lock and before
 // any paths are derived from app.getPath('userData'). Diagnostics intentionally
 // has its own profile; Cloud staging remains independent and is used only when
@@ -3185,6 +3191,10 @@ app.on('second-instance', () => {
 });
 
 app.whenReady().then(async () => {
+  // Electron finalizes its default dev identity during startup, so apply the
+  // Squirrel-matching ID immediately after ready and before any window/toast.
+  if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APP_USER_MODEL_ID);
+
   Menu.setApplicationMenu(null); // убираем стандартное меню File/Edit/View
   if (DIAGNOSTICS_BOOTSTRAP.enabled) {
     console.log(`[Diagnostics] enabled; userData=${DIAGNOSTICS_BOOTSTRAP.userDataPath}`);

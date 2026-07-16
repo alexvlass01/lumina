@@ -52,11 +52,18 @@ ok('diagnostics launcher requires env and CLI opt-in',
 const controlHtml = fs.readFileSync(require.resolve('../diagnostics/ui/control.html'), 'utf8');
 const controlJs = fs.readFileSync(require.resolve('../diagnostics/ui/control.js'), 'utf8');
 const controlPreload = fs.readFileSync(require.resolve('../diagnostics/ui/control-preload.js'), 'utf8');
+const mainJs = fs.readFileSync(require.resolve('../main.js'), 'utf8');
+const installerJs = fs.readFileSync(require.resolve('../scripts/build-installer.js'), 'utf8');
 ok('diagnostics control exposes a dedicated force-delivery notification test',
   /id="btnTestNotification"/.test(controlHtml)
   && /api\.testNotification\(\)/.test(controlJs)
   && /diagnostics-test-notification/.test(controlPreload));
 ok('force-delivery copy explains that it does not create a fake journal failure',
   /без записи ложного сбоя в журнал/.test(controlHtml));
+ok('Windows notification identity matches the Squirrel shortcut identity',
+  /WINDOWS_APP_USER_MODEL_ID\s*=\s*['"]com\.squirrel\.Lumina\.Lumina['"]/.test(mainJs)
+  && /app\.whenReady\(\)\.then\(async \(\) => \{\s*\/\/[^\n]*\n\s*\/\/[^\n]*\n\s*if \(process\.platform === 'win32'\) app\.setAppUserModelId\(WINDOWS_APP_USER_MODEL_ID\)/.test(mainJs)
+  && /name:\s*['"]Lumina['"]/.test(installerJs)
+  && /exe:\s*['"]Lumina\.exe['"]/.test(installerJs));
 
 console.log('\nAll ' + passed + ' diagnostics package-boundary tests passed.');
