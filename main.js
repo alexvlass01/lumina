@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -24,6 +24,8 @@ const schedule = require('./src/schedule'); // чистая математика
 const { createStealthController } = require('./src/stealth-session'); // отменяемая «невидимая смена» (под тестами)
 const { createTaskQueue } = require('./src/task-queue'); // small async queue for expensive OS thumbnail jobs
 const { ThumbnailHost, resolveThumbnailHelperPath } = require('./src/thumbnail-host');
+const { createFailureNotifier } = require('./src/failure-notifier'); // edge-trigger «работало→сломалось» (T2)
+const { createEventLog } = require('./src/event-log'); // bounded журнал сбоев/восстановлений (T3)
 const cloudCapabilityMod = require('./src/cloud/capability'); // Lumina Cloud: какое окружение разрешено (C2)
 const cloudClientMod = require('./src/cloud/client'); // Lumina Cloud: чистый API-клиент (C1); реальный fetch в main (C3)
 const cloudOauth = require('./src/cloud/oauth'); // Lumina Cloud: чистый PKCE/loopback-разбор (C4)
@@ -112,6 +114,61 @@ function diagCountSend(channel) {
   if (diagnosticsController) diagnosticsController.countChannel(channel);
 }
 
+// ---------------------------------------------------------------------------
+// Background-failure reporting (plan error_notifications, T2+T3).
+// failureNotifier = pure edge detector («работало→сломалось» уведомляет один раз,
+// успех сбрасывает и один раз отмечает восстановление). eventLog = bounded журнал
+// в СВОЁМ файле (не в config: запись не должна дёргать config-changed broadcast).
+// ---------------------------------------------------------------------------
+const failureNotifier = createFailureNotifier();
+const eventLog = createEventLog({ filePath: path.join(app.getPath('userData'), 'event-log.json') });
+
+// Journal + (optionally) a Windows notification, once per working→broken edge.
+// `notify:false` channels journal quietly (e.g. a live folder on an unplugged disk —
+// tolerated per LF-QA1, worth a journal line, not worth a popup).
+function reportChannelFailure(channel, messageKey, { titleKey, bodyKey, notify = true, params } = {}) {
+  if (!failureNotifier.fail(channel)) return; // still broken — stay silent until it recovers
+  eventLog.append({ channel, kind: 'failure', messageKey, params });
+  if (!notify || config.notifyOnFailure === false) return;
+  try {
+    if (!Notification.isSupported()) return;
+    const note = new Notification({ title: tMain(titleKey || messageKey), body: tMain(bodyKey || messageKey) });
+    note.on('click', () => showWindow());
+    note.show();
+  } catch (err) {
+    console.error('[Notify] failed to show notification:', err);
+  }
+}
+
+function reportChannelSuccess(channel, messageKey, { params } = {}) {
+  if (failureNotifier.success(channel)) {
+    eventLog.append({ channel, kind: 'recovered', messageKey, params });
+  }
+}
+
+// Wallpaper-apply outcomes flow through here from the applyForTheme wrapper.
+// 'no-wallpaper' (nothing configured / deliberately emptied slot) and
+// 'gamemode-blocked' (deliberate postpone) are states, not breakages.
+const APPLY_EXPECTED_REASONS = new Set(['no-wallpaper', 'gamemode-blocked']);
+function reportApplyOutcome(result, isManual) {
+  if (!result) return;
+  if (result.ok) {
+    // Any successful apply (manual or auto) proves the pipeline works again.
+    reportChannelSuccess('wallpaper-auto', 'journal.wallpaperAuto');
+    return;
+  }
+  if (APPLY_EXPECTED_REASONS.has(result.reason || '')) return;
+  if (isManual) {
+    // Manual failures already toast in the UI (T1); journal them for history.
+    eventLog.append({ channel: 'wallpaper-manual', kind: 'failure', messageKey: 'journal.wallpaperManual' });
+  } else {
+    reportChannelFailure('wallpaper-auto', 'journal.wallpaperAuto', {
+      titleKey: 'notify.wallpaperFailedTitle',
+      bodyKey: 'notify.wallpaperFailedBody',
+    });
+  }
+}
+
 const thumbnailHost = new ThumbnailHost({
   executablePath: resolveThumbnailHelperPath({
     isPackaged: app.isPackaged,
@@ -119,6 +176,16 @@ const thumbnailHost = new ThumbnailHost({
     appPath: app.getAppPath(),
   }),
   onEvent: (name, attributes) => {
+    // Circuit open = thumbnails degraded to placeholders until the helper recovers —
+    // exactly the kind of silent background breakage the journal/notifier exist for.
+    if (name === 'circuit-open') {
+      reportChannelFailure('thumbnail-helper', 'journal.thumbs', {
+        titleKey: 'notify.thumbsFailedTitle',
+        bodyKey: 'notify.thumbsFailedBody',
+      });
+    } else if (name === 'ready') {
+      reportChannelSuccess('thumbnail-helper', 'journal.thumbs');
+    }
     const totalMs = Number(attributes && attributes.totalMs);
     const isResponse = name === 'response' && Number.isFinite(totalMs);
     diagEvent({
@@ -463,6 +530,19 @@ function refreshLiveFolders(folderIds = null, force = false) {
         onBatch: async (entries) => { reconcile('partial', entries, true); },
       });
       folderScanFreshAt.set(item.id, Date.now());
+      // Journal-only (no popup): an unplugged disk is tolerated per LF-QA1, but the
+      // journal should explain why a live folder stopped updating. Per-folder channel
+      // so one broken folder does not mask another.
+      if (scan.status === 'unavailable') {
+        reportChannelFailure(`live-folder:${item.id}`, 'journal.liveFolder', {
+          notify: false,
+          params: { name: path.basename(item.path) },
+        });
+      } else {
+        reportChannelSuccess(`live-folder:${item.id}`, 'journal.liveFolder', {
+          params: { name: path.basename(item.path) },
+        });
+      }
       if (scan.status === 'unavailable' && liveFolderWatcher) liveFolderWatcher.restart(item.id);
       const finalResult = reconcile(scan.status, scan.entries);
       if (!finalResult) continue;
@@ -881,7 +961,16 @@ async function applyThemeSchedule() {
       themeTimer = setTimeout(applyThemeSchedule, 60000);
       return;
     }
-    setWindowsTheme(wantDark).catch((e) => console.error('Не удалось сменить тему Windows:', e));
+    setWindowsTheme(wantDark).then(
+      () => reportChannelSuccess('theme-schedule', 'journal.themeSchedule'),
+      (e) => {
+        console.error('Не удалось сменить тему Windows:', e);
+        reportChannelFailure('theme-schedule', 'journal.themeSchedule', {
+          titleKey: 'notify.themeFailedTitle',
+          bodyKey: 'notify.themeFailedBody',
+        });
+      }
+    );
   }
   themeTimer = setTimeout(applyThemeSchedule, schedule.minutesUntilNextBoundary(b, now) * 60000 + 3000);
 }
@@ -1103,9 +1192,11 @@ async function applyForTheme(themeName, isManual = false, targetMonitors = null)
     // redaction does not exist until stage 4.
     const reason = result && result.ok ? 'ok' : ((result && result.reason) || 'error');
     endSpan({ status: ['ok', 'gamemode-blocked', 'no-wallpaper'].includes(reason) ? reason : 'error' });
+    reportApplyOutcome(result, isManual); // journal + edge-triggered notification (T2/T3)
     return result;
   } catch (err) {
     endSpan({ status: 'error' });
+    reportApplyOutcome({ ok: false, reason: 'exception' }, isManual);
     throw err;
   }
 }
@@ -1703,6 +1794,11 @@ function broadcastWallpaperTheme(theme = wallpaperThemeName()) {
 ipcMain.handle('get-config', () => config);
 
 ipcMain.handle('get-version', () => app.getVersion());
+
+// Event journal (plan error_notifications T3): entries carry i18n KEYS + params —
+// the renderer localizes them, so the stored history survives a language switch.
+ipcMain.handle('event-log-get', () => ({ entries: eventLog.list() }));
+ipcMain.handle('event-log-clear', async () => { await eventLog.clear(); return { entries: [] }; });
 
 // Lumina Cloud capability (C2). Resolved once: staging is reachable ONLY from an
 // unpackaged dev build with an explicit opt-in; all normal launches use production.

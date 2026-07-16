@@ -17,6 +17,8 @@
     "telemetrySub": "Helps find and fix bugs. Off by default; nothing is sent yet.",
     "gameModeTitle": "Game Mode",
     "gameModeSub": "Do not change theme and wallpapers during games or full-screen applications",
+    "notifyFailTitle": "Failure notifications",
+    "notifyFailSub": "Show a Windows notification when a background wallpaper or theme change fails",
     "welcomeTitle": "Welcome screen",
     "welcomeSub": "Show the first-run welcome screen again",
     "welcomeBtn": "Show",
@@ -280,6 +282,27 @@
   "val": {
     "on": "On",
     "off": "Off"
+  },
+  "journal": {
+    "group": "Event journal",
+    "sub": "Recent background failures and recoveries",
+    "clear": "Clear",
+    "empty": "No recent problems — everything is working",
+    "failedNote": "failed",
+    "recoveredNote": "working again",
+    "wallpaperAuto": "Automatic wallpaper change",
+    "wallpaperManual": "Manual wallpaper change",
+    "themeSchedule": "Scheduled Windows theme switch",
+    "thumbs": "Thumbnail service",
+    "liveFolder": "Live folder \"{name}\""
+  },
+  "notify": {
+    "wallpaperFailedTitle": "Lumina couldn't change the wallpaper",
+    "wallpaperFailedBody": "The automatic wallpaper change failed. Click to open Lumina.",
+    "themeFailedTitle": "Lumina couldn't switch the Windows theme",
+    "themeFailedBody": "The scheduled light/dark switch failed. Click to open Lumina.",
+    "thumbsFailedTitle": "Lumina previews are unavailable",
+    "thumbsFailedBody": "The thumbnail helper stopped responding. Click to open Lumina."
   },
   "toast": {
     "applied": "Wallpaper applied",

@@ -24,6 +24,9 @@ const DEFAULT_CONFIG = {
   autoSwitch: true,
   wallpaperSchedule: { mode: 'system', lightStart: '07:00', darkStart: '20:00' },
   style: 'fill',          // fill | fit | stretch | center | tile | span
+  // Windows notification when a BACKGROUND change breaks (edge-triggered: once per
+  // working→broken transition; a success resets). Manual actions toast in-app instead.
+  notifyOnFailure: true,
   autostart: false,
   startMinimized: true,   // при автозапуске стартовать сразу в трее (флаг --hidden)
   language: 'system',     // 'system' | 'en' | 'ru' | 'uk'

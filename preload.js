@@ -84,6 +84,10 @@ contextBridge.exposeInMainWorld('api', {
   createShortcuts: (which) => ipcRenderer.invoke('create-shortcuts', which),
   shortcutsStatus: () => ipcRenderer.invoke('shortcuts-status'),
 
+  // Event journal (recent background failures/recoveries; settings page)
+  eventLogGet: () => ipcRenderer.invoke('event-log-get'),
+  eventLogClear: () => ipcRenderer.invoke('event-log-clear'),
+
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
   installUpdate: () => ipcRenderer.invoke('install-update'),
   openReleases: () => ipcRenderer.invoke('open-releases'),

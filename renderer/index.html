@@ -683,6 +683,13 @@
         </div>
         <div class="row">
           <div class="row-text">
+            <div class="row-title" data-i18n="prefs.notifyFailTitle">Уведомления о сбоях</div>
+            <div class="row-sub" data-i18n="prefs.notifyFailSub">Показывать системное уведомление, если фоновая смена обоев или темы сломалась</div>
+          </div>
+          <button class="gtkswitch" id="swNotifyFail" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+        <div class="row">
+          <div class="row-text">
             <div class="row-title" data-i18n="prefs.welcomeTitle">Экран приветствия</div>
             <div class="row-sub" data-i18n="prefs.welcomeSub">Показать стартовый экран первого запуска снова</div>
           </div>
@@ -703,6 +710,17 @@
           </div>
           <button class="gtkswitch" id="swShortcutEnabled" role="switch" aria-checked="false"><span class="knob"></span></button>
         </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="journal.group">Журнал событий</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-sub" data-i18n="journal.sub">Последние сбои фоновых операций и их восстановления</div>
+          </div>
+          <button class="pill" id="btnClearEventLog" data-i18n="journal.clear">Очистить</button>
+        </div>
+        <div id="eventLogList"></div>
       </div>
 
       <h2 class="group-title" data-i18n="prefs.aboutGroup">О программе</h2>

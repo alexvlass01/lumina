@@ -14,6 +14,11 @@ if (!window.api) {
   const mockAdd = (type, p) => { const iid = 'm' + p; mock.library[iid] = { id: iid, type, path: p }; return iid; };
   let mockSc = { desktop: false, startmenu: false };
   let mockCloud = { signedIn: false, user: null };
+  let mockEventLog = [
+    { atMs: Date.now() - 600e3, channel: 'live-folder:x', kind: 'failure', messageKey: 'journal.liveFolder', params: { name: 'Pictures' } },
+    { atMs: Date.now() - 1800e3, channel: 'wallpaper-auto', kind: 'recovered', messageKey: 'journal.wallpaperAuto' },
+    { atMs: Date.now() - 3600e3, channel: 'wallpaper-auto', kind: 'failure', messageKey: 'journal.wallpaperAuto' },
+  ];
   // ?bigmock=N (browser preview only): synthesize a large Library of colored SVG
   // "photos" with varied aspect ratios to exercise the virtualized grid without
   // Electron. thumbInfo below parses the real width/height back out of the SVG.
@@ -181,6 +186,8 @@ if (!window.api) {
       return { url: p, width: w, height: h };
     },
     thumbAspects: async (entries) => entries.map((entry) => ({ path: entry.path, aspect: 1.6 })),
+    eventLogGet: async () => ({ entries: mockEventLog }),
+    eventLogClear: async () => { mockEventLog = []; return { entries: [] }; },
     quitApp: () => {},
     createShortcuts: async (which) => {
       if (which === 'desktop' || which === 'both' || !which) mockSc.desktop = true;
@@ -767,6 +774,7 @@ async function renderConfig() {
   setSwitch($('#swSingle'), !!config.singleWallpaper);
   setSwitch($('#swTelemetry'), !!config.telemetry);
   setSwitch($('#swGameMode'), !!config.gameModeBlock);
+  setSwitch($('#swNotifyFail'), config.notifyOnFailure !== false);
   $('#selStyle').value = config.style || 'fill';
   const selVb = $('#selViewerBackground');
   selVb.value = config.viewerBackground || 'ambient';
@@ -3622,10 +3630,57 @@ function showPage(name) {
   } else if (name === 'design') {
     renderPreviews();   // reflect current config
     layoutMonitors();   // stages just became visible — refit thumbnails
+  } else if (name === 'prefs') {
+    renderEventLog();   // journal is cheap to refresh on every visit
   }
 
   if (page) page.scrollTop = pageScroll[name] || 0;
   endSwitch({ label: name });
+}
+
+// Event journal (settings page): recent background failures/recoveries. Entries store
+// i18n KEYS + params, so history re-renders correctly after a language switch.
+async function renderEventLog() {
+  const list = $('#eventLogList');
+  if (!list) return;
+  let entries = [];
+  try {
+    const res = await window.api.eventLogGet();
+    entries = (res && res.entries) || [];
+  } catch {}
+  list.innerHTML = '';
+  if (!entries.length) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const text = document.createElement('div');
+    text.className = 'row-text';
+    const sub = document.createElement('div');
+    sub.className = 'row-sub';
+    sub.textContent = t('journal.empty');
+    text.appendChild(sub);
+    row.appendChild(text);
+    list.appendChild(row);
+    return;
+  }
+  for (const en of entries) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    const text = document.createElement('div');
+    text.className = 'row-text';
+    const title = document.createElement('div');
+    title.className = 'row-title';
+    const base = t(en.messageKey, en.params || {});
+    title.textContent = en.kind === 'recovered'
+      ? `✓ ${base} — ${t('journal.recoveredNote')}`
+      : `⚠ ${base} — ${t('journal.failedNote')}`;
+    const sub = document.createElement('div');
+    sub.className = 'row-sub';
+    sub.textContent = new Date(en.atMs).toLocaleString();
+    text.appendChild(title);
+    text.appendChild(sub);
+    row.appendChild(text);
+    list.appendChild(row);
+  }
 }
 
 // First-run welcome screen (one-time).
@@ -4196,6 +4251,21 @@ async function init() {
     config = await window.api.setConfig({ gameModeBlock: on });
     renderConfig();
     toast(on ? t('toast.gameModeOn') : t('toast.gameModeOff'));
+  });
+
+  // ---- settings: Windows notifications for background failures (T2) ----
+  const swNotifyFail = $('#swNotifyFail');
+  if (swNotifyFail) swNotifyFail.addEventListener('click', async () => {
+    const on = swNotifyFail.getAttribute('aria-checked') !== 'true';
+    setSwitch(swNotifyFail, on);
+    config = await window.api.setConfig({ notifyOnFailure: on });
+  });
+
+  // ---- settings: event journal (T3) ----
+  const btnClearEventLog = $('#btnClearEventLog');
+  if (btnClearEventLog) btnClearEventLog.addEventListener('click', async () => {
+    try { await window.api.eventLogClear(); } catch {}
+    renderEventLog();
   });
 
   // ---- settings: re-open the welcome screen ----
