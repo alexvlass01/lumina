@@ -82,6 +82,16 @@ ok('logical anchor keeps the same card row at the same viewport position after r
 ok('invalid logical anchors do not produce a scroll target',
   V.scrollTopForCardAnchor(narrower.rows, 9999, gridTop, desiredViewportTop) === null);
 
+const wider = J.layoutRows(new Array(300).fill(1.6), 1400, { gap: 10, targetHeight: 178 });
+const widenedScrollTop = V.scrollTopForCardAnchor(wider.rows, anchorCard, gridTop, desiredViewportTop);
+const widenedRow = wider.rows[V.rowIndexForCard(wider.rows, anchorCard)];
+ok('the same logical card survives a second wider resize burst',
+  near(gridTop + widenedRow.top - widenedScrollTop, desiredViewportTop));
+const roundTripScrollTop = V.scrollTopForCardAnchor(rows, anchorCard, gridTop, desiredViewportTop);
+const roundTripRow = rows[V.rowIndexForCard(rows, anchorCard)];
+ok('the same logical card survives a width round trip',
+  near(gridTop + roundTripRow.top - roundTripScrollTop, desiredViewportTop));
+
 // --- mixed aspect ratios keep the math consistent ---
 const aspects = Array.from({ length: 500 }, (_, i) => [0.7, 1, 1.5, 2.4, 1.78][i % 5]);
 const mixed = J.layoutRows(aspects, 860, { gap: 10, targetHeight: 160 });

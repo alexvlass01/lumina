@@ -824,9 +824,12 @@ let aspectLayoutTimer = 0;
 let libLazyKick = null;
 let thumbRequestPriority = 0;
 let lastLibraryScrollAt = 0;
-let libraryResizeAnchor = null;
+const libraryResizeSession = window.ResizeAnchor.createSession();
 let libraryViewAnchor = null;
 let libraryAnchorFrame = 0;
+let libraryResizeFinishTimer = 0;
+let libraryResizeLastChangeAt = 0;
+const LIB_RESIZE_SETTLE_MS = 120;
 const INTERNET = { q: '', sort: 'date_added', purity: { sfw: true, sketchy: true, nsfw: false }, page: 1, lastPage: 1, nsfwAvailable: false, searched: false, statusFetched: false };
 const INTERNET_TAG_SUGGEST = { timer: 0, seq: 0, cache: new Map(), items: [], index: -1, token: null };
 const INTERNET_TAG_SUGGEST_DEBOUNCE_MS = 450;
@@ -895,17 +898,25 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
   // Virtualized grid (#libGrid in All/folder views): geometry comes from the full
   // entries list, not from DOM children — delegate and keep the scroll anchor.
   if (grid.__virtual && typeof grid.__virtual.relayout === 'function') {
-    const scrollAnchor = suppliedAnchor || captureLibraryScrollAnchor(grid);
+    const scrollAnchor = suppliedAnchor
+      || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null)
+      || (grid.id === 'libGrid' ? libraryViewAnchor : null)
+      || captureLibraryScrollAnchor(grid);
     grid.__virtual.relayout();
     restoreLibraryScrollAnchor(scrollAnchor, grid);
-    if (grid.id === 'libGrid') libraryViewAnchor = captureLibraryScrollAnchor(grid);
+    if (grid.id === 'libGrid' && !currentLibraryResizeAnchor()) {
+      libraryViewAnchor = scrollAnchor || captureLibraryScrollAnchor(grid);
+    }
     return;
   }
   const width = grid.clientWidth;
   if (width < 40) return;
   const cards = Array.from(grid.children).filter((el) => el.classList.contains('lib-card'));
   if (!cards.length) return;
-  const scrollAnchor = suppliedAnchor || captureLibraryScrollAnchor(grid);
+  const scrollAnchor = suppliedAnchor
+    || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null)
+    || (grid.id === 'libGrid' ? libraryViewAnchor : null)
+    || captureLibraryScrollAnchor(grid);
   const targetHeight = width >= 1000 ? 178 : width >= 700 ? 160 : 142;
   const boxes = window.JustifiedLayout.layout(
     cards.map((card) => Number(card.dataset.aspect) || 1.6),
@@ -918,7 +929,9 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
     card.style.height = `${box.height.toFixed(2)}px`;
   });
   restoreLibraryScrollAnchor(scrollAnchor, grid);
-  if (grid.id === 'libGrid') libraryViewAnchor = captureLibraryScrollAnchor(grid);
+  if (grid.id === 'libGrid' && !currentLibraryResizeAnchor()) {
+    libraryViewAnchor = scrollAnchor || captureLibraryScrollAnchor(grid);
+  }
 }
 
 function scheduleJustifiedLayout(grid) {
@@ -1499,11 +1512,71 @@ function restoreLibraryScrollAnchor(anchor, grid) {
   anchor.root.scrollTop += delta;
   pageScroll.library = anchor.root.scrollTop;
 }
+function currentLibraryResizeAnchor() {
+  return libraryResizeSession.current();
+}
+function beginLibraryResizeAnchor(grid) {
+  const candidate = libraryViewAnchor || captureLibraryScrollAnchor(grid);
+  const snapshot = libraryResizeSession.begin(candidate);
+  if (snapshot.anchor) libraryResizeLastChangeAt = Date.now();
+  return snapshot.anchor;
+}
+function touchLibraryResizeAnchor() {
+  const snapshot = libraryResizeSession.touch();
+  if (snapshot.anchor) libraryResizeLastChangeAt = Date.now();
+  return snapshot.anchor;
+}
+function scheduleLibraryResizeAnchorFinish(grid) {
+  if (libraryResizeFinishTimer) clearTimeout(libraryResizeFinishTimer);
+  if (!currentLibraryResizeAnchor()) return;
+  const quietFor = Date.now() - libraryResizeLastChangeAt;
+  const wait = Math.max(0, LIB_RESIZE_SETTLE_MS - quietFor);
+  libraryResizeFinishTimer = setTimeout(() => {
+    libraryResizeFinishTimer = 0;
+    const pending = libraryResizeSession.snapshot();
+    if (!pending.anchor) return;
+    requestAnimationFrame(() => {
+      const latest = libraryResizeSession.snapshot();
+      if (latest.anchor !== pending.anchor || latest.revision !== pending.revision) {
+        scheduleLibraryResizeAnchorFinish(grid);
+        return;
+      }
+      if (!grid || !grid.isConnected) {
+        libraryResizeSession.cancel();
+        return;
+      }
+      const virtual = grid.__virtual;
+      if (virtual && Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) {
+        touchLibraryResizeAnchor();
+        layoutLibGrid(grid, pending.anchor);
+        scheduleLibraryResizeAnchorFinish(grid);
+        return;
+      }
+      // One final correction after the actual grid width (including scrollbar
+      // changes) is stable. Keep the ORIGINAL logical card authoritative: a wider
+      // row may prepend neighbours, and recapturing its first card here would make
+      // the original anchor drop by one row on the next restore/maximize burst.
+      restoreLibraryScrollAnchor(pending.anchor, grid);
+      if (libraryResizeSession.finish(pending.revision)) {
+        libraryViewAnchor = pending.anchor;
+      }
+    });
+  }, wait);
+}
+function cancelLibraryResizeAnchorForUserInput() {
+  if (!currentLibraryResizeAnchor()) return;
+  libraryResizeSession.cancel();
+  if (libraryResizeFinishTimer) {
+    clearTimeout(libraryResizeFinishTimer);
+    libraryResizeFinishTimer = 0;
+  }
+  libraryViewAnchor = captureLibraryScrollAnchor($('#libGrid'));
+}
 function rememberLibraryScrollAnchor(grid) {
-  if (libraryAnchorFrame || libraryResizeAnchor) return;
+  if (libraryAnchorFrame || currentLibraryResizeAnchor()) return;
   libraryAnchorFrame = requestAnimationFrame(() => {
     libraryAnchorFrame = 0;
-    if (!libraryResizeAnchor) libraryViewAnchor = captureLibraryScrollAnchor(grid);
+    if (!currentLibraryResizeAnchor()) libraryViewAnchor = captureLibraryScrollAnchor(grid);
   });
 }
 function resetLibObservers() {
@@ -1514,7 +1587,8 @@ function resetLibObservers() {
   const grid = $('#libGrid');
   if (grid) grid.__virtual = null; // a new render owns the grid from scratch
   libraryViewAnchor = null;
-  libraryResizeAnchor = null;
+  libraryResizeSession.cancel();
+  if (libraryResizeFinishTimer) { clearTimeout(libraryResizeFinishTimer); libraryResizeFinishTimer = 0; }
   libLazyKick = null;
 }
 // Small renderer-side LRU of thumbnail data-URLs. The virtualized grid DESTROYS cards
@@ -1983,6 +2057,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   let scrollFrame = 0;
   let widthFrame = 0;
   let widthObserver = null;
+  const cancelResizeForInput = () => cancelLibraryResizeAnchorForUserInput();
   const onScroll = () => {
     lastLibraryScrollAt = Date.now();
     if (scrollFrame) return;
@@ -1996,6 +2071,10 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
   libLazyKick = kick;
   if (root) {
     root.addEventListener('scroll', onScroll, { passive: true });
+    root.addEventListener('wheel', cancelResizeForInput, { passive: true });
+    root.addEventListener('pointerdown', cancelResizeForInput, { passive: true });
+    root.addEventListener('touchstart', cancelResizeForInput, { passive: true });
+    root.addEventListener('keydown', cancelResizeForInput);
     window.addEventListener('resize', onScroll);
     // The first layout can make the page tall enough for its vertical scrollbar to
     // appear. That shrinks the grid without firing window.resize (e.g. 692 → 682 px),
@@ -2006,17 +2085,23 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
       widthObserver = new ResizeObserver(() => {
         if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
         if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5 || widthFrame) return;
+        if (currentLibraryResizeAnchor()) touchLibraryResizeAnchor();
         widthFrame = requestAnimationFrame(() => {
           widthFrame = 0;
           if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
           layoutLibGrid(grid);
-          rememberLibraryScrollAnchor(grid);
+          if (currentLibraryResizeAnchor()) scheduleLibraryResizeAnchorFinish(grid);
+          else rememberLibraryScrollAnchor(grid);
         });
       });
       widthObserver.observe(grid);
     }
     libScrollCleanup = () => {
       root.removeEventListener('scroll', onScroll);
+      root.removeEventListener('wheel', cancelResizeForInput);
+      root.removeEventListener('pointerdown', cancelResizeForInput);
+      root.removeEventListener('touchstart', cancelResizeForInput);
+      root.removeEventListener('keydown', cancelResizeForInput);
       window.removeEventListener('resize', onScroll);
       if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
       if (widthFrame) { cancelAnimationFrame(widthFrame); widthFrame = 0; }
@@ -4618,16 +4703,16 @@ async function init() {
   // keep thumbnails fitted when the window (and thus cards) resize
   let resizeT = null;
   window.addEventListener('resize', () => {
-    if (!libraryResizeAnchor) libraryResizeAnchor = libraryViewAnchor || captureLibraryScrollAnchor($('#libGrid'));
+    const grid = $('#libGrid');
+    beginLibraryResizeAnchor(grid);
     clearTimeout(resizeT);
     resizeT = setTimeout(() => {
       const endSpan = diagSpan('renderer', 'resize-relayout'); // budget span #12
-      const resizeAnchor = libraryResizeAnchor;
-      libraryResizeAnchor = null;
       layoutMonitors();
-      layoutLibGrid($('#libGrid'), resizeAnchor);
+      layoutLibGrid(grid);
       layoutLibGrid($('#whGrid'));
-      libraryViewAnchor = captureLibraryScrollAnchor($('#libGrid'));
+      if (currentLibraryResizeAnchor()) scheduleLibraryResizeAnchorFinish(grid);
+      else if (!libraryViewAnchor) libraryViewAnchor = captureLibraryScrollAnchor(grid);
       if (libLazyKick) libLazyKick();
       if (!$('#viewHome').hidden) renderHome();
       endSpan();
