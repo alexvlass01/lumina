@@ -53,7 +53,9 @@ npm run package      # portable build  -> dist/Lumina-win32-x64/
 npm run installer    # installer        -> dist/installer/Lumina-Setup.exe
 ```
 
-Built with Electron + plain HTML/CSS/JS — no heavy toolchains, just `npm install` over Node.
+Built primarily with Electron + plain HTML/CSS/JS, plus a small Windows thumbnail helper. The
+renderer is framework-free today, but focused dependencies and build tooling are welcome when they
+have a clear maintenance or measured performance payoff. Source setup remains a single `npm install`.
 
 ## License
 

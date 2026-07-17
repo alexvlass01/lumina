@@ -809,10 +809,10 @@ async function renderConfig() {
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
 const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null, aspectCache: new Map(), sizeCache: new Map() };
-let libObserver = null; // IntersectionObserver for lazy "All" rendering
+const folderInfoCache = new Map(); // path key -> shared promise for virtualized folder cards
+let folderCardEpoch = 0;           // rebuild visible collages after their directory contents change
 let allViewToken = 0;   // guards async folder/All renders against races
 let thumbIO = null;     // IntersectionObserver that loads thumbnails on scroll
-let libScrollCleanup = null; // scroll fallback for lazy chunks inside .page
 const deferredLiveRefresh = window.DeferredRefresh.create(['home', 'library']);
 let lastLibRenderKey = '';     // view+content the grid was last rendered for; skip rebuild when unchanged
 let lastLibViewKey = '';       // view IDENTITY only (filter/folder/query/sort); scroll resets to top only when THIS changes
@@ -845,7 +845,9 @@ const LIB_VIRTUAL_OVERSCAN_PX = 1600;
 const CLOUD = { cap: null, fetched: false };
 // Unified online feed state. view = 'search' | 'favorites'; loaded gates the initial
 // auto-search and is reset when leaving the Online tab (so signed R2 URLs stay fresh).
-const ONLINE = { view: 'search', loaded: false, loading: false };
+const ONLINE = {
+  view: 'search', loaded: false, loading: false, generation: 0, renderEpoch: 0, entries: [],
+};
 // Lumina cursor pagination within the shared feed.
 const LUMINA = { cursor: null };
 // Cloud C4: account/session state (renderer-safe; the token never leaves main).
@@ -865,13 +867,10 @@ function setLibCardAspect(card, aspect, opts = {}) {
     // aspect must land in the virtual state too (keyed by combined index) — the card
     // itself may be dematerialized and rebuilt later.
     const virtual = grid.__virtual;
-    if (virtual) {
-      const gi = Number(card.dataset.galleryIndex);
-      if (Number.isFinite(gi) && gi >= 0) virtual.overrides.set(virtual.head.length + gi, safe);
-      else {
-        const headIndex = virtual.head.indexOf(card);
-        if (headIndex >= 0) virtual.overrides.set(headIndex, safe);
-      }
+    const gridIndex = Number(card.dataset.virtualIndex);
+    if (virtual && typeof virtual.setAspect === 'function'
+      && Number.isInteger(gridIndex) && gridIndex >= 0) {
+      virtual.setAspect(gridIndex, safe, { relayout: false });
     }
     if (opts.deferred) scheduleDeferredJustifiedLayout(grid);
     else scheduleJustifiedLayout(grid);
@@ -899,9 +898,8 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
   // Virtualized grid (#libGrid in All/folder views): geometry comes from the full
   // entries list, not from DOM children — delegate and keep the scroll anchor.
   if (grid.__virtual && typeof grid.__virtual.relayout === 'function') {
-    const sessionAnchor = suppliedAnchor
-      || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null);
-    const rememberedAnchor = !sessionAnchor && grid.id === 'libGrid'
+    const sessionAnchor = suppliedAnchor || currentLibraryResizeAnchor();
+    const rememberedAnchor = !sessionAnchor
       && isMaterializedLibraryViewAnchor(libraryViewAnchor, grid) ? libraryViewAnchor : null;
     const scrollAnchor = sessionAnchor
       || rememberedAnchor
@@ -915,7 +913,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
       anchor: shrinking ? scrollAnchor : null,
     });
     if (!relayout || !relayout.anchorRestored) restoreLibraryScrollAnchor(scrollAnchor, grid);
-    if (grid.id === 'libGrid' && !currentLibraryResizeAnchor()) {
+    if (!currentLibraryResizeAnchor()) {
       libraryViewAnchor = scrollAnchor || captureLibraryScrollAnchor(grid);
     }
     return;
@@ -925,8 +923,8 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
   const cards = Array.from(grid.children).filter((el) => el.classList.contains('lib-card'));
   if (!cards.length) return;
   const scrollAnchor = suppliedAnchor
-    || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null)
-    || (grid.id === 'libGrid' ? libraryViewAnchor : null)
+    || currentLibraryResizeAnchor()
+    || libraryViewAnchor
     || captureLibraryScrollAnchor(grid);
   const targetHeight = window.VirtualWindow.responsiveTargetHeight(width);
   const boxes = window.JustifiedLayout.layout(
@@ -940,7 +938,7 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
     card.style.height = `${box.height.toFixed(2)}px`;
   });
   restoreLibraryScrollAnchor(scrollAnchor, grid);
-  if (grid.id === 'libGrid' && !currentLibraryResizeAnchor()) {
+  if (!currentLibraryResizeAnchor()) {
     libraryViewAnchor = scrollAnchor || captureLibraryScrollAnchor(grid);
   }
 }
@@ -957,8 +955,7 @@ function scheduleJustifiedLayout(grid) {
 }
 
 function scheduleAllLibraryLayouts() {
-  scheduleJustifiedLayout($('#libGrid'));
-  scheduleJustifiedLayout($('#whGrid'));
+  scheduleJustifiedLayout(activeLibraryGrid());
 }
 
 // ids referenced by any monitor×theme slot (to mark assigned items)
@@ -1184,6 +1181,9 @@ function renderLibraryCore() {
     const page = document.querySelector('.page');
     if (page) page.scrollTop = 0;
     pageScroll.library = 0;
+    libraryViewAnchor = null;
+    libraryResizeSession.cancel();
+    libraryResizeActive = false;
   }
   renderLibRailTags();
   setLibViewHeader();
@@ -1203,16 +1203,23 @@ function renderLibraryCore() {
     addFolder.classList.toggle('suggested', LIB.filter === 'folder');
   }
   if (LIB.filter === 'online') {
+    allViewToken += 1; // invalidate any pending local folder/All response
+    resetLibObservers($('#libGrid'));
     if (local) local.hidden = true;
     if (online) online.hidden = false;
     exitFolderState(); // leaving the local view drops any folder navigation
     renderBreadcrumbs();
     renderOnline();
-    scheduleJustifiedLayout($('#whGrid'));
     return;
   }
   if (online) online.hidden = true;
   if (local) local.hidden = false;
+  destroyUnifiedGrid($('#whGrid'));
+  setGridGallerySource($('#whGrid'), []);
+  ONLINE.generation += 1;
+  ONLINE.renderEpoch += 1;
+  ONLINE.entries = [];
+  ONLINE.loading = false;
   ONLINE.loaded = false; // re-fetch fresh signed URLs next time Online opens
   renderBreadcrumbs();
   const tok = ++allViewToken; // invalidate any in-flight async render
@@ -1221,7 +1228,6 @@ function renderLibraryCore() {
   if (LIB.filter === 'all') { renderAllView(tok); return; }
 
   // "Папки" / favorite / tag → plain pool-items grid (folders are entities here)
-  resetLibObservers();
   const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
   const grid = $('#libGrid');
   if (!grid) return;
@@ -1230,16 +1236,7 @@ function renderLibraryCore() {
   const empty = $('#libEmpty');
   if (empty) { empty.hidden = items.length > 0; if (!items.length) setLibEmptyText('library.empty'); }
   setLibViewHeader(items.length);
-  grid.innerHTML = '';
-  const galleryItems = items.filter((it) => it.type !== 'folder').map(galleryItemFromLibrary);
-  setGridGallerySource(grid, galleryItems);
-  let galleryIndex = 0;
-  items.forEach((it) => {
-    const card = buildLibCard(it, assigned.has(it.id));
-    if (card.__galleryItem) bindCardGalleryItem(card, galleryItems[galleryIndex] || card.__galleryItem, galleryIndex++);
-    grid.appendChild(card);
-  });
-  scheduleJustifiedLayout(grid);
+  renderEntriesLazily(grid, items, assigned, tok);
   // Favorites/Tags also sort by size: load pool sizes in the background and re-render
   // once (so a cold start with size sort, or any first size sort, isn't blocked).
   scheduleSizeReorder(items.map((it) => ({ item: it, path: it.path, id: it.id })), tok);
@@ -1349,7 +1346,13 @@ function fillFolderCollage(card, dirPath) {
   cnt.textContent = '0';
   card.appendChild(cnt);
   card.title = dirPath;
-  window.api.folderInfo(dirPath).then((info) => {
+  const infoKey = normPathKey(dirPath);
+  let infoPromise = folderInfoCache.get(infoKey);
+  if (!infoPromise) {
+    infoPromise = window.api.folderInfo(dirPath).catch(() => ({ count: 0, subfolders: 0, previews: [] }));
+    folderInfoCache.set(infoKey, infoPromise);
+  }
+  infoPromise.then((info) => {
     const previews = (info && info.previews) || [];
     const sub = (info && info.subfolders) || 0;
     const n = (info && info.count) || 0;
@@ -1363,6 +1366,11 @@ function fillFolderCollage(card, dirPath) {
       window.api.thumb(p, 160, 160).then((u) => { if (u) tile.style.backgroundImage = `url("${u}")`; });
     });
   });
+}
+
+function invalidateFolderCards() {
+  folderInfoCache.clear();
+  folderCardEpoch += 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -1452,8 +1460,12 @@ function poolImageMap() {
 function libScrollRoot() {
   return document.querySelector('.page');
 }
+function activeLibraryGrid() {
+  return LIB.filter === 'online' ? $('#whGrid') : $('#libGrid');
+}
 function libraryCardAnchorKey(card) {
   if (!card) return '';
+  if (card.dataset.gridKey) return card.dataset.gridKey;
   if (card.__galleryItem && card.__galleryItem.key) return card.__galleryItem.key;
   if (card.dataset.id) return `id:${card.dataset.id}`;
   if (card.dataset.path) return `path:${normPathKey(card.dataset.path)}`;
@@ -1462,7 +1474,7 @@ function libraryCardAnchorKey(card) {
 }
 function captureLibraryScrollAnchor(grid) {
   const root = libScrollRoot();
-  if (!root || !grid || grid.id !== 'libGrid' || grid.offsetParent === null || root.scrollTop <= 0) return null;
+  if (!root || !grid || grid.offsetParent === null || root.scrollTop <= 0) return null;
   const rootRect = root.getBoundingClientRect();
   const cards = Array.from(grid.children).filter((card) => card.classList && card.classList.contains('lib-card'));
   if (!cards.length) return null;
@@ -1612,8 +1624,9 @@ function cancelLibraryResizeAnchorForUserInput() {
     clearTimeout(libraryResizeFinishTimer);
     libraryResizeFinishTimer = 0;
   }
-  libraryViewAnchor = captureLibraryScrollAnchor($('#libGrid'));
-  const virtual = $('#libGrid') && $('#libGrid').__virtual;
+  const grid = activeLibraryGrid();
+  libraryViewAnchor = captureLibraryScrollAnchor(grid);
+  const virtual = grid && grid.__virtual;
   if (virtual && typeof virtual.updateWindow === 'function') virtual.updateWindow(true);
 }
 function rememberLibraryScrollAnchor(grid) {
@@ -1623,16 +1636,21 @@ function rememberLibraryScrollAnchor(grid) {
     if (!libraryResizeActive && !currentLibraryResizeAnchor()) libraryViewAnchor = captureLibraryScrollAnchor(grid);
   });
 }
-function resetLibObservers() {
-  if (libObserver) { libObserver.disconnect(); libObserver = null; }
-  if (thumbIO) { thumbIO.disconnect(); thumbIO = null; }
-  if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
-  if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
-  const grid = $('#libGrid');
-  if (grid) {
-    grid.__virtual = null; // a new render owns the grid from scratch
+function destroyUnifiedGrid(grid) {
+  if (!grid) return;
+  const virtual = grid.__virtual;
+  if (virtual && typeof virtual.destroy === 'function') virtual.destroy();
+  else {
+    grid.__virtual = null;
     grid.classList.remove('is-virtualized');
+    grid.innerHTML = '';
   }
+  delete grid.__gridContext;
+}
+function resetLibObservers(grid = $('#libGrid')) {
+  if (thumbIO) { thumbIO.disconnect(); thumbIO = null; }
+  if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
+  destroyUnifiedGrid(grid);
   libraryViewAnchor = null;
   libraryResizeSession.cancel();
   libraryResizeActive = false;
@@ -1718,7 +1736,6 @@ async function renderFolderView(tok) {
   const grid = $('#libGrid');
   const empty = $('#libEmpty');
   if (!grid) return;
-  resetLibObservers();
   const dir = LIB.folderPath;
   let res;
   try { res = await window.api.folderEntries(dir); } catch { res = null; }
@@ -1753,12 +1770,8 @@ async function renderFolderView(tok) {
   const total = folders.length + entries.length;
   setLibViewHeader(total);
   if (empty) { empty.hidden = total > 0; if (!total) setLibEmptyText('library.emptyFolder'); }
-  grid.innerHTML = '';
-  setGridGallerySource(grid, entries.map(galleryItemFromEntry));
-  // Subfolder cards become the virtual grid's persistent "head": few in number,
-  // built once, attached/detached by the window like any other row content.
-  const headCards = folders.map((f) => buildSubfolderCard(f));
-  renderEntriesLazily(grid, entries, assignedIds(), tok, headCards);
+  const folderEntries = folders.map((folder) => ({ kind: 'subfolder', folder, path: folder.path }));
+  renderEntriesLazily(grid, folderEntries.concat(entries), assignedIds(), tok);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
 
@@ -1853,7 +1866,6 @@ async function renderAllView(tok) {
   const grid = $('#libGrid');
   const empty = $('#libEmpty');
   if (!grid) return;
-  resetLibObservers();
   const poolImgs = Object.values(config.library || {}).filter((it) => it.type === 'image' && it.path);
   let folderImgs = [];
   try { const res = await window.api.expandFolders(); folderImgs = (res && res.images) || []; }
@@ -1881,44 +1893,8 @@ async function renderAllView(tok) {
   });
   if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.empty'); }
   setLibViewHeader(entries.length);
-  grid.innerHTML = '';
-  setGridGallerySource(grid, entries.map(galleryItemFromEntry));
   renderEntriesLazily(grid, entries, assignedIds(), tok);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
-}
-
-function refreshChunkAspects(entries, cards, tok) {
-  const missing = entries
-    .map((en, index) => ({ en, card: cards[index] }))
-    .filter(({ en }) => en && en.path && !knownLibAspect(en.item, en.path));
-  if (!missing.length || !window.api.thumbAspects) return;
-  window.api.thumbAspects(
-    missing.map(({ en }) => ({ id: en.item && en.item.id, path: en.path })),
-    320,
-    200
-  ).then((aspects) => {
-    if (tok !== allViewToken) return;
-    const byPath = new Map();
-    for (const info of (aspects || [])) {
-      if (!info || !info.path || !(info.aspect > 0)) continue;
-      const key = normPathKey(info.path);
-      LIB.aspectCache.set(key, info.aspect);
-      byPath.set(key, info.aspect);
-    }
-    let changed = false;
-    for (const { en, card } of missing) {
-      if (!card || !card.isConnected) continue;
-      const aspect = byPath.get(normPathKey(en.path)) || LIB.aspectCache.get(normPathKey(en.path));
-      if (!aspect) continue;
-      if (en.item) en.item.aspect = aspect;
-      card.dataset.aspectKnown = 'true';
-      setLibCardAspect(card, aspect);
-      changed = true;
-    }
-    if (changed) scheduleJustifiedLayout($('#libGrid'));
-  }).catch((err) => {
-    console.error('library: aspect prefetch failed', err);
-  });
 }
 
 function scheduleDeferredJustifiedLayout(grid) {
@@ -1937,313 +1913,161 @@ function scheduleDeferredJustifiedLayout(grid) {
   aspectLayoutTimer = setTimeout(flush, 240);
 }
 
-// VIRTUALIZED grid (LF-QA5 fix). The old version appended chunks forever and never
-// removed off-screen cards — a 5000-image folder accumulated ~16k DOM nodes and
-// hundreds of MB of decoded thumbnails, which is exactly what the diagnostics
-// recording showed. Now the justified layout is computed for ALL entries up front
-// (from known/estimated aspects — pure math, no DOM), and only the rows inside the
-// viewport ± overscan are materialized; two flex spacers stand in for everything
-// else, so the scrollbar and offsets match a fully rendered grid exactly.
-// `headCards` are the folder-view subfolder cards: few, built once, kept alive.
-function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
-  const sentinel = $('#libSentinel');
-  if (sentinel) sentinel.hidden = true; // full height is known up front — no sentinel
-  const galleryItems = Array.isArray(grid && grid.__galleryItems) && grid.__galleryItems.length === entries.length
-    ? grid.__galleryItems
-    : entries.map(galleryItemFromEntry);
-  setGridGallerySource(grid, galleryItems);
-  if (libObserver) { libObserver.disconnect(); libObserver = null; }
-  if (libScrollCleanup) { libScrollCleanup(); libScrollCleanup = null; }
-
-  const head = (headCards || []).filter(Boolean);
-  grid.classList.add('is-virtualized');
-  const virtual = {
-    tok,
-    entries,
-    head,
-    assigned,
-    galleryItems,
-    overrides: new Map(), // combined index → aspect refined after a thumb decoded
-    rows: [],
-    boxes: [],
-    totalHeight: 0,
-    layoutWidth: 0,
-    first: 0,
-    last: -1, // materialized row range (inclusive); -1 = nothing yet
-    cards: new Map(), // combined index → live card element
-    topPad: null,
-    bottomPad: null,
-    relayout: null,
-    updateWindow: null,
-  };
-  grid.__virtual = virtual;
-  grid.innerHTML = '';
-
-  // Combined index space: 0..head-1 = persistent subfolder cards, then entries.
-  const aspectAt = (c) => {
-    const override = virtual.overrides.get(c);
-    if (override > 0) return override;
-    if (c < head.length) {
-      const a = Number(head[c].dataset.aspect);
-      return Number.isFinite(a) && a > 0 ? a : 1.6;
-    }
-    const en = entries[c - head.length];
-    return knownLibAspect(en.item, en.path, en.aspect) || 1.6;
-  };
-
-  const buildCardAt = (c) => {
-    if (c < head.length) return head[c];
-    const en = entries[c - head.length];
-    // config gets REPLACED on every mutation; look the item up fresh so a card
-    // rebuilt after scrolling back reflects current favorite/assigned state.
-    const fresh = en.item && config.library && config.library[en.item.id] ? config.library[en.item.id] : en.item;
-    const card = fresh
-      ? buildLibCard(fresh, virtual.assigned.has(fresh.id))
-      : buildEphemeralImageCard(en.path, en.aspect);
-    if (fresh && knownLibAspect(fresh, en.path) <= 0 && Number(en.aspect) > 0) {
-      card.dataset.aspectKnown = 'true';
-      setLibCardAspect(card, en.aspect);
-    }
-    bindCardGalleryItem(card, galleryItems[c - head.length] || card.__galleryItem, c - head.length);
-    if (fresh && LIB.selection.has(fresh.id)) card.classList.add('selected');
-    return card;
-  };
-
-  const ensurePad = (which) => {
-    const key = which === 'top' ? 'topPad' : 'bottomPad';
-    if (!virtual[key]) {
-      const pad = document.createElement('div');
-      pad.className = 'lib-vpad';
-      virtual[key] = pad;
-    }
-    return virtual[key];
-  };
-
-  // Materialize rows [first..last]: drop far cards, create missing ones, size the
-  // spacers, and (re)assert child order. Existing nodes are MOVED, not rebuilt.
-  const applyWindow = (first, last) => {
-    const range = window.VirtualWindow.cardRangeForRows(virtual.rows, first, last);
-    const requestPriority = ++thumbRequestPriority;
-    let added = 0;
-    let dropped = 0;
-    const endSpan = diagSpan('renderer', 'lazy-chunk'); // budget span #9: window materialization
-    for (const [c, card] of Array.from(virtual.cards)) {
-      if (c < range.first || c > range.last) {
-        if (thumbIO) thumbIO.unobserve(card);
-        card.remove();
-        virtual.cards.delete(c);
-        dropped += 1;
-      }
-    }
-    for (let c = range.first; c <= range.last; c++) {
-      if (!virtual.cards.has(c)) {
-        virtual.cards.set(c, buildCardAt(c));
-        added += 1;
-      }
-    }
-    const pads = window.VirtualWindow.padHeights(virtual.rows, first, last, 10, virtual.totalHeight);
-    const desiredChildren = [];
-    if (pads.top > 0) {
-      const pad = ensurePad('top');
-      const height = `${pads.top.toFixed(2)}px`;
-      if (pad.style.height !== height) pad.style.height = height;
-      desiredChildren.push(pad);
-    }
-    for (let c = range.first; c <= range.last; c++) {
-      const card = virtual.cards.get(c);
-      card.dataset.virtualIndex = String(c);
-      card.dataset.thumbPriority = String(requestPriority);
-      desiredChildren.push(card);
-      const box = virtual.boxes[c];
-      if (box) {
-        const width = `${box.width.toFixed(2)}px`;
-        const height = `${box.height.toFixed(2)}px`;
-        if (card.style.width !== width) card.style.width = width;
-        if (card.style.height !== height) card.style.height = height;
-      }
-    }
-    if (pads.bottom > 0) {
-      const pad = ensurePad('bottom');
-      const height = `${pads.bottom.toFixed(2)}px`;
-      if (pad.style.height !== height) pad.style.height = height;
-      desiredChildren.push(pad);
-    }
-    const dom = window.VirtualGridDom.reconcileChildren(grid, desiredChildren);
-    virtual.first = first;
-    virtual.last = last;
-    endSpan({
-      count: added,
-      active: virtual.cards.size,
-      dropped,
-      inserted: dom.inserted,
-      moved: dom.moved,
-      removed: dom.removed,
-    });
-  };
-
-  const updateWindow = (afterLayout = false) => {
-    if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
-    if (grid.offsetParent === null) return; // hidden tab: rects are zero, don't churn
-    const root = libScrollRoot();
-    if (!root || !virtual.rows.length) return;
-    const gridTop = grid.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop;
-    const viewTop = root.scrollTop - gridTop - LIB_VIRTUAL_OVERSCAN_PX;
-    const viewBottom = root.scrollTop - gridTop + root.clientHeight + LIB_VIRTUAL_OVERSCAN_PX;
-    let range = window.VirtualWindow.rowRangeForViewport(virtual.rows, viewTop, viewBottom);
-    if (libraryResizeActive && virtual.cards.size
-      && typeof window.VirtualWindow.expandRowRangeForCards === 'function') {
-      const activeIndices = Array.from(virtual.cards.keys());
-      range = window.VirtualWindow.expandRowRangeForCards(
-        virtual.rows,
-        range,
-        Math.min(...activeIndices),
-        Math.max(...activeIndices)
-      );
-    }
-    if (!afterLayout && range.first === virtual.first && range.last === virtual.last) return;
-    applyWindow(range.first, range.last);
-  };
-
-  const relayout = (opts = {}) => {
-    if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
-    const width = grid.clientWidth;
-    if (width < 40) return;
-    virtual.layoutWidth = width;
-    const total = head.length + entries.length;
-    const aspects = new Array(total);
-    for (let c = 0; c < total; c++) aspects[c] = aspectAt(c);
-    const targetHeight = window.VirtualWindow.responsiveTargetHeight(width);
-    const res = window.JustifiedLayout.layoutRows(aspects, width, {
-      gap: 10, targetHeight, minAspect: 0.65, maxAspect: 3,
-    });
-    virtual.rows = res.rows;
-    virtual.boxes = res.boxes;
-    virtual.totalHeight = res.totalHeight;
-    if (!res.rows.length) {
-      grid.innerHTML = '';
-      virtual.cards.clear();
-      virtual.first = 0;
-      virtual.last = -1;
-      return { anchorRestored: false };
-    }
-
-    const anchor = opts.anchor;
-    if (anchor && anchor.root === root && Number.isInteger(anchor.combinedIndex)
-      && typeof window.VirtualWindow.windowForCardAnchor === 'function') {
-      // Compute the target against canonical NEW rows without assigning scrollTop
-      // yet. applyWindow writes the matching top/bottom pads first, so the browser
-      // has the new full scroll extent and cannot clamp a deep anchor to the old one.
-      const rootRect = root.getBoundingClientRect();
-      const gridTop = grid.getBoundingClientRect().top - rootRect.top + root.scrollTop;
-      const plan = window.VirtualWindow.windowForCardAnchor(
-        res.rows,
-        anchor.combinedIndex,
-        gridTop,
-        anchor.top,
-        root.clientHeight,
-        LIB_VIRTUAL_OVERSCAN_PX
-      );
-      if (plan) {
-        let range = { first: plan.first, last: plan.last };
-        if (virtual.cards.size && typeof window.VirtualWindow.expandRowRangeForCards === 'function') {
-          const activeIndices = Array.from(virtual.cards.keys());
-          range = window.VirtualWindow.expandRowRangeForCards(
-            res.rows,
-            range,
-            Math.min(...activeIndices),
-            Math.max(...activeIndices)
-          );
-        }
-        applyWindow(range.first, range.last); // establishes NEW DOM extent first
-        anchor.root.scrollTop = plan.scrollTop;
-        pageScroll.library = anchor.root.scrollTop;
-        // Near the bottom, the browser may legitimately clamp the requested
-        // anchor because there is not enough content below it. Reconcile once
-        // against that actual viewport; the new extent already exists, so this
-        // bounded correction cannot recreate the stale-scroll bridge.
-        if (Math.abs(anchor.root.scrollTop - plan.scrollTop) >= 0.5) updateWindow(true);
-        return { anchorRestored: true };
-      }
-    }
-    updateWindow(true);
-    return { anchorRestored: false };
-  };
-  virtual.relayout = relayout;
-  virtual.updateWindow = updateWindow;
-
-  const root = libScrollRoot();
-  let scrollFrame = 0;
-  let widthFrame = 0;
-  let widthObserver = null;
-  const cancelResizeForInput = () => cancelLibraryResizeAnchorForUserInput();
-  const onScroll = () => {
-    lastLibraryScrollAt = Date.now();
-    if (scrollFrame) return;
-    scrollFrame = requestAnimationFrame(() => {
-      scrollFrame = 0;
-      updateWindow(false);
-      rememberLibraryScrollAnchor(grid);
-    });
-  };
-  const kick = () => updateWindow(true);
-  libLazyKick = kick;
-  if (root) {
-    root.addEventListener('scroll', onScroll, { passive: true });
-    root.addEventListener('wheel', cancelResizeForInput, { passive: true });
-    root.addEventListener('pointerdown', cancelResizeForInput, { passive: true });
-    root.addEventListener('touchstart', cancelResizeForInput, { passive: true });
-    root.addEventListener('keydown', cancelResizeForInput);
-    window.addEventListener('resize', onScroll);
-    // The first layout can make the page tall enough for its vertical scrollbar to
-    // appear. That shrinks the grid without firing window.resize (e.g. 692 → 682 px),
-    // so the old row widths no longer fit and flex-wrap moves the last card. Observe
-    // the actual container width and relayout only when that width really changed;
-    // height-only changes from thumbnail aspect refinement must not cause a loop.
-    if ('ResizeObserver' in window) {
-      widthObserver = new ResizeObserver(() => {
-        if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
-        if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5 || widthFrame) return;
-        if (libraryResizeActive) touchLibraryResizeAnchor();
-        widthFrame = requestAnimationFrame(() => {
-          widthFrame = 0;
-          if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
-          // A synchronous shrink from window.resize may have already reconciled
-          // the width after this frame was queued by an earlier expansion.
-          if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5) return;
-          layoutLibGrid(grid);
-          if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
-          else rememberLibraryScrollAnchor(grid);
-        });
-      });
-      widthObserver.observe(grid);
-    }
-    libScrollCleanup = () => {
-      root.removeEventListener('scroll', onScroll);
-      root.removeEventListener('wheel', cancelResizeForInput);
-      root.removeEventListener('pointerdown', cancelResizeForInput);
-      root.removeEventListener('touchstart', cancelResizeForInput);
-      root.removeEventListener('keydown', cancelResizeForInput);
-      window.removeEventListener('resize', onScroll);
-      if (scrollFrame) { cancelAnimationFrame(scrollFrame); scrollFrame = 0; }
-      if (widthFrame) { cancelAnimationFrame(widthFrame); widthFrame = 0; }
-      if (widthObserver) { widthObserver.disconnect(); widthObserver = null; }
-      if (libraryAnchorFrame) { cancelAnimationFrame(libraryAnchorFrame); libraryAnchorFrame = 0; }
-      if (grid.__virtual === virtual) grid.__virtual = null;
-      if (libLazyKick === kick) libLazyKick = null;
+function localGridDescriptor(entry) {
+  if (entry && entry.kind === 'subfolder') {
+    const folder = entry.folder || entry.raw || entry;
+    return {
+      key: `local-folder:${normPathKey(folder.path)}`,
+      kind: 'subfolder',
+      path: folder.path,
+      folder,
+      item: null,
+      aspect: 1.6,
+      galleryItem: null,
+      selectableId: null,
     };
-    rememberLibraryScrollAnchor(grid);
   }
-  relayout();
-  // ResizeObserver's first delivery can use the post-layout width as its baseline and
-  // therefore not report the scrollbar-induced shrink as a change. Recheck once on
-  // the next frame so the initial 692→682px transition is always reconciled.
-  if (root && !widthFrame) {
-    widthFrame = requestAnimationFrame(() => {
-      widthFrame = 0;
-      if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
-      if (Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) layoutLibGrid(grid);
+  const item = entry && entry.type ? entry : entry && entry.item;
+  const path = (entry && entry.path) || (item && item.path) || '';
+  const isFolder = !!(item && item.type === 'folder');
+  return {
+    key: `${isFolder ? 'local-folder' : 'local-image'}:${normPathKey(path)}`,
+    kind: isFolder ? 'pool-folder' : (item ? 'pool-image' : 'ephemeral-image'),
+    path,
+    item: item || null,
+    id: (item && item.id) || (entry && entry.id) || path,
+    aspect: isFolder ? 1.6 : (knownLibAspect(item, path, entry && entry.aspect) || 1.6),
+    galleryItem: isFolder ? null : (item ? galleryItemFromLibrary(item) : galleryItemFromPath(path)),
+    selectableId: item && item.id ? item.id : null,
+    raw: entry,
+  };
+}
+
+function localGridVersion(entry) {
+  if (entry && (entry.kind === 'subfolder' || entry.kind === 'pool-folder')) {
+    return `${entry.kind}:${folderCardEpoch}`;
+  }
+  return entry && entry.kind;
+}
+
+function withUnifiedGalleryIndexes(entries) {
+  let galleryIndex = 0;
+  return (entries || []).map((entry) => ({
+    ...entry,
+    galleryIndex: entry && entry.galleryItem ? galleryIndex++ : -1,
+  }));
+}
+
+function bindUnifiedGalleryCard(card, entry) {
+  if (!card) return;
+  if (entry && entry.galleryItem) {
+    bindCardGalleryItem(card, entry.galleryItem, entry.galleryIndex);
+  } else {
+    delete card.__galleryItem;
+    delete card.dataset.galleryIndex;
+  }
+}
+
+function buildLocalGridCard(entry, grid) {
+  if (entry.kind === 'subfolder') return buildSubfolderCard(entry.folder);
+  const original = entry.item;
+  const fresh = original && config.library && config.library[original.id]
+    ? config.library[original.id] : original;
+  const assigned = grid.__gridContext && grid.__gridContext.assigned;
+  const card = fresh
+    ? buildLibCard(fresh, !!(assigned && assigned.has(fresh.id)))
+    : buildEphemeralImageCard(entry.path, entry.aspect);
+  if (fresh && knownLibAspect(fresh, entry.path) <= 0 && Number(entry.aspect) > 0) {
+    card.dataset.aspectKnown = 'true';
+    setLibCardAspect(card, entry.aspect);
+  }
+  if (fresh && LIB.selection.has(fresh.id)) card.classList.add('selected');
+  return card;
+}
+
+function bindLocalGridCard(card, entry, grid) {
+  bindUnifiedGalleryCard(card, entry);
+  const original = entry && entry.item;
+  const fresh = original && config.library && config.library[original.id]
+    ? config.library[original.id] : original;
+  if (!fresh || !fresh.id) return;
+  card.dataset.id = fresh.id;
+  const assigned = grid.__gridContext && grid.__gridContext.assigned;
+  setCardAssigned(card, !!(assigned && assigned.has(fresh.id)));
+  setCardFavorite(card, !!fresh.favorite);
+  card.classList.toggle('selected', LIB.selection.has(fresh.id));
+}
+
+function mountUnifiedGrid(grid, entries, adapter, opts = {}) {
+  if (!grid || !window.UnifiedGrid) return null;
+  const prepared = withUnifiedGalleryIndexes(entries);
+  setGridGallerySource(grid, prepared.map((entry) => entry.galleryItem).filter(Boolean));
+
+  let virtual = grid.__virtual;
+  if (virtual && (typeof virtual.destroy !== 'function' || virtual.adapterKind !== adapter.kind)) {
+    destroyUnifiedGrid(grid);
+    virtual = null;
+  }
+  // destroyUnifiedGrid deliberately drops controller-owned context. Reattach the
+  // new adapter context afterwards so a future adapter switch on one DOM grid is safe.
+  grid.__gridContext = { assigned: opts.assigned || new Set() };
+  if (!virtual) {
+    virtual = window.UnifiedGrid.create({
+      grid,
+      scrollRoot: libScrollRoot(),
+      entries: prepared,
+      overscanPx: LIB_VIRTUAL_OVERSCAN_PX,
+      getKey: (entry) => entry.key,
+      getVersion: (entry, index) => (typeof adapter.getVersion === 'function'
+        ? adapter.getVersion(entry, index) : entry.kind),
+      getAspect: (entry) => entry.aspect,
+      buildCard: (entry, index) => adapter.buildCard(entry, index, grid),
+      bindCard: (card, entry, index) => adapter.bindCard(card, entry, index, grid),
+      dropCard: (card) => { if (thumbIO) thumbIO.unobserve(card); },
+      nextPriority: () => ++thumbRequestPriority,
+      captureAnchor: captureLibraryScrollAnchor,
+      keepMaterialized: () => libraryResizeActive,
+      onScrollTop: (top) => { pageScroll.library = top; },
+      onScroll: () => {
+        lastLibraryScrollAt = Date.now();
+        rememberLibraryScrollAnchor(grid);
+      },
+      onUserInput: cancelLibraryResizeAnchorForUserInput,
+      onWidthChange: () => {
+        if (libraryResizeActive) touchLibraryResizeAnchor();
+        layoutLibGrid(grid);
+        if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
+        else rememberLibraryScrollAnchor(grid);
+      },
+      onWindow: (metrics) => {
+        const end = diagSpan('renderer', 'lazy-chunk');
+        end({ count: metrics.added, active: metrics.active, dropped: metrics.dropped,
+          inserted: metrics.inserted, moved: metrics.moved, removed: metrics.removed });
+      },
     });
+    virtual.adapterKind = adapter.kind;
+  } else {
+    virtual.replace(prepared, { preserveAnchor: opts.preserveAnchor !== false });
   }
+  virtual.assigned = grid.__gridContext.assigned;
+  const kick = () => virtual.updateWindow(true);
+  libLazyKick = kick;
+  rememberLibraryScrollAnchor(grid);
+  return virtual;
+}
+
+const LOCAL_GRID_ADAPTER = {
+  kind: 'local',
+  getVersion: (entry) => localGridVersion(entry),
+  buildCard: (entry, index, grid) => buildLocalGridCard(entry, grid),
+  bindCard: (card, entry, index, grid) => bindLocalGridCard(card, entry, grid),
+};
+
+function renderEntriesLazily(grid, entries, assigned, tok) {
+  const sentinel = $('#libSentinel');
+  if (sentinel) sentinel.hidden = true;
+  const descriptors = (entries || []).map(localGridDescriptor);
+  return mountUnifiedGrid(grid, descriptors, LOCAL_GRID_ADAPTER, { assigned, preserveAnchor: true });
 }
 
 // Faint Explorer-style status line: shows the hovered item's name at the bottom.
@@ -2259,7 +2083,7 @@ function orderedSelectableIds() {
   const grid = $('#libGrid');
   const virtual = grid && grid.__virtual;
   if (virtual) {
-    return virtual.entries.filter((en) => en.item && en.item.id).map((en) => en.item.id);
+    return virtual.entries.map((entry) => entry && entry.selectableId).filter(Boolean);
   }
   return Array.from(document.querySelectorAll('.lib-card[data-id]')).map((card) => card.dataset.id);
 }
@@ -2288,25 +2112,6 @@ function setGridGallerySource(grid, items) {
       grid.__galleryIndexByKey.set(item.key, index);
     }
   });
-}
-
-function addGridGalleryItem(grid, item) {
-  if (!grid || !item) return -1;
-  if (!Array.isArray(grid.__galleryItems)) setGridGallerySource(grid, []);
-  const index = grid.__galleryItems.length;
-  grid.__galleryItems.push(item);
-  if (!grid.__galleryIndexByKey) grid.__galleryIndexByKey = new Map();
-  if (item.key && !grid.__galleryIndexByKey.has(item.key)) {
-    grid.__galleryIndexByKey.set(item.key, index);
-  }
-  return index;
-}
-
-function appendGalleryCard(grid, card, item) {
-  if (!grid || !card) return;
-  const galleryItem = item || card.__galleryItem;
-  if (galleryItem) bindCardGalleryItem(card, galleryItem, addGridGalleryItem(grid, galleryItem));
-  grid.appendChild(card);
 }
 
 function bindCardGalleryItem(card, item, index) {
@@ -2495,7 +2300,10 @@ function refreshAssignedHighlights() {
   // Virtual grid: cards rebuilt on a later scroll-back must use the NEW assigned set,
   // not the one captured at render time.
   const grid = $('#libGrid');
-  if (grid && grid.__virtual) grid.__virtual.assigned = assigned;
+  if (grid) {
+    grid.__gridContext = { ...(grid.__gridContext || {}), assigned };
+    if (grid.__virtual) grid.__virtual.assigned = assigned;
+  }
   // The grid now matches the new assigned state, so record the key — a later tab
   // switch back to Library reuses this DOM (and its scroll) instead of rebuilding.
   lastLibRenderKey = libRenderKey();
@@ -2553,13 +2361,20 @@ function syncVirtualCardReplacement(oldCard, newCard, upgradedItem = null) {
   const grid = $('#libGrid');
   const virtual = grid && grid.__virtual;
   if (!virtual) return;
-  for (const [c, el] of virtual.cards) {
-    if (el === oldCard) { virtual.cards.set(c, newCard); break; }
+  const gridIndex = Number(oldCard && oldCard.dataset ? oldCard.dataset.virtualIndex : NaN);
+  if (Number.isInteger(gridIndex) && virtual.cards.get(gridIndex) === oldCard) {
+    virtual.cards.set(gridIndex, newCard);
+    newCard.dataset.virtualIndex = String(gridIndex);
+    if (oldCard.dataset.gridKey) newCard.dataset.gridKey = oldCard.dataset.gridKey;
+    if (oldCard.dataset.thumbPriority) newCard.dataset.thumbPriority = oldCard.dataset.thumbPriority;
   }
-  const gi = Number(oldCard && oldCard.dataset ? oldCard.dataset.galleryIndex : NaN);
-  if (upgradedItem && Number.isFinite(gi) && virtual.entries[gi]) {
-    virtual.entries[gi].item = upgradedItem;
-    virtual.entries[gi].id = upgradedItem.id;
+  if (upgradedItem && Number.isInteger(gridIndex) && virtual.entries[gridIndex]) {
+    const entry = virtual.entries[gridIndex];
+    entry.item = upgradedItem;
+    entry.id = upgradedItem.id;
+    entry.kind = 'pool-image';
+    entry.selectableId = upgradedItem.id;
+    if (Array.isArray(virtual.versions)) virtual.versions[gridIndex] = 'pool-image';
   }
 }
 
@@ -2996,6 +2811,7 @@ function initLibrary() {
     try {
       const res = await window.api.libraryRefresh();
       if (res && res.config) config = res.config;
+      invalidateFolderCards();
       renderLibrary();
       renderPreviews();
       renderHome();
@@ -3446,14 +3262,18 @@ async function doCloudSignin() {
   CLOUDAUTH.signingIn = false;
   if (res && res.ok) {
     CLOUDAUTH.state = res.state; CLOUDAUTH.fetched = true;
-    renderCloudAccount();
-    applyFavToggleUI();
-    await ensureCloudFavorites(true); // heart states before the feed renders
-    ONLINE.loaded = false;
-    doOnlineSearch(true); // session may unlock the explicit tier / personalize
+    if (LIB.filter === 'online') {
+      renderCloudAccount();
+      applyFavToggleUI();
+      await ensureCloudFavorites(true); // heart states before the feed renders
+      if (LIB.filter === 'online') {
+        ONLINE.loaded = false;
+        doOnlineSearch(true); // session may unlock the explicit tier / personalize
+      }
+    }
     toast(t('online.signedIn'));
   } else {
-    renderCloudAccount();
+    if (LIB.filter === 'online') renderCloudAccount();
     if (!res || res.error !== 'cancelled') toast(t('online.signinFailed'));
   }
 }
@@ -3465,10 +3285,12 @@ async function doCloudSignout() {
   CLOUDAUTH.fetched = true;
   CLOUDFAV.ids = new Set(); CLOUDFAV.fetched = false;
   ONLINE.view = 'search';
-  renderCloudAccount();
-  applyFavToggleUI();
-  ONLINE.loaded = false;
-  doOnlineSearch(true);
+  if (LIB.filter === 'online') {
+    renderCloudAccount();
+    applyFavToggleUI();
+    ONLINE.loaded = false;
+    doOnlineSearch(true);
+  }
   toast(t('online.signedOut'));
 }
 
@@ -3520,16 +3342,84 @@ async function ensureCloudFavorites(force) {
   CLOUDFAV.fetched = true;
 }
 
+function onlineGridDescriptor(kind, item) {
+  if (kind === 'cloud') {
+    return {
+      key: `cloud:${item.id}`,
+      kind,
+      item,
+      aspect: item.width && item.height ? item.width / item.height : 1.6,
+      galleryItem: galleryItemFromCloud(item),
+      selectableId: null,
+    };
+  }
+  const identity = item.id || item.page || item.full || item.thumb;
+  return {
+    key: `internet:${item.provider || 'source'}:${identity}`,
+    kind: 'internet',
+    item,
+    aspect: item.width && item.height ? item.width / item.height : 1.6,
+    galleryItem: galleryItemFromInternet(item),
+    selectableId: null,
+  };
+}
+
+function buildOnlineGridCard(entry) {
+  return entry.kind === 'cloud' ? buildCloudCard(entry.item) : buildInternetCard(entry.item);
+}
+
+const ONLINE_GRID_ADAPTER = {
+  kind: 'online',
+  buildCard: (entry) => buildOnlineGridCard(entry),
+  bindCard: (card, entry) => bindUnifiedGalleryCard(card, entry),
+};
+
+function renderOnlineEntries(opts = {}) {
+  const grid = $('#whGrid');
+  if (!grid) return null;
+  // A fresh feed has a different numeric index space. Drop any resize settle
+  // callback/anchor from the previous feed before its controller is replaced.
+  if (opts.fresh) resetLibObservers(grid);
+  return mountUnifiedGrid(grid, ONLINE.entries, ONLINE_GRID_ADAPTER, { preserveAnchor: !opts.fresh });
+}
+
+function replaceOnlineEntries(entries, opts = {}) {
+  ONLINE.entries = Array.isArray(entries) ? entries : [];
+  return renderOnlineEntries(opts);
+}
+
+function appendOnlineEntries(entries) {
+  const known = new Set(ONLINE.entries.map((entry) => entry.key));
+  const extra = [];
+  for (const entry of (entries || [])) {
+    if (!entry || !entry.key || known.has(entry.key)) continue;
+    known.add(entry.key);
+    extra.push(entry);
+  }
+  if (extra.length) ONLINE.entries = ONLINE.entries.concat(extra);
+  renderOnlineEntries();
+  return extra.length;
+}
+
+function removeOnlineEntry(key) {
+  const next = ONLINE.entries.filter((entry) => entry.key !== key);
+  if (next.length === ONLINE.entries.length) return false;
+  ONLINE.entries = next;
+  renderOnlineEntries();
+  return true;
+}
+
 // The account's Lumina favorites, shown in the same shared grid (a distinct mode).
 async function loadFavoritesFeed() {
-  if (ONLINE.loading) return;
+  const generation = ++ONLINE.generation;
   ONLINE.loading = true;
-  const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
+  const note = $('#whNote'); const more = $('#whMore');
   if (more) more.hidden = true;
-  if (grid) { grid.innerHTML = ''; setGridGallerySource(grid, []); }
+  replaceOnlineEntries([], { fresh: true });
   if (note) note.textContent = t('online.loading');
   let res;
   try { res = await window.api.cloudFavorites(); } catch { res = { error: 'network' }; }
+  if (LIB.filter !== 'online' || generation !== ONLINE.generation || ONLINE.view !== 'favorites') return;
   ONLINE.loading = false;
   if (!res || res.error) {
     if (note) note.textContent = res && res.error === 'network' ? t('online.offline') : t('online.error', { e: (res && res.error) || '?' });
@@ -3537,17 +3427,15 @@ async function loadFavoritesFeed() {
     return;
   }
   CLOUDFAV.ids = new Set((res.items || []).map((it) => it.id)); CLOUDFAV.fetched = true;
-  (res.items || []).forEach((it) => { if (grid) appendGalleryCard(grid, buildCloudCard(it)); });
-  if (grid) scheduleJustifiedLayout(grid);
-  const n = grid ? grid.children.length : 0;
+  replaceOnlineEntries((res.items || []).map((item) => onlineGridDescriptor('cloud', item)));
+  const n = ONLINE.entries.length;
   setLibViewHeader(n);
   if (note) note.textContent = n ? '' : t('online.favEmpty');
 }
 
 // Append a page of Lumina catalog results into the shared grid (#whGrid). The Lumina
 // source is searched by the same tag and content filter as the Internet source.
-async function loadLuminaResults(reset) {
-  const grid = $('#whGrid');
+async function loadLuminaResults(reset, generation) {
   let res;
   try {
     res = await window.api.cloudCatalog({
@@ -3556,9 +3444,10 @@ async function loadLuminaResults(reset) {
       cursor: reset ? null : LUMINA.cursor,
     });
   } catch { res = { error: 'network' }; }
-  if (!res || res.error) { LUMINA.cursor = null; return; }
+  if (LIB.filter !== 'online' || generation !== ONLINE.generation || ONLINE.view !== 'search') return [];
+  if (!res || res.error) { LUMINA.cursor = null; return []; }
   LUMINA.cursor = res.nextCursor || null;
-  (res.items || []).forEach((it) => { if (grid) appendGalleryCard(grid, buildCloudCard(it)); });
+  return (res.items || []).map((item) => onlineGridDescriptor('cloud', item));
 }
 
 // Already imported? Cloud items carry a stable "lumina:<id>" source marker.
@@ -3614,10 +3503,9 @@ function buildCloudCard(item) {
       fav.disabled = false;
       if (res && res.ok) {
         if (on) CLOUDFAV.ids.add(item.id); else CLOUDFAV.ids.delete(item.id);
-        if (!on && ONLINE.view === 'favorites') {
-          card.remove();
-          const grid = $('#whGrid');
-          const left = grid ? grid.children.length : 0;
+        if (!on && LIB.filter === 'online' && ONLINE.view === 'favorites') {
+          removeOnlineEntry(`cloud:${item.id}`);
+          const left = ONLINE.entries.length;
           const note = $('#whNote');
           if (!left && note) note.textContent = t('online.favEmpty');
           setLibViewHeader(left);
@@ -3635,25 +3523,35 @@ function buildCloudCard(item) {
 }
 
 async function renderOnline() {
+  const renderEpoch = ++ONLINE.renderEpoch;
   await ensureCloudCapability();
+  if (LIB.filter !== 'online' || renderEpoch !== ONLINE.renderEpoch) return;
   const sources = onlineSources();
+  const sourceSignature = `${sources.lumina ? 1 : 0}${sources.internet ? 1 : 0}`;
+  const isCurrent = () => {
+    const current = onlineSources();
+    return LIB.filter === 'online'
+      && renderEpoch === ONLINE.renderEpoch
+      && `${current.lumina ? 1 : 0}${current.internet ? 1 : 0}` === sourceSignature;
+  };
   applyOnlineSourceUI(sources);
-  await refreshOnlineAccount(sources);
+  await refreshOnlineAccount(sources, isCurrent);
+  if (!isCurrent()) return;
   if (sources.internet && !INTERNET.statusFetched) {
     try { const st = await window.api.internetStatus(); INTERNET.nsfwAvailable = !!st.nsfwAvailable; }
     catch { INTERNET.nsfwAvailable = false; }
+    if (!isCurrent()) return;
     INTERNET.statusFetched = true;
   }
   updatePurityToggle();
   const sortEl = $('#whSort'); if (sortEl && sortEl.value !== INTERNET.sort) sortEl.value = INTERNET.sort;
   if (ONLINE.view === 'favorites') { loadFavoritesFeed(); return; }
   if (!ONLINE.loaded) { doOnlineSearch(true); return; }
-  const grid = $('#whGrid');
-  setLibViewHeader(grid ? grid.children.length : 0);
+  setLibViewHeader(ONLINE.entries.length);
 }
 
 // Account chip + favorites toggle reflect the session (only when Lumina is reachable).
-async function refreshOnlineAccount(sources) {
+async function refreshOnlineAccount(sources, isCurrent = () => true) {
   const acc = $('#libCloudAccount');
   if (!(sources.lumina && cloudAvailable())) {
     if (acc) acc.hidden = true;
@@ -3661,9 +3559,13 @@ async function refreshOnlineAccount(sources) {
     return;
   }
   await ensureCloudSession();
+  if (!isCurrent()) return;
   renderCloudAccount();
   applyFavToggleUI();
-  if (cloudSignedIn()) await ensureCloudFavorites();
+  if (cloudSignedIn()) {
+    await ensureCloudFavorites();
+    if (!isCurrent()) return;
+  }
 }
 
 // Toggle a content source on/off (keeps at least one on), persist, re-search.
@@ -3674,56 +3576,84 @@ function toggleOnlineSource(key) {
   if (!next.lumina && !next.internet) return; // never leave the tab empty
   config.onlineSources = next;
   window.api.setConfig({ onlineSources: next });
+  ONLINE.generation += 1; // cancel pages still arriving from the previous source mix
+  ONLINE.loading = false;
   ONLINE.loaded = false;
   renderOnline();
 }
 
 // Unified search: one query + content filter drives every active source into #whGrid.
 async function doOnlineSearch(reset) {
+  if (LIB.filter !== 'online') return;
   hideOnlineTagSuggest();
-  if (ONLINE.loading) return;
+  const generation = ++ONLINE.generation;
   ONLINE.view = 'search';
   applyFavToggleUI();
   const sources = onlineSources();
   const qEl = $('#whQuery'); INTERNET.q = (qEl && qEl.value || '').trim();
-  const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
+  const note = $('#whNote'); const more = $('#whMore');
   if (reset) {
     INTERNET.page = 1;
     LUMINA.cursor = null;
     ONLINE.loaded = true;
-    if (grid) { grid.innerHTML = ''; setGridGallerySource(grid, []); }
+    replaceOnlineEntries([], { fresh: true });
   }
   ONLINE.loading = true; if (more) more.disabled = true;
   if (note) note.textContent = t('online.loading');
 
-  const tasks = [];
-  if (sources.internet) tasks.push(loadInternetResults());
-  if (sources.lumina && cloudAvailable()) tasks.push(loadLuminaResults(reset));
-  await Promise.all(tasks);
+  const internetTask = sources.internet ? loadInternetResults(generation) : Promise.resolve([]);
+  const luminaTask = sources.lumina && cloudAvailable()
+    ? loadLuminaResults(reset, generation) : Promise.resolve([]);
+  // Publish each provider as soon as it answers. A slow cloud or Internet source
+  // must not keep the other source's already-ready thumbnails behind a blank grid.
+  await Promise.all([
+    publishOnlineBatch(internetTask, generation),
+    publishOnlineBatch(luminaTask, generation),
+  ]);
+  if (!onlineSearchIsCurrent(generation)) return;
 
   ONLINE.loading = false; if (more) more.disabled = false;
-  if (grid) scheduleJustifiedLayout(grid);
   finalizeOnlineFeed();
 }
 
 // Append one Internet page (Wallhaven + Gelbooru/Danbooru, merged in main) into #whGrid.
-async function loadInternetResults() {
-  const grid = $('#whGrid');
+async function loadInternetResults(generation) {
   let res;
   try { res = await window.api.internetSearch({ q: INTERNET.q, sort: INTERNET.sort, purity: INTERNET.purity, page: INTERNET.page }); }
   catch { res = { error: 'network' }; }
+  if (!onlineSearchIsCurrent(generation)) return [];
   INTERNET.searched = true;
-  if (typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
-  if (res.error) { INTERNET.lastPage = INTERNET.page; return; }
+  if (res && typeof res.nsfwAvailable !== 'undefined') { INTERNET.nsfwAvailable = !!res.nsfwAvailable; updatePurityToggle(); }
+  if (!res || res.error) { INTERNET.lastPage = INTERNET.page; return []; }
   INTERNET.lastPage = (res.meta && res.meta.lastPage) || INTERNET.page;
-  (res.items || []).forEach((it) => { if (grid) appendGalleryCard(grid, buildInternetCard(it)); });
+  return (res.items || []).map((item) => onlineGridDescriptor('internet', item));
+}
+
+function onlineSearchIsCurrent(generation) {
+  return LIB.filter === 'online'
+    && generation === ONLINE.generation
+    && ONLINE.view === 'search';
+}
+
+async function publishOnlineBatch(task, generation) {
+  let entries;
+  try { entries = await task; } catch { entries = []; }
+  if (!onlineSearchIsCurrent(generation)) return [];
+  const batch = Array.isArray(entries) ? entries : [];
+  if (batch.length) {
+    appendOnlineEntries(batch);
+    setLibViewHeader(ONLINE.entries.length);
+    const note = $('#whNote');
+    if (note) note.textContent = '';
+  }
+  return batch;
 }
 
 // Note + "more" button + header for the current shared grid.
 function finalizeOnlineFeed() {
   const sources = onlineSources();
-  const grid = $('#whGrid'); const note = $('#whNote'); const more = $('#whMore');
-  const n = grid ? grid.children.length : 0;
+  const note = $('#whNote'); const more = $('#whMore');
+  const n = ONLINE.entries.length;
   setLibViewHeader(n);
   if (note) note.textContent = n ? '' : t('online.noResults');
   const hasMore = (sources.internet && INTERNET.page < INTERNET.lastPage)
@@ -3733,16 +3663,26 @@ function finalizeOnlineFeed() {
 
 // "Показать ещё" advances every active source that still has a next page.
 async function loadMoreOnline() {
-  if (ONLINE.loading || ONLINE.view === 'favorites') return;
+  if (LIB.filter !== 'online' || ONLINE.loading || ONLINE.view === 'favorites') return;
   const sources = onlineSources();
   const more = $('#whMore'); if (more) more.disabled = true;
   ONLINE.loading = true;
-  const tasks = [];
-  if (sources.internet && INTERNET.page < INTERNET.lastPage) { INTERNET.page += 1; tasks.push(loadInternetResults()); }
-  if (sources.lumina && cloudAvailable() && LUMINA.cursor) tasks.push(loadLuminaResults(false));
-  await Promise.all(tasks);
+  const generation = ONLINE.generation;
+  let internetTask = Promise.resolve([]);
+  let luminaTask = Promise.resolve([]);
+  if (sources.internet && INTERNET.page < INTERNET.lastPage) {
+    INTERNET.page += 1;
+    internetTask = loadInternetResults(generation);
+  }
+  if (sources.lumina && cloudAvailable() && LUMINA.cursor) {
+    luminaTask = loadLuminaResults(false, generation);
+  }
+  await Promise.all([
+    publishOnlineBatch(internetTask, generation),
+    publishOnlineBatch(luminaTask, generation),
+  ]);
+  if (!onlineSearchIsCurrent(generation)) return;
   ONLINE.loading = false; if (more) more.disabled = false;
-  const grid = $('#whGrid'); if (grid) scheduleJustifiedLayout(grid);
   finalizeOnlineFeed();
 }
 
@@ -4794,6 +4734,7 @@ async function init() {
     // Home and Library consume their own pending state. Refreshing one view must
     // not make the other stale view look current after a minimize/restore cycle.
     deferredLiveRefresh.markAll();
+    invalidateFolderCards();
     if (document.hidden) return;
     if (!$('#viewHome').hidden) renderHomeRecent();
     if (!$('#viewLibrary').hidden && LIB.filter !== 'online') renderLibrary();
@@ -4818,13 +4759,24 @@ async function init() {
   // the account chip + favorites toggle if the Online tab is open.
   window.api.onCloudSession((s) => {
     CLOUDAUTH.state = s; CLOUDAUTH.fetched = true;
-    if (LIB.filter === 'online' && onlineSources().lumina) { renderCloudAccount(); applyFavToggleUI(); }
+    if (LIB.filter === 'online' && onlineSources().lumina) {
+      const wasFavorites = ONLINE.view === 'favorites';
+      renderCloudAccount();
+      applyFavToggleUI();
+      // Session expiry hides account favorites. If their request was still in
+      // flight, immediately replace that now-invalid feed with ordinary search.
+      if (wasFavorites && ONLINE.view !== 'favorites') {
+        ONLINE.loading = false;
+        ONLINE.loaded = false;
+        doOnlineSearch(true);
+      }
+    }
   });
 
   // keep thumbnails fitted when the window (and thus cards) resize
   let resizeT = null;
   window.addEventListener('resize', () => {
-    const grid = $('#libGrid');
+    const grid = activeLibraryGrid();
     beginLibraryResizeAnchor(grid);
     const liveVirtual = grid && grid.__virtual;
     if (liveVirtual && grid.clientWidth < liveVirtual.layoutWidth - 0.5) {
@@ -4840,7 +4792,6 @@ async function init() {
       layoutMonitors();
       const virtual = grid && grid.__virtual;
       if (!virtual || Math.abs(grid.clientWidth - virtual.layoutWidth) >= 0.5) layoutLibGrid(grid);
-      layoutLibGrid($('#whGrid'));
       if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
       else if (!libraryViewAnchor) libraryViewAnchor = captureLibraryScrollAnchor(grid);
       if (libLazyKick) libLazyKick();

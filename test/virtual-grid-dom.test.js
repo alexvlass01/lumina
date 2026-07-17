@@ -83,14 +83,17 @@ ok('a genuine order change produces the requested order', names(parent) === 'top
 
 const rendererHtml = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
 const modulePos = rendererHtml.indexOf('<script src="virtual-grid-dom.js"></script>');
+const unifiedPos = rendererHtml.indexOf('<script src="unified-grid.js"></script>');
 const rendererPos = rendererHtml.indexOf('<script src="renderer.js"></script>');
 ok('virtual-grid-dom runtime loads before renderer.js', modulePos >= 0 && rendererPos > modulePos);
+ok('unified grid runtime loads after its DOM helper and before renderer.js',
+  unifiedPos > modulePos && rendererPos > unifiedPos);
 const rendererCss = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'styles.css'), 'utf8');
-ok('paint override is scoped to the virtualized Library grid',
-  /#libGrid\.is-virtualized\s+\.lib-card\s*\{\s*content-visibility:\s*visible/.test(rendererCss));
-const rendererJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-ok('virtualized paint scope is added and cleared with the grid lifecycle',
-  rendererJs.includes("grid.classList.add('is-virtualized')")
-  && rendererJs.includes("grid.classList.remove('is-virtualized')"));
+ok('paint override applies to every virtualized Library grid',
+  /\.lib-grid\.is-virtualized\s+\.lib-card\s*\{\s*content-visibility:\s*visible/.test(rendererCss));
+const unifiedJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'unified-grid.js'), 'utf8');
+ok('virtualized paint scope is added and cleared by the shared lifecycle',
+  unifiedJs.includes("grid.classList.add('is-virtualized')")
+  && unifiedJs.includes("grid.classList.remove('is-virtualized')"));
 
 console.log('\nAll ' + passed + ' virtual-grid DOM tests passed.');

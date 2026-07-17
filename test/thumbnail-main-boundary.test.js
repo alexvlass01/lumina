@@ -34,9 +34,9 @@ assert.ok(main.includes('aspect: (m && m.aspect) || 0'),
   'folder navigation exposes persisted aspect metadata to renderer');
 
 const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-assert.ok(renderer.includes('knownLibAspect(en.item, en.path, en.aspect)'),
+assert.ok(renderer.includes('knownLibAspect(item, path, entry && entry.aspect)'),
   'virtual layout uses persisted folder aspects before creating cards');
-assert.ok(renderer.includes('buildEphemeralImageCard(en.path, en.aspect)'),
+assert.ok(renderer.includes('buildEphemeralImageCard(entry.path, entry.aspect)'),
   'ephemeral cards start with their persisted aspect metadata');
 assert.ok(renderer.includes('Math.abs(current - window.JustifiedLayout.normalizeAspect(aspect, 0.65, 3))'),
   'a replaced file can correct stale persisted geometry from its real thumbnail');
