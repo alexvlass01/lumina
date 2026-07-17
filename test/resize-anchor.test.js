@@ -45,4 +45,33 @@ const modulePos = rendererHtml.indexOf('<script src="resize-anchor.js"></script>
 const rendererPos = rendererHtml.indexOf('<script src="renderer.js"></script>');
 ok('resize-anchor runtime loads before renderer.js', modulePos >= 0 && rendererPos > modulePos);
 
+// Runtime ordering guards for the asymmetric shrink path. A debounced shrink
+// commit lets Chromium paint the stale flex-wrap first; assigning scrollTop before
+// the new virtual pads exist lets the browser clamp a deep logical anchor.
+const rendererJs = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
+const windowResize = rendererJs.indexOf("window.addEventListener('resize', () => {");
+const shrinkBranch = rendererJs.indexOf('grid.clientWidth < liveVirtual.layoutWidth - 0.5', windowResize);
+const shrinkLayout = rendererJs.indexOf('layoutLibGrid(grid);', shrinkBranch);
+const resizeDebounce = rendererJs.indexOf('resizeT = setTimeout', shrinkBranch);
+ok('window shrink relayout commits synchronously before the resize debounce',
+  windowResize >= 0 && shrinkBranch > windowResize && shrinkLayout > shrinkBranch
+  && resizeDebounce > shrinkLayout);
+ok('a stale deferred width frame rechecks whether synchronous shrink already won',
+  rendererJs.includes('if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5) return;'));
+ok('only shrink passes the logical anchor into the one-pass virtual relayout',
+  rendererJs.includes('anchor: shrinking ? scrollAnchor : null'));
+
+const anchorPlan = rendererJs.indexOf('const anchor = opts.anchor;');
+const extentCommit = rendererJs.indexOf('applyWindow(range.first, range.last);', anchorPlan);
+const scrollCommit = rendererJs.indexOf('anchor.root.scrollTop = plan.scrollTop;', anchorPlan);
+ok('deep shrink establishes the new virtual DOM extent before assigning scrollTop',
+  anchorPlan >= 0 && extentCommit > anchorPlan && scrollCommit > extentCommit);
+const actualClampCheck = rendererJs.indexOf(
+  'Math.abs(anchor.root.scrollTop - plan.scrollTop) >= 0.5',
+  scrollCommit
+);
+const clampRefresh = rendererJs.indexOf('updateWindow(true);', actualClampCheck);
+ok('a bottom-clamped anchor is reconciled synchronously against the actual viewport',
+  actualClampCheck > scrollCommit && clampRefresh > actualClampCheck);
+
 console.log('\nAll ' + passed + ' resize-anchor tests passed.');

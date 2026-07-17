@@ -140,6 +140,23 @@
     return Math.max(0, grid + rows[rowIndex].top - top);
   }
 
+  // Project the viewport directly from a logical card anchor before touching the
+  // DOM. During a deep shrink the OLD pixel scrollTop points at a completely
+  // different card in the NEW, taller geometry; materializing that false viewport
+  // first can bridge thousands of cards to the real anchor. This plan lets the
+  // renderer build the bounded anchored window first, which also establishes the
+  // new spacer extent before assigning the (possibly much larger) scrollTop.
+  function windowForCardAnchor(rows, cardIndex, gridTop, anchorTop, viewportHeight, overscan = 0) {
+    const grid = Number(gridTop);
+    const target = scrollTopForCardAnchor(rows, cardIndex, grid, anchorTop);
+    if (!Number.isFinite(target) || !Number.isFinite(grid)) return null;
+    const height = Math.max(0, Number(viewportHeight) || 0);
+    const pad = Math.max(0, Number(overscan) || 0);
+    const relativeTop = target - grid;
+    const range = rowRangeForViewport(rows, relativeTop - pad, relativeTop + height + pad);
+    return { scrollTop: target, first: range.first, last: range.last };
+  }
+
   return {
     responsiveTargetHeight,
     rowRangeForViewport,
@@ -148,5 +165,6 @@
     expandRowRangeForCards,
     rowIndexForCard,
     scrollTopForCardAnchor,
+    windowForCardAnchor,
   };
 });

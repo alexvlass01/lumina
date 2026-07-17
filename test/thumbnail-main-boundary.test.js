@@ -28,7 +28,7 @@ assert.ok(main.includes('if (configChanged) configMod.save(config, CONFIG_PATH);
 assert.ok(block.includes('const key = `${p}|${W}`;'), 'dedup key matches the helper scalar size');
 assert.ok(!main.includes('createThumbnailFromPath'), 'main no longer runs Windows thumbnail extraction');
 assert.ok(main.includes('void thumbnailHost.dispose();'), 'app shutdown disposes the helper');
-assert.ok(main.includes('flushPendingLiveFolderAspects();\n  flushLiveFolderState();'),
+assert.ok(/flushPendingLiveFolderAspects\(\);\r?\n  flushLiveFolderState\(\);/.test(main),
   'shutdown flushes learned aspects before saving folder state');
 assert.ok(main.includes('aspect: (m && m.aspect) || 0'),
   'folder navigation exposes persisted aspect metadata to renderer');

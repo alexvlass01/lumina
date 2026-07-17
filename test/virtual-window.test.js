@@ -128,6 +128,305 @@ const roundTripRow = rows[V.rowIndexForCard(rows, anchorCard)];
 ok('the same logical card survives a width round trip',
   near(gridTop + roundTripRow.top - roundTripScrollTop, desiredViewportTop));
 
+// --- deep shrink must plan from the logical anchor, never the stale pixel viewport ---
+// At a deep scroll position, interpreting the OLD scrollTop in the NEW, much taller
+// shrink geometry points at unrelated cards. Joining that false viewport to the
+// retained anchor window used to materialize thousands of cards for a single frame.
+const deepAspects = new Array(5000).fill(1.6);
+const deepAnchor = 4000;
+const deepGridTop = 260;
+const deepAnchorTop = 34;
+const deepViewportHeight = 900;
+const deepOverscan = 1600;
+const deepWide = J.layoutRows(deepAspects, 1122, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(1122),
+});
+const deepWidePlan = V.windowForCardAnchor(
+  deepWide.rows,
+  deepAnchor,
+  deepGridTop,
+  deepAnchorTop,
+  deepViewportHeight,
+  deepOverscan
+);
+const deepWideCards = V.cardRangeForRows(deepWide.rows, deepWidePlan.first, deepWidePlan.last);
+const deepNarrow = J.layoutRows(deepAspects, 558, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(558),
+});
+
+const staleViewport = V.rowRangeForViewport(
+  deepNarrow.rows,
+  deepWidePlan.scrollTop - deepGridTop - deepOverscan,
+  deepWidePlan.scrollTop - deepGridTop + deepViewportHeight + deepOverscan
+);
+const staleUnion = V.expandRowRangeForCards(
+  deepNarrow.rows,
+  staleViewport,
+  deepWideCards.first,
+  deepWideCards.last
+);
+const staleCards = V.cardRangeForRows(deepNarrow.rows, staleUnion.first, staleUnion.last);
+ok('the old pixel-first shrink order reproduces a multi-thousand-card false bridge',
+  staleCards.last - staleCards.first + 1 > 2000);
+
+const deepNarrowPlan = V.windowForCardAnchor(
+  deepNarrow.rows,
+  deepAnchor,
+  deepGridTop,
+  deepAnchorTop,
+  deepViewportHeight,
+  deepOverscan
+);
+const anchoredUnion = V.expandRowRangeForCards(
+  deepNarrow.rows,
+  deepNarrowPlan,
+  deepWideCards.first,
+  deepWideCards.last
+);
+const anchoredCards = V.cardRangeForRows(deepNarrow.rows, anchoredUnion.first, anchoredUnion.last);
+const deepAnchorRow = deepNarrow.rows[V.rowIndexForCard(deepNarrow.rows, deepAnchor)];
+ok('anchor-first shrink keeps the active DOM window bounded',
+  anchoredCards.last - anchoredCards.first + 1 < 200
+  && anchoredCards.first <= deepAnchor && anchoredCards.last >= deepAnchor);
+ok('anchor-first shrink preserves the requested viewport position',
+  near(deepGridTop + deepAnchorRow.top - deepNarrowPlan.scrollTop, deepAnchorTop));
+ok('invalid deep anchor plans are rejected',
+  V.windowForCardAnchor(deepNarrow.rows, 9999, deepGridTop, deepAnchorTop,
+    deepViewportHeight, deepOverscan) === null);
+
+// The target scroll position can be far below the OLD DOM extent. The renderer
+// therefore has to apply the new pads/cards first, then assign scrollTop.
+const oldScrollMax = deepGridTop + deepWide.totalHeight - deepViewportHeight;
+const newScrollMax = deepGridTop + deepNarrow.totalHeight - deepViewportHeight;
+ok('old DOM extent would clamp the deep shrink anchor by more than 100k pixels',
+  deepNarrowPlan.scrollTop - Math.min(deepNarrowPlan.scrollTop, oldScrollMax) > 100000);
+ok('new DOM extent accepts the projected deep anchor', deepNarrowPlan.scrollTop <= newScrollMax);
+
+// Slow one-pixel shrink is the owner's failure mode. Retaining the current cards
+// must only grow a small boundary around the same logical anchor, never a bridge.
+let retainedDeepFirst = deepWideCards.first;
+let retainedDeepLast = deepWideCards.last;
+let peakDeepCards = retainedDeepLast - retainedDeepFirst + 1;
+let maxDeepAdditions = 0;
+for (let width = 1121; width >= 558; width--) {
+  const resized = J.layoutRows(deepAspects, width, {
+    gap: 10,
+    targetHeight: V.responsiveTargetHeight(width),
+  });
+  const plan = V.windowForCardAnchor(
+    resized.rows,
+    deepAnchor,
+    deepGridTop,
+    deepAnchorTop,
+    deepViewportHeight,
+    deepOverscan
+  );
+  const retained = V.expandRowRangeForCards(
+    resized.rows,
+    plan,
+    retainedDeepFirst,
+    retainedDeepLast
+  );
+  const cards = V.cardRangeForRows(resized.rows, retained.first, retained.last);
+  const additions = Math.max(0, retainedDeepFirst - cards.first)
+    + Math.max(0, cards.last - retainedDeepLast);
+  maxDeepAdditions = Math.max(maxDeepAdditions, additions);
+  peakDeepCards = Math.max(peakDeepCards, cards.last - cards.first + 1);
+  retainedDeepFirst = cards.first;
+  retainedDeepLast = cards.last;
+}
+ok('one-pixel deep shrink sweep stays below 200 active cards', peakDeepCards < 200);
+ok('one-pixel deep shrink adds at most a small row boundary per frame', maxDeepAdditions <= 8);
+
+// A real one-pixel packing cliff: six equal cards fit at 1598px, only five at
+// 1597px, so every later row changes even though the width moved by one pixel.
+const cliffWide = J.layoutRows(deepAspects, 1598, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(1598),
+});
+const cliffNarrow = J.layoutRows(deepAspects, 1597, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(1597),
+});
+const cliffWidePlan = V.windowForCardAnchor(
+  cliffWide.rows, deepAnchor, deepGridTop, deepAnchorTop, deepViewportHeight, deepOverscan
+);
+const cliffWideCards = V.cardRangeForRows(cliffWide.rows, cliffWidePlan.first, cliffWidePlan.last);
+const cliffStaleViewport = V.rowRangeForViewport(
+  cliffNarrow.rows,
+  cliffWidePlan.scrollTop - deepGridTop - deepOverscan,
+  cliffWidePlan.scrollTop - deepGridTop + deepViewportHeight + deepOverscan
+);
+const cliffStaleUnion = V.expandRowRangeForCards(
+  cliffNarrow.rows, cliffStaleViewport, cliffWideCards.first, cliffWideCards.last
+);
+const cliffStaleCards = V.cardRangeForRows(
+  cliffNarrow.rows, cliffStaleUnion.first, cliffStaleUnion.last
+);
+const cliffPlan = V.windowForCardAnchor(
+  cliffNarrow.rows, deepAnchor, deepGridTop, deepAnchorTop, deepViewportHeight, deepOverscan
+);
+const cliffUnion = V.expandRowRangeForCards(
+  cliffNarrow.rows, cliffPlan, cliffWideCards.first, cliffWideCards.last
+);
+const cliffCards = V.cardRangeForRows(cliffNarrow.rows, cliffUnion.first, cliffUnion.last);
+ok('1598→1597 fixture exercises the global one-pixel row-packing cliff',
+  cliffWide.rows.length === 834 && cliffNarrow.rows.length === 1000);
+ok('anchor-first planning bounds the one-pixel packing cliff below 200 cards',
+  cliffStaleCards.last - cliffStaleCards.first + 1 > 1000
+  && cliffCards.last - cliffCards.first + 1 < 200);
+
+// Portrait-heavy rows legitimately need more cards to cover the same pixel
+// overscan. The safety property is "bounded near the anchor", not a universal
+// 200-card cap derived from the landscape fixture above.
+const portraitAspects = new Array(5000).fill(0.65);
+const portraitWide = J.layoutRows(portraitAspects, 1598, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(1598),
+});
+const portraitNarrow = J.layoutRows(portraitAspects, 1597, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(1597),
+});
+const portraitWidePlan = V.windowForCardAnchor(
+  portraitWide.rows, deepAnchor, deepGridTop, -42, deepViewportHeight, deepOverscan
+);
+const portraitWideCards = V.cardRangeForRows(
+  portraitWide.rows, portraitWidePlan.first, portraitWidePlan.last
+);
+const portraitPlan = V.windowForCardAnchor(
+  portraitNarrow.rows, deepAnchor, deepGridTop, -42, deepViewportHeight, deepOverscan
+);
+const portraitUnion = V.expandRowRangeForCards(
+  portraitNarrow.rows, portraitPlan, portraitWideCards.first, portraitWideCards.last
+);
+const portraitCards = V.cardRangeForRows(
+  portraitNarrow.rows, portraitUnion.first, portraitUnion.last
+);
+ok('portrait-heavy overscan remains local even when it naturally exceeds 200 cards',
+  portraitCards.last - portraitCards.first + 1 > 200
+  && portraitCards.last - portraitCards.first + 1 < 400
+  && portraitCards.first <= deepAnchor && portraitCards.last >= deepAnchor);
+
+// The old 1000px target-height breakpoint is now blended, but mixed aspects can
+// still move row boundaries there. Anchor-derived planning must remain bounded.
+let pseudoSeed = 0x12345678;
+const pseudoAspects = Array.from({ length: 5000 }, () => {
+  pseudoSeed = (Math.imul(1664525, pseudoSeed) + 1013904223) >>> 0;
+  return 0.65 + (pseudoSeed / 0x100000000) * 2.35;
+});
+const pseudoWide = J.layoutRows(pseudoAspects, 1000, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(1000),
+});
+const pseudoNarrow = J.layoutRows(pseudoAspects, 999, {
+  gap: 10,
+  targetHeight: V.responsiveTargetHeight(999),
+});
+const pseudoWidePlan = V.windowForCardAnchor(
+  pseudoWide.rows, deepAnchor, deepGridTop, deepAnchorTop, deepViewportHeight, deepOverscan
+);
+const pseudoWideCards = V.cardRangeForRows(
+  pseudoWide.rows, pseudoWidePlan.first, pseudoWidePlan.last
+);
+const pseudoPlan = V.windowForCardAnchor(
+  pseudoNarrow.rows, deepAnchor, deepGridTop, deepAnchorTop, deepViewportHeight, deepOverscan
+);
+const pseudoUnion = V.expandRowRangeForCards(
+  pseudoNarrow.rows, pseudoPlan, pseudoWideCards.first, pseudoWideCards.last
+);
+const pseudoCards = V.cardRangeForRows(pseudoNarrow.rows, pseudoUnion.first, pseudoUnion.last);
+ok('1000→999 mixed-aspect boundary remains a bounded anchor window',
+  pseudoNarrow.rows.length !== pseudoWide.rows.length
+  && pseudoCards.last - pseudoCards.first + 1 < 200
+  && pseudoCards.first <= deepAnchor && pseudoCards.last >= deepAnchor);
+
+// Defensive bottom case: if a requested anchor is too close to the end, the
+// browser clamps scrollTop. The follow-up window based on the ACTUAL value adds
+// the two missing cards without ever creating a distant bridge.
+const bottomViewportHeight = 2100;
+const bottomAnchor = 4999;
+const bottomWidePlan = V.windowForCardAnchor(
+  deepWide.rows, bottomAnchor, deepGridTop, deepAnchorTop,
+  bottomViewportHeight, deepOverscan
+);
+const bottomWideCards = V.cardRangeForRows(
+  deepWide.rows, bottomWidePlan.first, bottomWidePlan.last
+);
+const bottomPlan = V.windowForCardAnchor(
+  deepNarrow.rows, bottomAnchor, deepGridTop, deepAnchorTop,
+  bottomViewportHeight, deepOverscan
+);
+const bottomPrepared = V.expandRowRangeForCards(
+  deepNarrow.rows, bottomPlan, bottomWideCards.first, bottomWideCards.last
+);
+const bottomPreparedCards = V.cardRangeForRows(
+  deepNarrow.rows, bottomPrepared.first, bottomPrepared.last
+);
+const bottomMaxScroll = deepGridTop + deepNarrow.totalHeight - bottomViewportHeight;
+const bottomActualScroll = Math.min(bottomPlan.scrollTop, bottomMaxScroll);
+const bottomActualViewport = V.rowRangeForViewport(
+  deepNarrow.rows,
+  bottomActualScroll - deepGridTop - deepOverscan,
+  bottomActualScroll - deepGridTop + bottomViewportHeight + deepOverscan
+);
+const bottomCorrected = V.expandRowRangeForCards(
+  deepNarrow.rows,
+  bottomActualViewport,
+  bottomPreparedCards.first,
+  bottomPreparedCards.last
+);
+const bottomCorrectedCards = V.cardRangeForRows(
+  deepNarrow.rows, bottomCorrected.first, bottomCorrected.last
+);
+ok('bottom clamp fixture really differs from the requested anchor scroll',
+  bottomPlan.scrollTop - bottomActualScroll > 1000);
+ok('actual-scroll correction covers the clamped viewport with a bounded delta',
+  bottomCorrectedCards.first < bottomPreparedCards.first
+  && bottomPreparedCards.first - bottomCorrectedCards.first <= 4
+  && bottomCorrectedCards.last - bottomCorrectedCards.first + 1 < 200);
+
+// A realistic bottom capture anchors the first partially visible row, not the
+// final card. Its prepared overscan must fully cover the actual visible viewport.
+const oldBottomScroll = deepGridTop + deepWide.totalHeight - deepViewportHeight;
+const oldBottomVisible = V.rowRangeForViewport(
+  deepWide.rows,
+  oldBottomScroll - deepGridTop,
+  oldBottomScroll - deepGridTop + deepViewportHeight
+);
+const realisticBottomRow = deepWide.rows[oldBottomVisible.first];
+const realisticBottomAnchor = realisticBottomRow.start;
+const realisticBottomTop = deepGridTop + realisticBottomRow.top - oldBottomScroll;
+const realisticBottomWidePlan = V.windowForCardAnchor(
+  deepWide.rows, realisticBottomAnchor, deepGridTop, realisticBottomTop,
+  deepViewportHeight, deepOverscan
+);
+const realisticBottomWideCards = V.cardRangeForRows(
+  deepWide.rows, realisticBottomWidePlan.first, realisticBottomWidePlan.last
+);
+const realisticBottomPlan = V.windowForCardAnchor(
+  deepNarrow.rows, realisticBottomAnchor, deepGridTop, realisticBottomTop,
+  deepViewportHeight, deepOverscan
+);
+const realisticBottomPrepared = V.expandRowRangeForCards(
+  deepNarrow.rows,
+  realisticBottomPlan,
+  realisticBottomWideCards.first,
+  realisticBottomWideCards.last
+);
+const realisticBottomMax = deepGridTop + deepNarrow.totalHeight - deepViewportHeight;
+const realisticBottomActual = Math.min(realisticBottomPlan.scrollTop, realisticBottomMax);
+const realisticBottomVisible = V.rowRangeForViewport(
+  deepNarrow.rows,
+  realisticBottomActual - deepGridTop,
+  realisticBottomActual - deepGridTop + deepViewportHeight
+);
+ok('realistic first-visible bottom anchor fully covers the actual viewport',
+  realisticBottomPrepared.first <= realisticBottomVisible.first
+  && realisticBottomPrepared.last >= realisticBottomVisible.last);
+
 // --- mixed aspect ratios keep the math consistent ---
 const aspects = Array.from({ length: 500 }, (_, i) => [0.7, 1, 1.5, 2.4, 1.78][i % 5]);
 const mixed = J.layoutRows(aspects, 860, { gap: 10, targetHeight: 160 });

@@ -899,12 +899,22 @@ function layoutLibGrid(grid, suppliedAnchor = null) {
   // Virtualized grid (#libGrid in All/folder views): geometry comes from the full
   // entries list, not from DOM children — delegate and keep the scroll anchor.
   if (grid.__virtual && typeof grid.__virtual.relayout === 'function') {
-    const scrollAnchor = suppliedAnchor
-      || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null)
-      || (grid.id === 'libGrid' ? libraryViewAnchor : null)
+    const sessionAnchor = suppliedAnchor
+      || (grid.id === 'libGrid' ? currentLibraryResizeAnchor() : null);
+    const rememberedAnchor = !sessionAnchor && grid.id === 'libGrid'
+      && isMaterializedLibraryViewAnchor(libraryViewAnchor, grid) ? libraryViewAnchor : null;
+    const scrollAnchor = sessionAnchor
+      || rememberedAnchor
       || captureLibraryScrollAnchor(grid);
-    grid.__virtual.relayout();
-    restoreLibraryScrollAnchor(scrollAnchor, grid);
+    const previousWidth = Number(grid.__virtual.layoutWidth) || 0;
+    const shrinking = previousWidth > 0 && grid.clientWidth < previousWidth - 0.5;
+    const relayout = grid.__virtual.relayout({
+      // Expand keeps the established c23e257 path. Shrink gets a bounded one-pass
+      // plan from the logical anchor so it never materializes the false viewport
+      // represented by the old pixel scrollTop in the new, taller geometry.
+      anchor: shrinking ? scrollAnchor : null,
+    });
+    if (!relayout || !relayout.anchorRestored) restoreLibraryScrollAnchor(scrollAnchor, grid);
     if (grid.id === 'libGrid' && !currentLibraryResizeAnchor()) {
       libraryViewAnchor = scrollAnchor || captureLibraryScrollAnchor(grid);
     }
@@ -1479,6 +1489,18 @@ function captureLibraryScrollAnchor(grid) {
       : null,
   };
 }
+function isMaterializedLibraryViewAnchor(anchor, grid) {
+  if (!anchor || !anchor.root || !grid || anchor.root !== libScrollRoot()) return false;
+  let card = anchor.card;
+  const virtual = grid.__virtual;
+  if (virtual && Number.isInteger(anchor.combinedIndex)) {
+    card = virtual.cards.get(anchor.combinedIndex);
+  }
+  if (!card || !card.isConnected) return false;
+  const rootRect = anchor.root.getBoundingClientRect();
+  const cardRect = card.getBoundingClientRect();
+  return cardRect.bottom > rootRect.top && cardRect.top < rootRect.bottom;
+}
 function restoreLibraryScrollAnchor(anchor, grid) {
   if (!anchor || !anchor.root || !grid || !grid.isConnected) return;
   const virtual = grid.__virtual;
@@ -1524,7 +1546,13 @@ function beginLibraryResizeAnchor(grid) {
   }
   libraryResizeActive = true;
   libraryResizeLastChangeAt = Date.now();
-  const candidate = libraryViewAnchor || captureLibraryScrollAnchor(grid);
+  // A fast scroll can move the virtual window before the deferred remembered
+  // anchor refresh runs. Never turn that stale, off-screen index into a resize
+  // session: joining it to the current cards would recreate a huge DOM bridge.
+  const activeAnchor = currentLibraryResizeAnchor();
+  const candidate = activeAnchor || (isMaterializedLibraryViewAnchor(libraryViewAnchor, grid)
+    ? libraryViewAnchor
+    : captureLibraryScrollAnchor(grid));
   const snapshot = libraryResizeSession.begin(candidate);
   return snapshot.anchor;
 }
@@ -2076,7 +2104,7 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     applyWindow(range.first, range.last);
   };
 
-  const relayout = () => {
+  const relayout = (opts = {}) => {
     if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
     const width = grid.clientWidth;
     if (width < 40) return;
@@ -2091,8 +2119,54 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
     virtual.rows = res.rows;
     virtual.boxes = res.boxes;
     virtual.totalHeight = res.totalHeight;
-    if (!res.rows.length) { grid.innerHTML = ''; virtual.cards.clear(); virtual.first = 0; virtual.last = -1; return; }
+    if (!res.rows.length) {
+      grid.innerHTML = '';
+      virtual.cards.clear();
+      virtual.first = 0;
+      virtual.last = -1;
+      return { anchorRestored: false };
+    }
+
+    const anchor = opts.anchor;
+    if (anchor && anchor.root === root && Number.isInteger(anchor.combinedIndex)
+      && typeof window.VirtualWindow.windowForCardAnchor === 'function') {
+      // Compute the target against canonical NEW rows without assigning scrollTop
+      // yet. applyWindow writes the matching top/bottom pads first, so the browser
+      // has the new full scroll extent and cannot clamp a deep anchor to the old one.
+      const rootRect = root.getBoundingClientRect();
+      const gridTop = grid.getBoundingClientRect().top - rootRect.top + root.scrollTop;
+      const plan = window.VirtualWindow.windowForCardAnchor(
+        res.rows,
+        anchor.combinedIndex,
+        gridTop,
+        anchor.top,
+        root.clientHeight,
+        LIB_VIRTUAL_OVERSCAN_PX
+      );
+      if (plan) {
+        let range = { first: plan.first, last: plan.last };
+        if (virtual.cards.size && typeof window.VirtualWindow.expandRowRangeForCards === 'function') {
+          const activeIndices = Array.from(virtual.cards.keys());
+          range = window.VirtualWindow.expandRowRangeForCards(
+            res.rows,
+            range,
+            Math.min(...activeIndices),
+            Math.max(...activeIndices)
+          );
+        }
+        applyWindow(range.first, range.last); // establishes NEW DOM extent first
+        anchor.root.scrollTop = plan.scrollTop;
+        pageScroll.library = anchor.root.scrollTop;
+        // Near the bottom, the browser may legitimately clamp the requested
+        // anchor because there is not enough content below it. Reconcile once
+        // against that actual viewport; the new extent already exists, so this
+        // bounded correction cannot recreate the stale-scroll bridge.
+        if (Math.abs(anchor.root.scrollTop - plan.scrollTop) >= 0.5) updateWindow(true);
+        return { anchorRestored: true };
+      }
+    }
     updateWindow(true);
+    return { anchorRestored: false };
   };
   virtual.relayout = relayout;
   virtual.updateWindow = updateWindow;
@@ -2133,6 +2207,9 @@ function renderEntriesLazily(grid, entries, assigned, tok, headCards = []) {
         widthFrame = requestAnimationFrame(() => {
           widthFrame = 0;
           if (tok !== allViewToken || grid.__virtual !== virtual || !grid.isConnected) return;
+          // A synchronous shrink from window.resize may have already reconciled
+          // the width after this frame was queued by an earlier expansion.
+          if (Math.abs(grid.clientWidth - virtual.layoutWidth) < 0.5) return;
           layoutLibGrid(grid);
           if (libraryResizeActive) scheduleLibraryResizeFinish(grid);
           else rememberLibraryScrollAnchor(grid);
@@ -4749,6 +4826,14 @@ async function init() {
   window.addEventListener('resize', () => {
     const grid = $('#libGrid');
     beginLibraryResizeAnchor(grid);
+    const liveVirtual = grid && grid.__virtual;
+    if (liveVirtual && grid.clientWidth < liveVirtual.layoutWidth - 0.5) {
+      // Shrink is asymmetric: old full-width flex rows no longer fit, so deferring
+      // canonical sizes lets Chromium paint an automatic wrap first. A window
+      // resize event runs before paint; commit only shrink here. Expand and
+      // height-only resize keep the established deferred path below.
+      layoutLibGrid(grid);
+    }
     clearTimeout(resizeT);
     resizeT = setTimeout(() => {
       const endSpan = diagSpan('renderer', 'resize-relayout'); // budget span #12
