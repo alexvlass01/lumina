@@ -10,6 +10,7 @@ const { pathToFileURL } = require('url');
 const { execFile } = require('child_process');
 const playlist = require('./src/playlist'); // чистая логика плейлистов (тестируется отдельно)
 const library = require('./src/library'); // пул контента { [id]: Item }; слоты ссылаются по id
+const libraryAssignment = require('./src/library-assignment');
 const folderState = require('./src/folder-state'); // persistent firstSeenAt для файлов живых папок
 const liveFolderWatch = require('./src/live-folder-watch'); // lightweight fs.watch lifecycle + debounce
 const wallhaven = require('./src/wallhaven'); // клиент Wallhaven (онлайн-обои): URL + разбор
@@ -426,11 +427,19 @@ function queueLiveFolderAspect(p, aspect) {
   if (liveFolderAspectTimer && typeof liveFolderAspectTimer.unref === 'function') liveFolderAspectTimer.unref();
 }
 
+function forgetLiveFolders(ids) {
+  const state = folderState.normalizeState(liveFolderState);
+  let removed = false;
+  for (const id of (ids || [])) {
+    if (id && state.folders[id]) { delete state.folders[id]; removed = true; }
+    folderScanFreshAt.delete(id);
+  }
+  liveFolderState = state;
+  if (removed) scheduleLiveFolderStateSave();
+}
+
 function forgetLiveFolder(id) {
-  const result = folderState.removeFolder(liveFolderState, id);
-  liveFolderState = result.state;
-  folderScanFreshAt.delete(id);
-  if (result.removed) scheduleLiveFolderStateSave();
+  forgetLiveFolders([id]);
 }
 
 function liveFolderItems() {
@@ -2306,6 +2315,46 @@ ipcMain.handle('library-remove', (e, id) => {
   return config;
 });
 
+ipcMain.handle('library-remove-many', async (e, rawIds) => {
+  if (!Array.isArray(rawIds) || !rawIds.length || rawIds.length > 50000) {
+    return { config, removed: 0, error: 'bad_request', warning: null };
+  }
+  const ids = Array.from(new Set(rawIds.filter((id) => typeof id === 'string' && id)));
+  const items = ids.map((id) => library.getItem(config.library, id));
+  // Destructive batches are all-or-nothing at the model boundary. Never silently
+  // remove only a prefix or the subset that happened to remain valid.
+  if (items.length !== ids.length || items.some((item) => !item)) {
+    return { config, removed: 0, error: 'missing_item', warning: null };
+  }
+  const idSet = new Set(ids);
+  for (const id of ids) library.removeItem(config.library, id);
+  for (const [monitorId, monitor] of Object.entries(config.monitors || {})) {
+    for (const theme of ['light', 'dark']) {
+      const slot = monitor[theme];
+      if (!slot || !Array.isArray(slot.itemIds)) continue;
+      const before = slot.itemIds.length;
+      slot.itemIds = slot.itemIds.filter((id) => !idSet.has(id));
+      if (before > 0 && slot.itemIds.length === 0) {
+        library.markSlotExplicitEmpty(slot);
+        storeSlideshowPosition(monitorId, theme, { index: 0, path: '' });
+      }
+    }
+  }
+  const removedFolders = items.filter((item) => item.type === 'folder');
+  if (removedFolders.length) forgetLiveFolders(removedFolders.map((item) => item.id));
+  if (removedFolders.length) syncLiveFolderWatchers();
+  saveConfig();
+  gcWallpapers();
+  trayCtl.refresh();
+  let warning = null;
+  try { await applyForTheme(null, true); }
+  catch (err) {
+    warning = 'apply_failed';
+    console.error('bulk library removal apply failed:', err);
+  }
+  return { config, removed: ids.length, error: null, warning };
+});
+
 ipcMain.handle('library-toggle-favorite', (e, id) => {
   library.toggleFavorite(config.library, id);
   saveConfig();
@@ -2395,29 +2444,52 @@ ipcMain.handle('library-remove-tag', (e, id, tag) => {
   return config;
 });
 
-// Назначить элемент пула на монитор×тему (добавляет в плейлист слота) + применить, если тема активна.
-ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
-  const theme = which === 'dark' ? 'dark' : 'light';
-  const item = library.getItem(config.library, id);
-  if (!monitorId || !id || !item) return { config, ok: false, error: 'missing_item' };
-  if (item.type === 'image' && !pathExists(item.path)) {
-    return { config, ok: false, error: 'missing_file' };
-  }
-  const slot = ensureSlot(monitorId, theme);
-  if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
+async function finalizeLibraryAssignment(result, theme) {
   saveConfig();
+  const createdIds = new Set(result.createdIds || (result.created ? [result.id] : []));
+  const createdFolders = (result.items || (result.item ? [result.item] : []))
+    .filter((item) => item && item.type === 'folder' && createdIds.has(item.id))
+    .map((item) => item.id);
+  if (createdFolders.length) {
+    syncLiveFolderWatchers();
+    requestLiveFolderRefresh(createdFolders);
+  }
   trayCtl.refresh();
   // Assigning a new image to the active monitor×theme changes the current frame → drop any
   // pending stealth advance so it can't overwrite this choice moments later.
+  let warning = null;
   if (theme === wallpaperThemeName()) {
     cancelPendingStealth();
     try {
       await applyForTheme(theme, true);
+    } catch (err) {
+      // The pool + slot transaction is already durably saved. Surface application
+      // trouble as a warning instead of lying to the renderer that assignment failed.
+      warning = 'apply_failed';
+      console.error('library assignment apply failed:', err);
     } finally {
       rescheduleSlideshowAfterManualWallpaperChange();
     }
   }
-  return { config, ok: true, error: null };
+  return warning;
+}
+
+// Назначить элемент пула на монитор×тему (добавляет в плейлист слота) + применить, если тема активна.
+async function commitLibraryAssignmentRecord(record, monitorId, which, options = {}) {
+  const theme = which === 'dark' ? 'dark' : 'light';
+  const known = record && (library.getItem(config.library, record.id)
+    || library.getItem(config.library, library.idFor(record.path)));
+  if (known && known.type === 'image' && !pathExists(known.path)) {
+    return { config, ok: false, error: 'missing_file' };
+  }
+  const result = libraryAssignment.assignRecord(config, record, monitorId, theme, options);
+  if (!result.ok) return result;
+  const warning = await finalizeLibraryAssignment(result, theme);
+  return { ...result, config, warning };
+}
+
+ipcMain.handle('library-assign', async (e, id, monitorId, which) => {
+  return commitLibraryAssignmentRecord({ id }, monitorId, which);
 });
 
 // ---- Internet providers: Wallhaven + Gelbooru, with Danbooru fallback ----
@@ -2912,25 +2984,147 @@ ipcMain.handle('library-recent', async (e, limit) => {
   }
 });
 
+function liveMaterializeExtra(p, itemType, discoveryByPath = null) {
+  if (itemType !== 'image') return undefined;
+  const disc = discoveryByPath
+    ? discoveryByPath.get(String(p || '').toLowerCase())
+    : liveFolderDiscovery(p);
+  return disc ? {
+    addedAt: disc.firstSeenAt || disc.modifiedAt || Date.now(),
+    modifiedAt: disc.modifiedAt,
+    aspect: disc.aspect,
+  } : undefined;
+}
+
+async function validateMaterializePath(p, itemType) {
+  if (!p || typeof p !== 'string') return 'bad_request';
+  let stats;
+  try { stats = await fs.promises.stat(p); }
+  catch { return itemType === 'folder' ? 'missing_folder' : 'missing_file'; }
+  if (itemType === 'folder') return stats.isDirectory() ? null : 'missing_folder';
+  return stats.isFile() && playlist.IMG_EXTS.has(path.extname(p).toLowerCase()) ? null : 'missing_file';
+}
+
+// Atomic transient assignment: validation happens before the synchronous pool+slot
+// transaction, so ok:false can never leave an orphan library record behind.
+ipcMain.handle('library-assign-record', async (e, rawRecord, monitorId, which) => {
+  const record = rawRecord && typeof rawRecord === 'object' ? rawRecord : null;
+  if (!record || !monitorId) return { config, ok: false, error: 'bad_request', id: null, created: false };
+  const known = library.getItem(config.library, record.id)
+    || (record.path && library.getItem(config.library, library.idFor(record.path)));
+  if (known) return commitLibraryAssignmentRecord({ id: known.id }, monitorId, which);
+
+  const itemType = record.type === 'folder' ? 'folder' : 'image';
+  const error = await validateMaterializePath(record.path, itemType);
+  if (error) return { config, ok: false, error, id: null, created: false };
+  return commitLibraryAssignmentRecord(
+    { path: record.path, type: itemType }, monitorId, which,
+    { allowCreate: true, extra: liveMaterializeExtra(record.path, itemType) },
+  );
+});
+
+const LIBRARY_ASSIGN_BATCH_MAX = 50000;
+const LIBRARY_ASSIGN_STAT_CONCURRENCY = 24;
+
+async function prepareLibraryAssignmentRecord(rawRecord, discoveryByPath = null) {
+  const record = rawRecord && typeof rawRecord === 'object' ? rawRecord : null;
+  if (!record) return { error: 'bad_request' };
+  const known = library.getItem(config.library, record.id)
+    || (record.path && library.getItem(config.library, library.idFor(record.path)));
+  if (known) {
+    if (known.type === 'image') {
+      const error = await validateMaterializePath(known.path, 'image');
+      if (error) return { error };
+    }
+    return { record: { id: known.id }, options: {} };
+  }
+  const itemType = record.type === 'folder' ? 'folder' : 'image';
+  const error = await validateMaterializePath(record.path, itemType);
+  if (error) return { error };
+  return {
+    record: { path: record.path, type: itemType },
+    options: { allowCreate: true, extra: liveMaterializeExtra(record.path, itemType, discoveryByPath) },
+  };
+}
+
+// Bulk variant: bounded filesystem validation, one pool+slot transaction, one config
+// write/broadcast and at most one wallpaper apply regardless of selection size.
+ipcMain.handle('library-assign-records', async (e, rawRecords, monitorId, which) => {
+  if (!Array.isArray(rawRecords) || !rawRecords.length || rawRecords.length > LIBRARY_ASSIGN_BATCH_MAX || !monitorId) {
+    return { config, ok: false, error: 'bad_request', assigned: 0, failed: Array.isArray(rawRecords) ? rawRecords.length : 0 };
+  }
+  const unique = new Map();
+  for (const record of rawRecords) {
+    if (!record || typeof record !== 'object') continue;
+    const key = record.id || (record.path && library.idFor(record.path));
+    if (key && !unique.has(key)) unique.set(key, record);
+  }
+  const records = Array.from(unique.values());
+  // Existing pool records already carry their metadata. Avoid cloning/scanning the
+  // unlimited live-folder index for the common case of assigning existing cards;
+  // discovery metadata is needed only when at least one transient image is created.
+  const needsDiscovery = records.some((record) => {
+    const known = library.getItem(config.library, record.id)
+      || (record.path && library.getItem(config.library, library.idFor(record.path)));
+    return !known && record.type !== 'folder' && typeof record.path === 'string';
+  });
+  let discoveryByPath = null;
+  if (needsDiscovery) {
+    discoveryByPath = new Map();
+    try {
+      for (const image of folderState.listImages(liveFolderState)) {
+        if (image && image.path) discoveryByPath.set(String(image.path).toLowerCase(), image);
+      }
+    } catch {}
+  }
+  const prepared = new Array(records.length);
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < records.length) {
+      const index = cursor++;
+      prepared[index] = await prepareLibraryAssignmentRecord(records[index], discoveryByPath);
+    }
+  };
+  await Promise.all(Array.from(
+    { length: Math.min(LIBRARY_ASSIGN_STAT_CONCURRENCY, records.length) },
+    () => worker(),
+  ));
+  const valid = prepared.filter((entry) => entry && !entry.error);
+  const validationFailed = prepared.length - valid.length;
+  if (!valid.length) {
+    return { config, ok: false, error: (prepared.find((entry) => entry && entry.error) || {}).error || 'missing_item', assigned: 0, failed: validationFailed };
+  }
+  const theme = which === 'dark' ? 'dark' : 'light';
+  const result = libraryAssignment.assignRecords(config, valid, monitorId, theme);
+  result.failed += validationFailed;
+  if (!result.ok) {
+    return { config, ok: false, error: result.error, assigned: 0, failed: result.failed, warning: null };
+  }
+  const warning = await finalizeLibraryAssignment(result, theme);
+  // Keep the IPC response compact: config already contains authoritative items;
+  // returning duplicate ids/items arrays would double serialization for huge batches.
+  return {
+    config,
+    ok: true,
+    error: null,
+    assigned: result.assigned,
+    failed: result.failed,
+    warning,
+  };
+});
+
 // «Материализация» картинки/папки из живого источника в пул — БЕЗ копирования (по ссылке на
 // оригинальный путь, как и сама папка-источник живёт по оригиналу). Нужно, чтобы назначить/★
 // картинку из открытой папки: получаем настоящий id, дальше работают обычные library-assign/
 // toggle-favorite/assign-меню. id = idFor(origPath) → совпадает с pool-item ⇒ нет дублей в «Все».
-ipcMain.handle('library-materialize', (e, p, type) => {
+ipcMain.handle('library-materialize', async (e, p, type) => {
   if (!p || typeof p !== 'string') return { config, id: null };
   const itemType = type === 'folder' ? 'folder' : 'image';
+  if (await validateMaterializePath(p, itemType)) return { config, id: null };
   // Inherit the discovery date from the live-folder index so assigning/★-ing a file
   // out of a watched folder does NOT mark it "just added" and jump it to the top under
   // "Newest first". Only genuinely new standalone imports (no index entry) keep now().
-  let extra;
-  if (itemType === 'image') {
-    const disc = liveFolderDiscovery(p);
-    if (disc) extra = {
-      addedAt: disc.firstSeenAt || disc.modifiedAt || Date.now(),
-      modifiedAt: disc.modifiedAt,
-      aspect: disc.aspect,
-    };
-  }
+  const extra = liveMaterializeExtra(p, itemType);
   const id = library.addPath(config.library, itemType, p, extra);
   if (id) saveConfig();
   if (id && itemType === 'folder') {

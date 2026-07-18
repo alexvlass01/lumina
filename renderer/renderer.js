@@ -102,6 +102,15 @@ if (!window.api) {
       for (const m of Object.values(mock.monitors)) for (const th of ['light', 'dark']) if (m[th] && m[th].itemIds) m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
       return mock;
     },
+    libraryRemoveMany: async (ids) => {
+      let removed = 0;
+      for (const id of (Array.isArray(ids) ? ids : [])) {
+        if (!mock.library[id]) continue;
+        await window.api.libraryRemove(id);
+        removed += 1;
+      }
+      return { config: mock, removed, warning: null };
+    },
     libraryRefresh: async () => ({ config: mock, removed: 0 }),
     libraryToggleFavorite: async (id) => { if (mock.library[id]) mock.library[id].favorite = !mock.library[id].favorite; return mock; },
     libraryAddTag: async (id, tag) => { const it = mock.library[id]; const t = String(tag || '').trim().toLowerCase(); if (it && t) { it.tags = it.tags || []; if (!it.tags.includes(t)) it.tags.push(t); } return mock; },
@@ -113,6 +122,23 @@ if (!window.api) {
       const slot = mock.monitors[mid][theme];
       if (!slot.itemIds.includes(id)) slot.itemIds.push(id);
       return { config: mock, ok: true, error: null };
+    },
+    libraryAssignRecord: async (record, monitorId, which) => {
+      const existing = record && record.id && mock.library[record.id];
+      const id = existing ? existing.id : mockAdd(record && record.type === 'folder' ? 'folder' : 'image', record && record.path);
+      if (!monitorId || !id) return { config: mock, ok: false, error: 'bad_request', id: null, created: false };
+      await window.api.libraryAssign(id, monitorId, which);
+      return { config: mock, ok: true, error: null, id, created: !existing };
+    },
+    libraryAssignRecords: async (records, monitorId, which) => {
+      let assigned = 0;
+      let failed = 0;
+      for (const record of (Array.isArray(records) ? records : [])) {
+        const res = await window.api.libraryAssignRecord(record, monitorId, which);
+        if (res.ok) assigned += 1;
+        else failed += 1;
+      }
+      return { config: mock, ok: assigned > 0, error: assigned ? null : 'missing_item', assigned, failed };
     },
     folderInfo: async () => ({ count: 0, subfolders: 0, previews: [] }),
     folderEntries: async () => ({ folders: [], images: [], count: 0 }),
@@ -271,6 +297,8 @@ function refreshTexts() {
   updateShortcutButtons();      // re-translate shortcut buttons + keep "done" state
   renderUpdate();               // re-translate update status + button
   renderSmartPanel();           // re-translate smart panel texts
+  closeLibPopup();              // a visible card menu must not keep stale language
+  syncSelectionUI();            // checkbox labels + floating selection toolbar
 }
 
 // ---------------------------------------------------------------------------
@@ -808,7 +836,13 @@ async function renderConfig() {
 // ---------------------------------------------------------------------------
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
-const LIB = { filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {}, selection: new Set(), lastSelected: null, aspectCache: new Map(), sizeCache: new Map() };
+const LIB = {
+  filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {},
+  selection: window.CardInteraction.createSelectionModel(), aspectCache: new Map(), sizeCache: new Map(),
+  poolBySelectionKey: new Map(),
+};
+let libraryBatchAssignPending = false;
+let libraryBatchRemovePending = false;
 const folderInfoCache = new Map(); // path key -> shared promise for virtualized folder cards
 let folderCardEpoch = 0;           // rebuild visible collages after their directory contents change
 let allViewToken = 0;   // guards async folder/All renders against races
@@ -1246,6 +1280,7 @@ function buildLibCard(it, isAssigned) {
   const card = document.createElement('div');
   card.className = 'lib-card' + (it.type === 'folder' ? ' folder' : '') + (isAssigned ? ' assigned' : '');
   card.dataset.id = it.id;
+  const selectionRecord = localSelectionRecord(it.path, it.type, it.id);
   makeLibCardFocusable(card);
   primeLibCardAspect(card, it, it.path);
 
@@ -1263,16 +1298,10 @@ function buildLibCard(it, isAssigned) {
   fav.title = t('library.favorite');
   fav.addEventListener('click', async (e) => {
     e.stopPropagation();
-    config = await window.api.libraryToggleFavorite(it.id);
-    const fresh = config.library && config.library[it.id];
-    if (LIB.filter === 'favorite' && !(fresh && fresh.favorite)) {
-      renderLibrary();
-      return;
-    }
-    setCardFavorite(card, !!(fresh && fresh.favorite));
-    lastLibRenderKey = libRenderKey();
+    await toggleFavoriteForRecord(selectionRecord, card);
   });
   card.appendChild(fav);
+  setCardFavorite(card, !!it.favorite);
 
   if (isAssigned) {
     const mark = document.createElement('span');
@@ -1281,51 +1310,15 @@ function buildLibCard(it, isAssigned) {
     card.appendChild(mark);
   }
 
-  const menu = document.createElement('button');
-  menu.className = 'lib-menu-btn';
-  menu.textContent = '⋯';
-  menu.title = t('library.assign');
-  menu.addEventListener('click', (e) => { e.stopPropagation(); openAssignMenu(it, menu); });
-  card.appendChild(menu);
+  appendSelectionToggle(card, selectionRecord);
+  bindLocalCardContextMenu(card, selectionRecord);
 
   card.addEventListener('mouseenter', () => setLibStatus(baseName(it.path)));
   card.addEventListener('mouseleave', () => setLibStatus(''));
   card.addEventListener('click', (e) => {
-    // Folder with no modifiers → navigate into it.
-    if (it.type === 'folder' && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-      enterFolder(it.path, baseName(it.path));
-      return;
-    }
-    if (e.shiftKey) {
-      // Shift+click: extend the selection from the anchor to this card (Explorer-style).
-      // Without an anchor yet, behave like a plain select of this single card.
-      if (LIB.lastSelected && LIB.lastSelected !== it.id) {
-        // In the virtualized views the cards between anchor and target may not be in
-        // the DOM at all — range over the entries ORDER, not over live elements.
-        const ids = orderedSelectableIds();
-        const i1 = ids.indexOf(LIB.lastSelected);
-        const i2 = ids.indexOf(it.id);
-        if (i1 !== -1 && i2 !== -1) {
-          LIB.selection.clear();
-          for (let i = Math.min(i1, i2); i <= Math.max(i1, i2); i++) LIB.selection.add(ids[i]);
-        }
-      } else {
-        LIB.selection.add(it.id);
-        LIB.lastSelected = it.id;
-      }
-    } else if (e.ctrlKey || e.metaKey) {
-      // Ctrl+click: toggle this card and make it the new range anchor.
-      if (LIB.selection.has(it.id)) LIB.selection.delete(it.id);
-      else LIB.selection.add(it.id);
-      LIB.lastSelected = it.id;
-    } else {
-      // Plain click: leave selection mode if active, otherwise preview the image.
-      if (LIB.selection.size > 0) { clearSelection(); syncSelectionUI(); return; }
-      LIB.lastSelected = it.id; // remember anchor so a later Shift+click can extend from here
-      if (card.__galleryItem) openGalleryFromCard(card, card.__galleryItem);
-      return;
-    }
-    syncSelectionUI();
+    if (handleSelectionModifierClick(e, selectionRecord)) return;
+    if (it.type === 'folder') enterFolder(it.path, baseName(it.path));
+    else if (card.__galleryItem) openGalleryFromCard(card, card.__galleryItem);
   });
   return card;
 }
@@ -1379,17 +1372,26 @@ function invalidateFolderCards() {
 function exitFolderState() { LIB.folderPath = null; LIB.crumbs = []; }
 
 function enterFolder(p, name) {
+  clearSelection();
+  syncSelectionUI();
   LIB.folderPath = p;
   LIB.crumbs.push({ path: p, name: name || baseName(p) });
   if (LIB.q) { LIB.q = ''; const s = $('#libSearch'); if (s) s.value = ''; }
   renderLibrary();
 }
 function crumbTo(i) {
+  clearSelection();
+  syncSelectionUI();
   LIB.crumbs = LIB.crumbs.slice(0, i + 1);
   LIB.folderPath = LIB.crumbs.length ? LIB.crumbs[LIB.crumbs.length - 1].path : null;
   renderLibrary();
 }
-function exitToFolders() { exitFolderState(); renderLibrary(); }
+function exitToFolders() {
+  clearSelection();
+  syncSelectionUI();
+  exitFolderState();
+  renderLibrary();
+}
 
 function navigateFolderBack() {
   if (!LIB.folderPath) return false;
@@ -1433,11 +1435,13 @@ function renderBreadcrumbs() {
   assignBtn.addEventListener('click', (e) => {
     e.stopPropagation();
     // Materialize the folder into the pool only once the user picks a slot in the menu.
-    openAssignMenu(null, assignBtn, async () => {
-      const res = await window.api.libraryMaterialize(LIB.folderPath, 'folder');
+    const record = localSelectionRecord(LIB.folderPath, 'folder');
+    const current = poolItemForRecord(record);
+    openAssignMenu(current, assignBtn, async () => {
+      const res = await window.api.libraryMaterialize(record.path, 'folder');
       config = (res && res.config) || config;
       return res && res.id ? config.library[res.id] : null;
-    });
+    }, { assignmentRecord: record, remove: !!current });
   });
   bar.appendChild(assignBtn);
 }
@@ -1775,31 +1779,23 @@ async function renderFolderView(tok) {
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
 }
 
-// A subfolder card (not a pool item): click drills in; ⋯ assigns it as a source.
+// A subfolder card (not a pool item): click drills in; actions materialize only on commit.
 function buildSubfolderCard(f) {
   const card = document.createElement('div');
   card.className = 'lib-card folder';
   card.dataset.path = f.path;
+  const selectionRecord = localSelectionRecord(f.path, 'folder');
   makeLibCardFocusable(card);
   setLibCardAspect(card, 1.6);
   fillFolderCollage(card, f.path);
-  const menu = document.createElement('button');
-  menu.className = 'lib-menu-btn';
-  menu.textContent = '⋯';
-  menu.title = t('library.assign');
-  menu.addEventListener('click', (e) => {
-    e.stopPropagation();
-    // Don't add the subfolder to the pool just for opening its menu — only if the
-    // user actually assigns it as a source.
-    openAssignMenu(null, menu, async () => {
-      const res = await window.api.libraryMaterialize(f.path, 'folder');
-      config = (res && res.config) || config;
-      return res && res.id ? config.library[res.id] : null;
-    });
-  });
-  card.appendChild(menu);
+  appendSelectionToggle(card, selectionRecord);
+  bindLocalCardContextMenu(card, selectionRecord);
   card.addEventListener('mouseenter', () => setLibStatus(f.path));
-  card.addEventListener('click', () => enterFolder(f.path, f.name));
+  card.addEventListener('mouseleave', () => setLibStatus(''));
+  card.addEventListener('click', (e) => {
+    if (handleSelectionModifierClick(e, selectionRecord)) return;
+    enterFolder(f.path, f.name);
+  });
   return card;
 }
 
@@ -1810,15 +1806,11 @@ function buildEphemeralImageCard(p, aspect = 0) {
   card.className = 'lib-card';
   card.title = baseName(p);
   card.dataset.path = p; // lets onConfig upgrade this exact card in place once it's materialized
+  const selectionRecord = localSelectionRecord(p, 'image');
   makeLibCardFocusable(card);
   primeLibCardAspect(card, null, p, aspect);
   lazyThumb(card, p, 320, 200);
   card.__galleryItem = galleryItemFromPath(p);
-  const materialize = async () => {
-    const res = await window.api.libraryMaterialize(p, 'image');
-    config = (res && res.config) || config;
-    return res && res.id ? config.library[res.id] : null;
-  };
 
   const fav = document.createElement('button');
   fav.className = 'lib-fav';
@@ -1826,37 +1818,20 @@ function buildEphemeralImageCard(p, aspect = 0) {
   fav.title = t('library.favorite');
   fav.addEventListener('click', async (e) => {
     e.stopPropagation();
-    const oldIndex = Number(card.dataset.galleryIndex);
-    const galleryItem = card.__galleryItem || galleryItemFromPath(p);
-    const it = await materialize();
-    if (it) { config = await window.api.libraryToggleFavorite(it.id); }
-    const fresh = it && config.library && config.library[it.id];
-    if (!fresh) return;
-    const current = poolCardById(fresh.id) || ephemeralCardByPath(fresh.path) || card;
-    if (current && current.dataset.id === fresh.id) {
-      setCardFavorite(current, !!fresh.favorite);
-    } else if (current && current.isConnected) {
-      const replacement = buildLibCard(fresh, assignedIds().has(fresh.id));
-      bindCardGalleryItem(replacement, galleryItem, Number.isFinite(oldIndex) ? oldIndex : Number(current.dataset.galleryIndex));
-      syncVirtualCardReplacement(current, replacement, fresh);
-      current.replaceWith(replacement);
-      scheduleJustifiedLayout($('#libGrid'));
-    }
-    lastLibRenderKey = libRenderKey();
+    await toggleFavoriteForRecord(selectionRecord, card);
   });
   card.appendChild(fav);
+  setCardFavorite(card, false);
 
-  const menu = document.createElement('button');
-  menu.className = 'lib-menu-btn';
-  menu.textContent = '⋯';
-  menu.title = t('library.assign');
-  // Open the menu WITHOUT materializing; it is added to the pool only if the user
-  // actually assigns/tags/removes inside the menu (materialize passed as callback).
-  menu.addEventListener('click', (e) => { e.stopPropagation(); openAssignMenu(null, menu, materialize); });
-  card.appendChild(menu);
+  appendSelectionToggle(card, selectionRecord);
+  bindLocalCardContextMenu(card, selectionRecord);
 
   card.addEventListener('mouseenter', () => setLibStatus(baseName(p)));
-  card.addEventListener('click', () => openGalleryFromCard(card, card.__galleryItem));
+  card.addEventListener('mouseleave', () => setLibStatus(''));
+  card.addEventListener('click', (e) => {
+    if (handleSelectionModifierClick(e, selectionRecord)) return;
+    openGalleryFromCard(card, card.__galleryItem);
+  });
   return card;
 }
 
@@ -1913,25 +1888,44 @@ function scheduleDeferredJustifiedLayout(grid) {
   aspectLayoutTimer = setTimeout(flush, 240);
 }
 
-function localGridDescriptor(entry) {
+function poolRecordMap() {
+  const map = new Map();
+  for (const item of Object.values((config && config.library) || {})) {
+    if (!item || !item.path) continue;
+    map.set(window.CardInteraction.localKey(item.path, item.type), item);
+  }
+  LIB.poolBySelectionKey = map;
+  return map;
+}
+
+function localGridDescriptor(entry, pooledByPath = null) {
   if (entry && entry.kind === 'subfolder') {
     const folder = entry.folder || entry.raw || entry;
+    const key = window.CardInteraction.localKey(folder.path, 'folder');
+    // A directory can be both a child of the currently opened live folder and an
+    // existing pool source. Preserve that pool identity so remove/bulk actions do
+    // not incorrectly treat it as transient merely because this view called it a
+    // subfolder.
+    const pooled = pooledByPath ? pooledByPath.get(key) : poolItemForRecord(localSelectionRecord(folder.path, 'folder'));
     return {
-      key: `local-folder:${normPathKey(folder.path)}`,
-      kind: 'subfolder',
+      key,
+      kind: pooled ? 'pool-folder' : 'subfolder',
       path: folder.path,
       folder,
-      item: null,
+      item: pooled || null,
+      id: pooled ? pooled.id : folder.path,
       aspect: 1.6,
       galleryItem: null,
-      selectableId: null,
+      selectableId: pooled ? pooled.id : null,
+      selectionKey: key,
     };
   }
   const item = entry && entry.type ? entry : entry && entry.item;
   const path = (entry && entry.path) || (item && item.path) || '';
   const isFolder = !!(item && item.type === 'folder');
+  const key = window.CardInteraction.localKey(path, isFolder ? 'folder' : 'image');
   return {
-    key: `${isFolder ? 'local-folder' : 'local-image'}:${normPathKey(path)}`,
+    key,
     kind: isFolder ? 'pool-folder' : (item ? 'pool-image' : 'ephemeral-image'),
     path,
     item: item || null,
@@ -1939,6 +1933,7 @@ function localGridDescriptor(entry) {
     aspect: isFolder ? 1.6 : (knownLibAspect(item, path, entry && entry.aspect) || 1.6),
     galleryItem: isFolder ? null : (item ? galleryItemFromLibrary(item) : galleryItemFromPath(path)),
     selectableId: item && item.id ? item.id : null,
+    selectionKey: key,
     raw: entry,
   };
 }
@@ -1981,7 +1976,8 @@ function buildLocalGridCard(entry, grid) {
     card.dataset.aspectKnown = 'true';
     setLibCardAspect(card, entry.aspect);
   }
-  if (fresh && LIB.selection.has(fresh.id)) card.classList.add('selected');
+  const record = selectionRecordFromEntry(entry, fresh);
+  bindSelectionCard(card, record);
   return card;
 }
 
@@ -1990,12 +1986,13 @@ function bindLocalGridCard(card, entry, grid) {
   const original = entry && entry.item;
   const fresh = original && config.library && config.library[original.id]
     ? config.library[original.id] : original;
+  const record = selectionRecordFromEntry(entry, fresh);
+  bindSelectionCard(card, record);
   if (!fresh || !fresh.id) return;
   card.dataset.id = fresh.id;
   const assigned = grid.__gridContext && grid.__gridContext.assigned;
   setCardAssigned(card, !!(assigned && assigned.has(fresh.id)));
   setCardFavorite(card, !!fresh.favorite);
-  card.classList.toggle('selected', LIB.selection.has(fresh.id));
 }
 
 function mountUnifiedGrid(grid, entries, adapter, opts = {}) {
@@ -2066,7 +2063,12 @@ const LOCAL_GRID_ADAPTER = {
 function renderEntriesLazily(grid, entries, assigned, tok) {
   const sentinel = $('#libSentinel');
   if (sentinel) sentinel.hidden = true;
-  const descriptors = (entries || []).map(localGridDescriptor);
+  // Resolve pool-backed subfolders in one O(library + entries) pass. Looking up
+  // every subfolder with a fresh Object.values(...).find() made large folder views
+  // do quadratic work before virtualization even had a chance to mount a window.
+  const pooledByPath = poolRecordMap();
+  const descriptors = (entries || []).map((entry) => localGridDescriptor(entry, pooledByPath));
+  reconcileSelectionRecords(descriptors.map((entry) => selectionRecordFromEntry(entry)).filter(Boolean));
   return mountUnifiedGrid(grid, descriptors, LOCAL_GRID_ADAPTER, { assigned, preserveAnchor: true });
 }
 
@@ -2076,16 +2078,16 @@ function setLibStatus(text) {
   if (el) el.textContent = text || '';
 }
 
-// Pool-item ids in the grid's display order, for Shift-range selection. The virtual
-// grid keeps most cards out of the DOM, so the order comes from its entries; the
-// eager pool views (favorites/tags/folders) still walk the live cards.
-function orderedSelectableIds() {
+// Stable local descriptors in display order for Shift-range selection. Most cards may
+// be outside the DOM, so virtual entries — not mounted nodes — are the source of truth.
+function orderedSelectionRecords() {
   const grid = $('#libGrid');
   const virtual = grid && grid.__virtual;
   if (virtual) {
-    return virtual.entries.map((entry) => entry && entry.selectableId).filter(Boolean);
+    return virtual.entries.map((entry) => selectionRecordFromEntry(entry)).filter(Boolean);
   }
-  return Array.from(document.querySelectorAll('.lib-card[data-id]')).map((card) => card.dataset.id);
+  return Array.from(document.querySelectorAll('#libGrid .lib-card[data-selection-key]'))
+    .map((card) => card.__selectionRecord).filter(Boolean);
 }
 
 function makeLibCardFocusable(card) {
@@ -2233,19 +2235,121 @@ function isGalleryItemAdded(entry) {
 }
 
 // ---- Multi-selection helpers ----
+function localSelectionRecord(path, type, id = null) {
+  const safeType = type === 'folder' ? 'folder' : 'image';
+  return {
+    key: window.CardInteraction.localKey(path, safeType),
+    path,
+    type: safeType,
+    id: id || null,
+  };
+}
+
+function selectionRecordFromEntry(entry, freshItem = null) {
+  if (!entry || !entry.path) return null;
+  const item = freshItem || (entry.item && config.library && config.library[entry.item.id]) || entry.item;
+  const type = (item && item.type === 'folder') || entry.kind === 'subfolder' || entry.kind === 'pool-folder'
+    ? 'folder' : 'image';
+  const record = localSelectionRecord(entry.path, type, item && item.id);
+  if (entry.selectionKey) record.key = entry.selectionKey;
+  return record;
+}
+
+function selectionControlLabel(record, selected) {
+  const name = baseName(record && record.path) || '';
+  return t(selected ? 'library.deselectItem' : 'library.selectItem', { name });
+}
+
+function librarySelectionBatchPending() {
+  return libraryBatchAssignPending || libraryBatchRemovePending;
+}
+
+function removeSelectionSnapshot(records) {
+  for (const record of records || []) {
+    if (record && record.key) LIB.selection.delete(record.key);
+  }
+}
+
+function bindSelectionCard(card, record) {
+  if (!card || !record) return;
+  card.setAttribute('role', 'group');
+  card.setAttribute('aria-label', t('library.openItem', { name: baseName(record.path) }));
+  card.__selectionRecord = record;
+  card.dataset.selectionKey = record.key;
+  LIB.selection.refresh(record);
+  const selected = LIB.selection.has(record.key);
+  card.classList.toggle('selected', selected);
+  const toggle = card.querySelector(':scope > .lib-select-toggle');
+  if (toggle) {
+    toggle.disabled = librarySelectionBatchPending();
+    toggle.setAttribute('aria-checked', selected ? 'true' : 'false');
+    const label = selectionControlLabel(record, selected);
+    toggle.setAttribute('aria-label', label);
+    toggle.title = label;
+  }
+}
+
+function appendSelectionToggle(card, record) {
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'lib-select-toggle';
+  toggle.setAttribute('role', 'checkbox');
+  toggle.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="m3.2 8.2 3 3 6.6-7"/></svg>';
+  toggle.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (librarySelectionBatchPending()) return;
+    const current = card.__selectionRecord || record;
+    LIB.selection.toggle(current, e.shiftKey ? orderedSelectionRecords() : [], e.shiftKey);
+    syncSelectionUI();
+  });
+  card.appendChild(toggle);
+  bindSelectionCard(card, record);
+}
+
+function handleSelectionModifierClick(e, record) {
+  if (!e.shiftKey && !e.ctrlKey && !e.metaKey) return false;
+  e.preventDefault();
+  e.stopPropagation();
+  if (librarySelectionBatchPending()) return true;
+  LIB.selection.toggle(record, e.shiftKey ? orderedSelectionRecords() : [], e.shiftKey);
+  syncSelectionUI();
+  return true;
+}
+
+function reconcileSelectionRecords(records) {
+  const current = new Map(records.map((record) => [record.key, record]));
+  let changed = false;
+  for (const key of LIB.selection.keys()) {
+    if (!current.has(key)) { LIB.selection.delete(key); changed = true; }
+    else LIB.selection.refresh(current.get(key));
+  }
+  // A stable path may have acquired a pool id without changing selection keys.
+  // Refresh the action bar even when no selected key disappeared.
+  if (changed || LIB.selection.size > 0) syncSelectionUI();
+}
+
 function clearSelection() {
   LIB.selection.clear();
-  LIB.lastSelected = null;
 }
 
 function syncSelectionUI() {
-  // Sync .selected class on cards
-  document.querySelectorAll('.lib-card[data-id]').forEach(c => {
-    c.classList.toggle('selected', LIB.selection.has(c.dataset.id));
+  // Sync every mounted local card; virtualized cards receive the same state in bindCard.
+  document.querySelectorAll('#libGrid .lib-card[data-selection-key]').forEach((card) => {
+    bindSelectionCard(card, card.__selectionRecord);
   });
   // Show/hide selection bar
   const bar = $('#libSelectionBar');
   if (!bar) return;
+  const batchPending = librarySelectionBatchPending();
+  bar.setAttribute('aria-label', t('library.selectionActions'));
+  bar.toggleAttribute('aria-busy', batchPending);
+  const clear = $('#libSelClear');
+  if (clear) {
+    clear.setAttribute('aria-label', t('library.clearSelection'));
+    clear.title = t('library.clearSelection');
+    clear.disabled = batchPending;
+  }
   if (LIB.selection.size === 0) {
     bar.hidden = true;
     return;
@@ -2253,8 +2357,23 @@ function syncSelectionUI() {
   bar.hidden = false;
   const n = LIB.selection.size;
   $('#libSelCount').textContent = t('library.selected', { n });
-  $('#libSelAssign').textContent = t('library.massAssign');
-  $('#libSelDelete').textContent = t('library.massDelete');
+  const assign = $('#libSelAssign');
+  assign.textContent = t('library.massAssign');
+  assign.disabled = batchPending;
+  const remove = $('#libSelDelete');
+  remove.textContent = t('library.massDelete');
+  // Transient folder contents are never physical-delete candidates. A mixed selection
+  // removes only records that already belong to the pool; a transient-only selection
+  // keeps the destructive action visibly unavailable.
+  const pooledByPath = LIB.poolBySelectionKey;
+  const removable = LIB.selection.values().filter((record) => !!poolItemForRecord(record, pooledByPath)).length;
+  // Never silently apply a destructive command to only part of the displayed
+  // selection. Mixed/transient selections stay selected and the button explains why.
+  remove.disabled = batchPending || removable !== n;
+  remove.title = removable !== n ? t('library.massDeleteUnavailable') : '';
+  remove.setAttribute('aria-label', removable !== n
+    ? `${t('library.massDelete')}. ${t('library.massDeleteUnavailable')}`
+    : t('library.massDelete'));
 }
 
 // Set a card's assigned state in place — both the `.assigned` class AND the corner
@@ -2279,6 +2398,10 @@ function setCardFavorite(card, on) {
   if (!fav) return;
   fav.classList.toggle('on', !!on);
   fav.textContent = on ? '★' : '☆';
+  fav.setAttribute('aria-pressed', on ? 'true' : 'false');
+  const label = t(on ? 'library.favoriteRemove' : 'library.favoriteAdd');
+  fav.setAttribute('aria-label', label);
+  fav.title = label;
 }
 
 function poolCardById(id) {
@@ -2286,6 +2409,73 @@ function poolCardById(id) {
     if (c.dataset.id === id) return c;
   }
   return null;
+}
+
+function poolItemForRecord(record, pooledByPath = null) {
+  const lib = (config && config.library) || {};
+  if (record && record.id && lib[record.id]) return lib[record.id];
+  if (pooledByPath && record && record.key) return pooledByPath.get(record.key) || null;
+  const key = normPathKey(record && record.path);
+  if (!key) return null;
+  return Object.values(lib).find((item) => item && item.type === record.type
+    && normPathKey(item.path) === key) || null;
+}
+
+async function ensurePoolItemForRecord(record) {
+  const existing = poolItemForRecord(record);
+  if (existing) {
+    LIB.selection.refresh(localSelectionRecord(existing.path, existing.type, existing.id));
+    syncSelectionUI();
+    return existing;
+  }
+  if (!record || !record.path) return null;
+  let res;
+  try { res = await window.api.libraryMaterialize(record.path, record.type); }
+  catch { return null; }
+  config = (res && res.config) || config;
+  const item = res && res.id && config.library ? config.library[res.id] : poolItemForRecord(record);
+  if (item) {
+    LIB.selection.refresh(localSelectionRecord(item.path, item.type, item.id));
+    syncSelectionUI();
+  }
+  return item || null;
+}
+
+function replaceLocalCardWithPoolItem(card, item) {
+  if (!card || !card.isConnected || !item) return poolCardById(item && item.id);
+  if (card.dataset.id === item.id) {
+    bindSelectionCard(card, localSelectionRecord(item.path, item.type, item.id));
+    syncSelectionUI();
+    return card;
+  }
+  const oldIndex = Number(card.dataset.galleryIndex);
+  const galleryItem = item.type === 'image' ? galleryItemFromLibrary(item) : null;
+  const replacement = buildLibCard(item, assignedIds().has(item.id));
+  if (galleryItem) bindCardGalleryItem(replacement, galleryItem, oldIndex);
+  syncVirtualCardReplacement(card, replacement, item);
+  card.replaceWith(replacement);
+  syncSelectionUI();
+  scheduleJustifiedLayout($('#libGrid'));
+  return replacement;
+}
+
+async function toggleFavoriteForRecord(record, preferredCard = null) {
+  const item = await ensurePoolItemForRecord(record);
+  if (!item) return null;
+  try { config = await window.api.libraryToggleFavorite(item.id); }
+  catch { return null; }
+  const fresh = config.library && config.library[item.id];
+  if (!fresh) return null;
+  if (LIB.filter === 'favorite' && !fresh.favorite) {
+    renderLibrary();
+    return fresh;
+  }
+  let current = poolCardById(fresh.id) || ephemeralCardByPath(fresh.path) || preferredCard;
+  if (current && current.dataset.id !== fresh.id) current = replaceLocalCardWithPoolItem(current, fresh);
+  setCardFavorite(current, !!fresh.favorite);
+  if (current) bindSelectionCard(current, localSelectionRecord(fresh.path, fresh.type, fresh.id));
+  lastLibRenderKey = libRenderKey();
+  return fresh;
 }
 
 // Update the "assigned" badge on existing cards in place — assignment changes which
@@ -2357,7 +2547,7 @@ function ephemeralCardByPath(path) {
 // After an in-place card.replaceWith(...), the virtual grid's index→element map (and
 // the upgraded entry, if any) must follow the swap — otherwise the next window update
 // re-appends the detached OLD node and the grid shows a stale card.
-function syncVirtualCardReplacement(oldCard, newCard, upgradedItem = null) {
+function syncVirtualCardReplacement(oldCard, newCard, upgradedItem = null, deferGalleryRefresh = false) {
   const grid = $('#libGrid');
   const virtual = grid && grid.__virtual;
   if (!virtual) return;
@@ -2370,11 +2560,20 @@ function syncVirtualCardReplacement(oldCard, newCard, upgradedItem = null) {
   }
   if (upgradedItem && Number.isInteger(gridIndex) && virtual.entries[gridIndex]) {
     const entry = virtual.entries[gridIndex];
+    const galleryItem = upgradedItem.type === 'image' ? galleryItemFromLibrary(upgradedItem) : null;
     entry.item = upgradedItem;
     entry.id = upgradedItem.id;
-    entry.kind = 'pool-image';
+    entry.kind = upgradedItem.type === 'folder' ? 'pool-folder' : 'pool-image';
     entry.selectableId = upgradedItem.id;
-    if (Array.isArray(virtual.versions)) virtual.versions[gridIndex] = 'pool-image';
+    entry.selectionKey = entry.key;
+    entry.galleryItem = galleryItem;
+    if (galleryItem && Number.isInteger(entry.galleryIndex) && entry.galleryIndex >= 0
+        && Array.isArray(grid.__galleryItems)) {
+      grid.__galleryItems[entry.galleryIndex] = galleryItem;
+      if (!deferGalleryRefresh) setGridGallerySource(grid, grid.__galleryItems);
+    }
+    if (Array.isArray(virtual.versions)) virtual.versions[gridIndex] = localGridVersion(entry);
+    bindLocalGridCard(newCard, entry, grid);
   }
 }
 
@@ -2385,7 +2584,11 @@ function syncVirtualCardReplacement(oldCard, newCard, upgradedItem = null) {
 function tryUpgradeMaterializedCards(prevPoolIds) {
   const lib = config.library || {};
   for (const id of prevPoolIds) if (!lib[id]) return false; // something removed → real rebuild
-  const added = Object.values(lib).filter((it) => it && it.type === 'image' && it.path && !prevPoolIds.has(it.id));
+  const addedItems = Object.values(lib).filter((it) => it && it.path && !prevPoolIds.has(it.id));
+  // A mixed batch can add images and a folder in one config broadcast. The image-only
+  // in-place path cannot honestly claim that it handled the new pool-folder too.
+  if (addedItems.some((it) => it.type !== 'image')) return false;
+  const added = addedItems;
   if (!added.length) return false; // favorite/sort/other change → real rebuild
   const pairs = [];
   for (const it of added) {
@@ -2394,13 +2597,15 @@ function tryUpgradeMaterializedCards(prevPoolIds) {
     pairs.push({ it, card });
   }
   const assigned = assignedIds();
+  const grid = $('#libGrid');
   for (const { it, card } of pairs) {
     const replacement = buildLibCard(it, assigned.has(it.id));
-    bindCardGalleryItem(replacement, card.__galleryItem || galleryItemFromPath(it.path), Number(card.dataset.galleryIndex));
-    syncVirtualCardReplacement(card, replacement, it);
+    bindCardGalleryItem(replacement, galleryItemFromLibrary(it), Number(card.dataset.galleryIndex));
+    syncVirtualCardReplacement(card, replacement, it, true);
     card.replaceWith(replacement);
   }
-  scheduleJustifiedLayout($('#libGrid'));
+  if (grid && Array.isArray(grid.__galleryItems)) setGridGallerySource(grid, grid.__galleryItems);
+  scheduleJustifiedLayout(grid);
   lastLibRenderKey = libRenderKey();
   return true;
 }
@@ -2427,6 +2632,33 @@ async function assignLibraryItem(id, monitorId, th) {
   return consumeAssignResult(res);
 }
 
+async function assignLibraryRecord(record, monitorId, th) {
+  let res;
+  try { res = await window.api.libraryAssignRecord(record, monitorId, th); }
+  catch { res = { config, ok: false, error: 'assign_failed' }; }
+  const status = consumeAssignResult(res);
+  const item = res && res.id && config.library ? config.library[res.id] : poolItemForRecord(record);
+  if (status.ok && item) {
+    LIB.selection.refresh(localSelectionRecord(item.path, item.type, item.id));
+    syncSelectionUI();
+  }
+  return { ...status, item: item || null, warning: (res && res.warning) || null };
+}
+
+async function assignLibraryRecords(records, monitorId, th) {
+  let res;
+  try { res = await window.api.libraryAssignRecords(records, monitorId, th); }
+  catch { res = { config, ok: false, error: 'assign_failed', assigned: 0, failed: records.length }; }
+  if (res && res.config) config = res.config;
+  return {
+    ok: !!(res && res.ok),
+    assigned: Number(res && res.assigned) || 0,
+    failed: Number(res && res.failed) || 0,
+    error: (res && res.error) || null,
+    warning: (res && res.warning) || null,
+  };
+}
+
 function appendAssignRows(pop, onPick) {
   const title = document.createElement('div');
   title.className = 'lib-popup-title';
@@ -2437,9 +2669,13 @@ function appendAssignRows(pop, onPick) {
   mons.forEach((m, i) => {
     const row = document.createElement('div');
     row.className = 'lib-popup-row';
+    row.setAttribute('role', 'group');
     const lbl = document.createElement('span');
     lbl.className = 'lib-popup-mon';
-    lbl.textContent = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
+    const monitorLabel = t('monitor.label', { n: i + 1 }) + (m.primary ? ' ★' : '');
+    lbl.textContent = monitorLabel;
+    lbl.id = `libAssignMonitor-${Date.now()}-${i}`;
+    row.setAttribute('aria-labelledby', lbl.id);
     row.appendChild(lbl);
     // Единый режим (separateThemes off): у монитора один слот — одна кнопка «Назначить».
     const themes = (config && config.separateThemes === false)
@@ -2449,6 +2685,7 @@ function appendAssignRows(pop, onPick) {
       const b = document.createElement('button');
       b.className = 'lib-popup-btn';
       b.textContent = `${ic}${label}`;
+      b.setAttribute('aria-label', `${monitorLabel} — ${label}`);
       b.addEventListener('click', (e) => { e.stopPropagation(); onPick(m.id, th); });
       row.appendChild(b);
     });
@@ -2459,26 +2696,41 @@ function appendAssignRows(pop, onPick) {
 // Bulk assign: apply the chosen monitor×theme to every selected item. Anchored above the
 // "assign" button in the selection bar (which sits at the bottom of the window).
 function openMassAssignMenu(anchor) {
+  if (librarySelectionBatchPending()) return;
   closeLibPopup();
   const pop = document.createElement('div');
   pop.className = 'lib-popup';
   pop.id = 'libPopup';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', t('library.assignTo'));
 
   appendAssignRows(pop, async (monitorId, th) => {
-    let assigned = 0;
-    let failed = 0;
-    for (const id of LIB.selection) {
-      const res = await assignLibraryItem(id, monitorId, th);
-      if (res.ok) assigned++;
-      else failed++;
-    }
-    closeLibPopup();
-    clearSelection();
+    if (librarySelectionBatchPending()) return;
+    // Keep a stable snapshot: if the user navigates while validation is running,
+    // completion must never clear a later selection or close a newer popup.
+    const records = LIB.selection.values();
+    if (!records.length) return;
+    libraryBatchAssignPending = true;
+    pop.setAttribute('aria-busy', 'true');
+    pop.querySelectorAll('button').forEach((button) => { button.disabled = true; });
     syncSelectionUI();
-    refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
-    renderPreviews();
-    renderHome();
-    toast(failed ? t(assigned ? 'library.assignPartialToast' : 'library.assignMissingToast') : t('library.assignedToast'));
+    // Snapshot before the first IPC result can rebuild/upgrade cards. Selecting a
+    // transient path is harmless; materialization starts only after this slot pick.
+    try {
+      const result = await assignLibraryRecords(records, monitorId, th);
+      const { assigned, failed } = result;
+      if (pop.isConnected && $('#libPopup') === pop) closeLibPopup();
+      if (!failed && assigned === records.length) removeSelectionSnapshot(records);
+      syncSelectionUI();
+      refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
+      renderPreviews();
+      renderHome();
+      toast(failed ? t(assigned ? 'library.assignPartialToast' : 'library.assignMissingToast') : t('library.assignedToast'));
+    } finally {
+      libraryBatchAssignPending = false;
+      pop.removeAttribute('aria-busy');
+      syncSelectionUI();
+    }
   });
 
   document.body.appendChild(pop);
@@ -2489,7 +2741,11 @@ function openMassAssignMenu(anchor) {
   if (top < 8) top = r.bottom + 8; // not enough room above → drop below
   pop.style.left = `${left}px`;
   pop.style.top = `${top}px`;
-  setTimeout(() => document.addEventListener('click', onDocClosePopup, true), 0);
+  armLibPopupDismiss(anchor);
+  requestAnimationFrame(() => {
+    const first = pop.querySelector('.lib-popup-btn');
+    if (first && first.isConnected) first.focus();
+  });
 }
 
 // Set the empty-state caption (different wording inside an empty folder vs empty library).
@@ -2500,48 +2756,68 @@ function setLibEmptyText(key) {
   sp.textContent = t(key);
 }
 
-function closeLibPopup() {
+let libPopupAnchor = null;
+let libPopupDismissTimer = 0;
+let libPopupResizeObserver = null;
+let libPopupViewportSize = null;
+
+function closeLibPopup(opts = {}) {
   const p = $('#libPopup');
   if (p) p.remove();
+  if (libPopupDismissTimer) clearTimeout(libPopupDismissTimer);
+  libPopupDismissTimer = 0;
+  if (libPopupResizeObserver) libPopupResizeObserver.disconnect();
+  libPopupResizeObserver = null;
+  libPopupViewportSize = null;
   document.removeEventListener('click', onDocClosePopup, true);
+  document.removeEventListener('scroll', onLibPopupViewportChange, true);
+  window.removeEventListener('resize', onLibPopupViewportChange);
+  window.removeEventListener('blur', onLibPopupViewportChange);
+  if (libPopupAnchor) {
+    libPopupAnchor.setAttribute('aria-expanded', 'false');
+    libPopupAnchor.removeAttribute('aria-controls');
+    if (opts.restoreFocus && libPopupAnchor.isConnected) libPopupAnchor.focus({ preventScroll: true });
+  }
+  libPopupAnchor = null;
 }
 function onDocClosePopup(e) {
   const p = $('#libPopup');
   if (p && !p.contains(e.target)) closeLibPopup();
 }
 
-// Floating popup: assign this item to a monitor×theme, or remove it from the library.
-function openAssignMenu(it, anchor, materializeFn) {
+function onLibPopupViewportChange(e) {
+  const p = $('#libPopup');
+  if (p && e && e.target instanceof Node && p.contains(e.target)) return;
   closeLibPopup();
-  // `it` may be null: an ephemeral folder image not yet in the pool. We add it to
-  // the pool (materialize, by reference) ONLY when the user commits an action here
-  // — assign / add tag / remove — never just for opening the menu. Opening it used
-  // to materialize immediately, which jumped the card to the top under "newest
-  // first" and left stray pool items behind after the folder was removed.
-  const ensureItem = async () => {
-    if (!it && materializeFn) it = await materializeFn();
-    return it;
-  };
-  const pop = document.createElement('div');
-  pop.className = 'lib-popup';
-  pop.id = 'libPopup';
+}
 
-  appendAssignRows(pop, async (monitorId, th) => {
-    const item = await ensureItem();
-    if (!item) return;
-    const res = await assignLibraryItem(item.id, monitorId, th);
-    closeLibPopup();
-    refreshAssignedHighlights(); // in place — don't rebuild the grid / reset scroll
-    renderPreviews();
-    renderHome();
-    toast(res.ok ? t('library.assignedToast') : t('library.assignMissingToast'));
-  });
+function armLibPopupDismiss(anchor = null) {
+  libPopupAnchor = anchor && anchor.isConnected ? anchor : null;
+  if (libPopupAnchor) {
+    libPopupAnchor.setAttribute('aria-expanded', 'true');
+    libPopupAnchor.setAttribute('aria-controls', 'libPopup');
+  }
+  libPopupDismissTimer = setTimeout(() => {
+    libPopupDismissTimer = 0;
+    if (!$('#libPopup')) return;
+    document.addEventListener('click', onDocClosePopup, true);
+    document.addEventListener('scroll', onLibPopupViewportChange, true);
+    window.addEventListener('resize', onLibPopupViewportChange);
+    window.addEventListener('blur', onLibPopupViewportChange);
+    if (typeof ResizeObserver === 'function') {
+      libPopupViewportSize = [document.documentElement.clientWidth, document.documentElement.clientHeight];
+      libPopupResizeObserver = new ResizeObserver(() => {
+        const next = [document.documentElement.clientWidth, document.documentElement.clientHeight];
+        if (!libPopupViewportSize || next[0] !== libPopupViewportSize[0] || next[1] !== libPopupViewportSize[1]) {
+          closeLibPopup();
+        }
+      });
+      libPopupResizeObserver.observe(document.documentElement);
+    }
+  }, 0);
+}
 
-  const sep = document.createElement('div');
-  sep.className = 'lib-popup-sep';
-  pop.appendChild(sep);
-
-  // tags editor (chips + add input)
+function appendTagEditor(pop, state, ensureItem) {
   const tagBox = document.createElement('div');
   tagBox.className = 'lib-popup-tags';
   const tagHdr = document.createElement('div');
@@ -2556,8 +2832,6 @@ function openAssignMenu(it, anchor, materializeFn) {
   tagInput.placeholder = t('library.addTagPh');
   tagInput.addEventListener('click', (e) => e.stopPropagation());
   tagBox.appendChild(tagInput);
-  // Autocomplete dropdown of existing tags (by popularity). mousedown→preventDefault keeps the
-  // input focused when a suggestion is clicked (so blur doesn't hide the list before the click).
   const suggest = document.createElement('div');
   suggest.className = 'lib-tag-suggest';
   suggest.hidden = true;
@@ -2565,63 +2839,68 @@ function openAssignMenu(it, anchor, materializeFn) {
   tagBox.appendChild(suggest);
   pop.appendChild(tagBox);
 
-  const curTags = () => { const f = it && config.library[it.id]; return (f && f.tags) || []; };
-  function renderChips() {
+  const curTags = () => {
+    const item = state.item && config.library && config.library[state.item.id];
+    return (item && item.tags) || [];
+  };
+  const renderChips = () => {
     chips.innerHTML = '';
-    curTags().forEach((tg) => {
+    curTags().forEach((tag) => {
       const chip = document.createElement('span');
       chip.className = 'lib-chip';
-      chip.textContent = tg;
-      const x = document.createElement('button');
-      x.className = 'lib-chip-x';
-      x.textContent = '×';
-      x.addEventListener('click', async (e) => {
+      chip.textContent = tag;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.className = 'lib-chip-x';
+      remove.textContent = '×';
+      remove.addEventListener('click', async (e) => {
         e.stopPropagation();
-        if (!it) return; // chips only exist once the item is in the pool
-        config = await window.api.libraryRemoveTag(it.id, tg);
+        if (!state.item) return;
+        config = await window.api.libraryRemoveTag(state.item.id, tag);
         renderChips();
         renderSuggest();
         renderLibrary();
       });
-      chip.appendChild(x);
+      chip.appendChild(remove);
       chips.appendChild(chip);
     });
-  }
+  };
 
-  // Tag popularity snapshot — built ONCE when the menu opens, reused for every keystroke.
   const tagFreq = libTagCounts();
-  async function applyTag(raw) {
-    const v = String(raw || '').trim();
-    if (!v) return;
+  const applyTag = async (raw) => {
+    const value = String(raw || '').trim();
+    if (!value) return;
     const item = await ensureItem();
     if (!item) return;
-    config = await window.api.libraryAddTag(item.id, v);
+    config = await window.api.libraryAddTag(item.id, value);
+    state.item = config.library && config.library[item.id] ? config.library[item.id] : item;
     tagInput.value = '';
     renderChips();
     renderSuggest();
     renderLibrary();
-    tagInput.focus(); // stay in the field to keep picking tags
-  }
+    tagInput.focus();
+  };
   function renderSuggest() {
     const q = tagInput.value.trim().toLowerCase();
     const have = new Set(curTags());
     const list = Object.keys(tagFreq)
-      .filter((tg) => !have.has(tg) && (!q || tg.includes(q)))
+      .filter((tag) => !have.has(tag) && (!q || tag.includes(q)))
       .sort((a, b) => (tagFreq[b] - tagFreq[a]) || a.localeCompare(b))
       .slice(0, 40);
     suggest.innerHTML = '';
     if (!list.length) { suggest.hidden = true; return; }
-    list.forEach((tg) => {
-      const b = document.createElement('button');
-      b.className = 'lib-tag-sug';
+    list.forEach((tag) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'lib-tag-sug';
       const name = document.createElement('span');
-      name.textContent = tg;
-      const cnt = document.createElement('span');
-      cnt.className = 'lib-tag-cnt';
-      cnt.textContent = tagFreq[tg];
-      b.append(name, cnt);
-      b.addEventListener('click', (e) => { e.stopPropagation(); applyTag(tg); });
-      suggest.appendChild(b);
+      name.textContent = tag;
+      const count = document.createElement('span');
+      count.className = 'lib-tag-cnt';
+      count.textContent = tagFreq[tag];
+      button.append(name, count);
+      button.addEventListener('click', (e) => { e.stopPropagation(); applyTag(tag); });
+      suggest.appendChild(button);
     });
     suggest.hidden = false;
   }
@@ -2632,27 +2911,86 @@ function openAssignMenu(it, anchor, materializeFn) {
   tagInput.addEventListener('blur', () => setTimeout(() => { suggest.hidden = true; }, 100));
   tagInput.addEventListener('keydown', async (e) => {
     if (e.key === 'Enter' && tagInput.value.trim()) { e.stopPropagation(); await applyTag(tagInput.value); }
-    else if (e.key === 'Escape') { suggest.hidden = true; }
+    else if (e.key === 'Escape' && !suggest.hidden) {
+      e.preventDefault();
+      e.stopPropagation();
+      suggest.hidden = true;
+    }
   });
+  return tagInput;
+}
 
-  const sep2 = document.createElement('div');
-  sep2.className = 'lib-popup-sep';
-  pop.appendChild(sep2);
+// Floating popup: assign this item to a monitor×theme, or remove it from the library.
+function openAssignMenu(it, anchor, materializeFn, options = {}) {
+  closeLibPopup();
+  // `it` may be null: an ephemeral folder image not yet in the pool. We add it to
+  // the pool (materialize, by reference) ONLY when the user commits an action here
+  // — assign / add tag / remove — never just for opening the menu. Opening it used
+  // to materialize immediately, which jumped the card to the top under "newest
+  // first" and left stray pool items behind after the folder was removed.
+  const lazyItem = window.CardInteraction.createLazyPoolItem(it, materializeFn);
+  const state = { item: lazyItem.current() };
+  const ensureItem = async () => {
+    if (!state.item) state.item = await lazyItem.ensure();
+    return state.item;
+  };
+  const pop = document.createElement('div');
+  pop.className = 'lib-popup';
+  pop.id = 'libPopup';
+  pop.setAttribute('role', 'dialog');
+  pop.setAttribute('aria-label', options.assign === false ? t('library.editTags') : t('library.assignTo'));
+  let sections = 0;
+  const addSeparator = () => {
+    if (!sections) return;
+    const sep = document.createElement('div');
+    sep.className = 'lib-popup-sep';
+    pop.appendChild(sep);
+  };
+  if (options.assign !== false) {
+    appendAssignRows(pop, async (monitorId, th) => {
+      let res;
+      if (!state.item && options.assignmentRecord) {
+        res = await assignLibraryRecord(options.assignmentRecord, monitorId, th);
+        if (res.item) state.item = res.item;
+      } else {
+        const item = await ensureItem();
+        if (!item) return;
+        res = await assignLibraryItem(item.id, monitorId, th);
+      }
+      closeLibPopup();
+      refreshAssignedHighlights();
+      renderPreviews();
+      renderHome();
+      toast(res.ok ? t('library.assignedToast') : t('library.assignMissingToast'));
+    });
+    sections++;
+  }
 
-  const rm = document.createElement('button');
-  rm.className = 'lib-popup-btn danger';
-  rm.textContent = t('library.remove');
-  rm.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    if (!it) { closeLibPopup(); return; } // ephemeral, not in the pool → nothing to remove
-    config = await window.api.libraryRemove(it.id);
-    closeLibPopup();
-    renderLibrary();
-    renderPreviews();
-    renderHome();
-    toast(t('library.removedToast'));
-  });
-  pop.appendChild(rm);
+  let tagInput = null;
+  if (options.tags !== false) {
+    addSeparator();
+    tagInput = appendTagEditor(pop, state, ensureItem);
+    sections++;
+  }
+
+  if (options.remove !== false) {
+    addSeparator();
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'lib-popup-btn danger';
+    remove.textContent = t('library.remove');
+    remove.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!state.item) { closeLibPopup(); return; }
+      config = await window.api.libraryRemove(state.item.id);
+      closeLibPopup();
+      renderLibrary();
+      renderPreviews();
+      renderHome();
+      toast(t('library.removedToast'));
+    });
+    pop.appendChild(remove);
+  }
 
   document.body.appendChild(pop);
   const r = anchor.getBoundingClientRect();
@@ -2662,7 +3000,140 @@ function openAssignMenu(it, anchor, materializeFn) {
   if (top + pop.offsetHeight > window.innerHeight - 8) top = r.top - pop.offsetHeight - 6;
   pop.style.left = `${left}px`;
   pop.style.top = `${Math.max(8, top)}px`;
-  setTimeout(() => document.addEventListener('click', onDocClosePopup, true), 0);
+  armLibPopupDismiss(anchor);
+  requestAnimationFrame(() => {
+    const first = options.focusTags && tagInput ? tagInput : pop.querySelector('button, input');
+    if (first && first.isConnected) first.focus();
+  });
+}
+
+function appendContextMenuItem(pop, label, action, opts = {}) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'lib-context-item' + (opts.danger ? ' danger' : '');
+  button.setAttribute('role', 'menuitem');
+  button.textContent = label;
+  button.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    closeLibPopup({ restoreFocus: true });
+    action();
+  });
+  pop.appendChild(button);
+  return button;
+}
+
+async function removeRecordFromLibrary(record) {
+  const item = poolItemForRecord(record);
+  if (!item) return;
+  try { config = await window.api.libraryRemove(item.id); }
+  catch { return; }
+  LIB.selection.delete(record.key);
+  syncSelectionUI();
+  renderLibrary();
+  renderPreviews();
+  renderHome();
+  toast(t('library.removedToast'));
+}
+
+function openLocalCardContextMenu(record, card, point = null) {
+  closeLibPopup();
+  const current = poolItemForRecord(record);
+  const freshRecord = current
+    ? localSelectionRecord(current.path, current.type, current.id) : record;
+  const actions = window.CardInteraction.actionsFor(freshRecord);
+  const pop = document.createElement('div');
+  pop.className = 'lib-popup lib-context-menu';
+  pop.id = 'libPopup';
+  pop.setAttribute('role', 'menu');
+  pop.setAttribute('aria-label', t('library.cardActions'));
+  pop.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  if (actions.open) {
+    appendContextMenuItem(pop, t('library.open'), () => enterFolder(freshRecord.path, baseName(freshRecord.path)));
+  }
+  if (actions.assign) {
+    appendContextMenuItem(pop, t('library.assign'), () => {
+      openAssignMenu(current, card, () => ensurePoolItemForRecord(freshRecord), {
+        assign: true, tags: false, remove: false, assignmentRecord: freshRecord,
+      });
+    });
+  }
+  if (actions.favorite) {
+    const isFavorite = !!(current && current.favorite);
+    appendContextMenuItem(pop, t(isFavorite ? 'library.favoriteRemove' : 'library.favoriteAdd'), () => {
+      toggleFavoriteForRecord(freshRecord, card);
+    });
+  }
+  if (actions.tags) {
+    appendContextMenuItem(pop, t('library.editTags'), () => {
+      openAssignMenu(current, card, () => ensurePoolItemForRecord(freshRecord), {
+        assign: false, tags: true, remove: false, focusTags: true,
+      });
+    });
+  }
+  if (actions.remove) {
+    const sep = document.createElement('div');
+    sep.className = 'lib-popup-sep';
+    pop.appendChild(sep);
+    appendContextMenuItem(pop, t('library.remove'), () => removeRecordFromLibrary(freshRecord), { danger: true });
+  }
+
+  document.body.appendChild(pop);
+  const rect = card.getBoundingClientRect();
+  const wantedLeft = point && Number.isFinite(point.x) ? point.x : rect.left + 12;
+  const wantedTop = point && Number.isFinite(point.y) ? point.y : rect.top + 12;
+  const left = Math.max(8, Math.min(wantedLeft, window.innerWidth - pop.offsetWidth - 8));
+  const top = Math.max(8, Math.min(wantedTop, window.innerHeight - pop.offsetHeight - 8));
+  pop.style.left = `${left}px`;
+  pop.style.top = `${top}px`;
+  armLibPopupDismiss(card);
+
+  const items = Array.from(pop.querySelectorAll('[role="menuitem"]'));
+  pop.addEventListener('keydown', (e) => {
+    const index = items.indexOf(document.activeElement);
+    let next = -1;
+    if (e.key === 'ArrowDown') next = index < 0 ? 0 : (index + 1) % items.length;
+    else if (e.key === 'ArrowUp') next = index < 0 ? items.length - 1 : (index - 1 + items.length) % items.length;
+    else if (e.key === 'Home') next = 0;
+    else if (e.key === 'End') next = items.length - 1;
+    else if (e.key === 'Tab') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeLibPopup({ restoreFocus: true });
+      return;
+    }
+    else if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeLibPopup({ restoreFocus: true });
+      return;
+    }
+    if (next >= 0) {
+      e.preventDefault();
+      items[next].focus();
+    }
+  });
+  requestAnimationFrame(() => { if (items[0] && items[0].isConnected) items[0].focus(); });
+}
+
+function bindLocalCardContextMenu(card, record) {
+  card.setAttribute('aria-haspopup', 'menu');
+  card.setAttribute('aria-expanded', 'false');
+  card.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (librarySelectionBatchPending()) return;
+    card.focus({ preventScroll: true });
+    openLocalCardContextMenu(card.__selectionRecord || record, card, { x: e.clientX, y: e.clientY });
+  });
+  card.addEventListener('keydown', (e) => {
+    if (e.key !== 'ContextMenu' && !(e.shiftKey && e.key === 'F10')) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (librarySelectionBatchPending()) return;
+    openLocalCardContextMenu(card.__selectionRecord || record, card);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -2765,7 +3236,12 @@ function initLibrary() {
 
   // Escape key clears selection
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && LIB.selection.size > 0) {
+    if (e.key !== 'Escape') return;
+    if ($('#libPopup')) {
+      closeLibPopup({ restoreFocus: true });
+      return;
+    }
+    if (LIB.selection.size > 0 && !librarySelectionBatchPending()) {
       clearSelection();
       syncSelectionUI();
     }
@@ -2773,20 +3249,46 @@ function initLibrary() {
 
   // Selection bar buttons
   const selClear = $('#libSelClear');
-  if (selClear) selClear.addEventListener('click', () => { clearSelection(); syncSelectionUI(); });
+  if (selClear) selClear.addEventListener('click', () => {
+    if (librarySelectionBatchPending()) return;
+    clearSelection();
+    syncSelectionUI();
+  });
   const selAssign = $('#libSelAssign');
   if (selAssign) selAssign.addEventListener('click', () => openMassAssignMenu(selAssign));
   const selDelete = $('#libSelDelete');
   if (selDelete) selDelete.addEventListener('click', async () => {
-    for (const id of LIB.selection) {
-      config = await window.api.libraryRemove(id);
+    if (librarySelectionBatchPending()) return;
+    const selected = LIB.selection.values();
+    const ids = new Set();
+    for (const record of selected) {
+      const item = poolItemForRecord(record, LIB.poolBySelectionKey);
+      if (item && item.id) ids.add(item.id);
     }
-    clearSelection();
+    // Guard the programmatic path too: disabled buttons cannot normally fire, but
+    // mixed selection must never become a silent partial destructive operation.
+    if (ids.size !== selected.length) { syncSelectionUI(); return; }
+    libraryBatchRemovePending = true;
     syncSelectionUI();
-    renderLibrary();
-    renderPreviews();
-    renderHome();
-    toast(t('library.removedToast'));
+    try {
+      let res;
+      try { res = await window.api.libraryRemoveMany(Array.from(ids)); }
+      catch { res = { config, removed: 0, error: 'remove_failed' }; }
+      config = (res && res.config) || config;
+      if (!res || res.error || res.removed !== ids.size) {
+        toast(t('library.massDeleteFailed'));
+        return;
+      }
+      removeSelectionSnapshot(selected);
+      syncSelectionUI();
+      renderLibrary();
+      renderPreviews();
+      renderHome();
+      toast(t('library.removedToast'));
+    } finally {
+      libraryBatchRemovePending = false;
+      syncSelectionUI();
+    }
   });
   const sortEl = $('#libSort');
   if (sortEl) {
@@ -4255,11 +4757,12 @@ function renderHomeRecentItems(items, version) {
       // materialized into the pool only when the user commits an action in the menu
       // (so merely opening it no longer reorders "recently added" or leaves strays).
       if (!item.ephemeral) { openAssignMenu(item, card); return; }
+      const record = localSelectionRecord(item.path, 'image');
       openAssignMenu(null, card, async () => {
         const res = await window.api.libraryMaterialize(item.path, 'image');
         config = (res && res.config) || config;
         return res && res.id ? config.library[res.id] : null;
-      });
+      }, { assignmentRecord: record, remove: false });
     });
     grid.appendChild(card);
 
@@ -4703,8 +5206,7 @@ async function init() {
     const prevContentSig = libraryContentSig();
     const prevAssignedSig = assignedSig();
     const prevLibrary = config.library || {};
-    const prevPoolIds = new Set(Object.values(config.library || {})
-      .filter((it) => it && it.type === 'image' && it.path).map((it) => it.id));
+    const prevPoolIds = new Set(Object.keys(config.library || {}));
     config = cfg;
     renderConfig();
     renderHome();

@@ -6,6 +6,9 @@ const path = require('path');
 
 const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
 const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
+const interaction = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'card-interaction.js'), 'utf8');
+const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 let passed = 0;
 function ok(name, condition) {
   assert.ok(condition, name);
@@ -14,13 +17,99 @@ function ok(name, condition) {
 }
 
 const unifiedPos = html.indexOf('<script src="unified-grid.js"></script>');
+const interactionPos = html.indexOf('<script src="card-interaction.js"></script>');
 const rendererPos = html.indexOf('<script src="renderer.js"></script>');
 ok('the shared controller loads before renderer.js', unifiedPos >= 0 && rendererPos > unifiedPos);
+ok('the card interaction model loads before renderer.js',
+  interactionPos > unifiedPos && rendererPos > interactionPos);
 ok('the rejected legacy grid implementation is gone', !renderer.includes('renderEntriesLazilyLegacy'));
 ok('local images use a path-stable key across materialization',
-  renderer.includes("'local-image'"));
+  interaction.includes('return `local-${safeType}:${normalized}`')
+  && renderer.includes('window.CardInteraction.localKey(path'));
 ok('local folders use a separate path-stable key namespace',
-  renderer.includes("'local-folder'"));
+  interaction.includes("type === 'folder' ? 'folder' : 'image'"));
+ok('every local descriptor exposes its stable key for selection',
+  (renderer.match(/selectionKey: key/g) || []).length === 2);
+ok('selection is model-backed instead of restricted to pool ids',
+  renderer.includes('selection: window.CardInteraction.createSelectionModel()')
+  && renderer.includes("#libGrid .lib-card[data-selection-key]"));
+ok('ordinary selection clicks do not build the full virtual ordering unless Shift is held',
+  (renderer.match(/e\.shiftKey \? orderedSelectionRecords\(\) : \[\]/g) || []).length === 2);
+ok('all local builders use the shared checkbox and context-menu controls',
+  (renderer.match(/appendSelectionToggle\(card, selectionRecord\)/g) || []).length === 3
+  && (renderer.match(/bindLocalCardContextMenu\(card, selectionRecord\)/g) || []).length === 3);
+ok('local kebab controls are gone while Online keeps explicit add buttons',
+  !renderer.includes("textContent = '⋯'")
+  && (renderer.match(/add\.textContent = '\+'/g) || []).length >= 2);
+const massAssignStart = renderer.indexOf('function openMassAssignMenu(');
+const massAssignEnd = renderer.indexOf('function closeLibPopup(', massAssignStart);
+const massAssign = renderer.slice(massAssignStart, massAssignEnd);
+ok('bulk assignment uses the atomic record IPC instead of materialize-then-assign',
+  massAssign.includes('await assignLibraryRecords(records, monitorId, th)')
+  && !massAssign.includes('ensurePoolItemForRecord(record)'));
+ok('bulk assignment is guarded against repeated clicks while IPC is pending',
+  renderer.includes('if (librarySelectionBatchPending()) return;')
+  && massAssign.includes("pop.setAttribute('aria-busy', 'true')")
+  && massAssign.includes('button.disabled = true'));
+ok('bulk assignment completion only closes its own popup and removes its own snapshot',
+  massAssign.includes("pop.isConnected && $('#libPopup') === pop")
+  && massAssign.includes('removeSelectionSnapshot(records)')
+  && !massAssign.includes('clearSelection()'));
+ok('single and batch atomic assignment channels cross preload and main',
+  preload.includes("ipcRenderer.invoke('library-assign-record'")
+  && main.includes("ipcMain.handle('library-assign-record'")
+  && preload.includes("ipcRenderer.invoke('library-assign-records'")
+  && main.includes("ipcMain.handle('library-assign-records'"));
+const assignRecordsMainStart = main.indexOf("ipcMain.handle('library-assign-records'");
+const assignRecordsMainEnd = main.indexOf("ipcMain.handle('library-materialize'", assignRecordsMainStart);
+const assignRecordsMain = main.slice(assignRecordsMainStart, assignRecordsMainEnd);
+ok('existing-card batch assignment skips the unlimited live-folder discovery scan',
+  assignRecordsMain.includes('const needsDiscovery = records.some')
+  && assignRecordsMain.indexOf('if (needsDiscovery)') < assignRecordsMain.indexOf('folderState.listImages(liveFolderState)'));
+ok('transient action popups share one lazy materialization promise',
+  renderer.includes('window.CardInteraction.createLazyPoolItem(it, materializeFn)'));
+ok('transient-only selections cannot invoke library removal',
+  renderer.includes('remove.disabled = batchPending || removable !== n')
+  && renderer.includes('if (ids.size !== selected.length)')
+  && renderer.includes('window.api.libraryRemoveMany(Array.from(ids))'));
+ok('bulk removal crosses one batch IPC instead of looping config writes',
+  preload.includes("ipcRenderer.invoke('library-remove-many'")
+  && main.includes("ipcMain.handle('library-remove-many'"));
+const removeManyStart = main.indexOf("ipcMain.handle('library-remove-many'");
+const removeManyEnd = main.indexOf("ipcMain.handle('library-toggle-favorite'", removeManyStart);
+const removeMany = main.slice(removeManyStart, removeManyEnd);
+ok('bulk removal filters each slot once and rejects oversized batches without slicing',
+  removeMany.includes('slot.itemIds.filter((id) => !idSet.has(id))')
+  && !removeMany.includes('removeFromLibrary(')
+  && !removeMany.includes('.slice('));
+ok('failed bulk removal keeps selection instead of reporting a partial success',
+  renderer.includes('res.removed !== ids.size')
+  && renderer.includes("toast(t('library.massDeleteFailed'))"));
+ok('bulk removal is guarded against repeated clicks and always releases its busy state',
+  (renderer.match(/if \(librarySelectionBatchPending\(\)\) return;/g) || []).length >= 5
+  && renderer.includes('libraryBatchRemovePending = true;')
+  && renderer.includes('libraryBatchRemovePending = false;')
+  && renderer.includes("bar.toggleAttribute('aria-busy', batchPending)")
+  && renderer.includes('clear.disabled = batchPending'));
+ok('bulk removal completion removes only the original selection snapshot',
+  renderer.includes('removeSelectionSnapshot(selected)'));
+ok('selection action refresh reuses the pool lookup built for the current grid',
+  renderer.includes('const pooledByPath = LIB.poolBySelectionKey;')
+  && renderer.includes('poolItemForRecord(record, LIB.poolBySelectionKey)'));
+ok('ephemeral Home cards never show a dead remove-from-library command',
+  renderer.includes('{ assignmentRecord: record, remove: false }'));
+ok('the first Escape closes an open tag suggestion list without bubbling to the popup',
+  renderer.includes("e.key === 'Escape' && !suggest.hidden")
+  && renderer.includes('e.stopPropagation();\n      suggest.hidden = true;'));
+ok('a mixed image/folder materialization falls back to a complete grid refresh',
+  renderer.includes("addedItems.some((it) => it.type !== 'image')")
+  && renderer.includes('new Set(Object.keys(config.library || {}))'));
+const upgradeStart = renderer.indexOf('function tryUpgradeMaterializedCards(');
+const upgradeEnd = renderer.indexOf('// Shared monitor×theme grid', upgradeStart);
+const upgradeSource = renderer.slice(upgradeStart, upgradeEnd);
+ok('multi-card materialization rebuilds the gallery lookup only once after all replacements',
+  upgradeSource.includes('syncVirtualCardReplacement(card, replacement, it, true)')
+  && (upgradeSource.match(/setGridGallerySource\(/g) || []).length === 1);
 ok('mixed folder/image views assign gallery indexes independently from grid indexes',
   renderer.includes('galleryIndex: entry && entry.galleryItem ? galleryIndex++ : -1'));
 ok('aspect refinement writes by virtual grid index',

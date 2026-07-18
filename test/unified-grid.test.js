@@ -185,6 +185,7 @@ function fixture(entries, options = {}) {
       built.push(card);
       return card;
     },
+    bindCard: options.bindCard,
     dropCard(card) { dropped.push(card); },
     captureAnchor: options.captureAnchor,
     onDestroy: options.onDestroy,
@@ -223,6 +224,25 @@ function items(count, aspect = 1.6) {
     env.state.cardForKey('item-7') === null
       && env.state.cardForKey('item-2') === card2
       && env.dropped.includes(removedCard));
+  env.state.destroy();
+}
+
+// Any non-structural presentation state is intentionally not part of a card key or
+// version. A reused virtual card must receive fresh UI state through bindCard; the
+// card-interaction tests separately own the real selection model behavior.
+{
+  const before = { id: 'same-image', kind: 'pool-image', aspect: 1.6, selected: false };
+  const after = { ...before, selected: true };
+  const env = fixture([before], {
+    height: 800,
+    getVersion: (entry) => entry.kind,
+    bindCard: (card, entry) => { card.selected = entry.selected; },
+  });
+  const card = env.state.cardForKey(before.id);
+  env.state.replace([after]);
+  ok('a stable keyed card is reused when only bound presentation state changes',
+    env.state.cardForKey(after.id) === card);
+  ok('bindCard refreshes non-structural state on the reused node', card.selected === true);
   env.state.destroy();
 }
 

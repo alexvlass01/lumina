@@ -587,11 +587,11 @@
           </div>
         </div>
       </div>
-      <div id="libSelectionBar" class="lib-selection-bar" hidden>
-        <span id="libSelCount" class="lib-sel-count"></span>
-        <button id="libSelAssign" class="pill suggested"></button>
-        <button id="libSelDelete" class="pill destructive"></button>
-        <button id="libSelClear" class="pill">✕</button>
+      <div id="libSelectionBar" class="lib-selection-bar" role="region" hidden>
+        <span id="libSelCount" class="lib-sel-count" role="status" aria-live="polite"></span>
+        <button type="button" id="libSelAssign" class="pill suggested"></button>
+        <button type="button" id="libSelDelete" class="pill destructive"></button>
+        <button type="button" id="libSelClear" class="pill">✕</button>
       </div>
       <div class="lib-statusbar" id="libStatus"></div>
     </section>
@@ -759,6 +759,7 @@
   <script src="virtual-window.js"></script>
   <script src="virtual-grid-dom.js"></script>
   <script src="unified-grid.js"></script>
+  <script src="card-interaction.js"></script>
   <script src="resize-anchor.js"></script>
   <script src="deferred-refresh.js"></script>
   <script src="renderer.js"></script>

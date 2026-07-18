@@ -1544,6 +1544,7 @@ html.dark .lib-folder-front { fill: #d99a34; }
   backdrop-filter: blur(8px);
   font-size: 15px; line-height: 26px; text-align: center;
   opacity: 0; transition: opacity .12s ease, background .12s ease;
+  z-index: 7;
 }
 .lib-fav { top: 6px; left: 6px; }
 .lib-menu-btn { top: 6px; right: 6px; font-weight: 700; }
@@ -1551,6 +1552,35 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-card:focus-within .lib-fav, .lib-card:focus-within .lib-menu-btn { opacity: 1; }
 .lib-fav.on { opacity: 1; color: #ffd35a; }
 .lib-fav:hover, .lib-menu-btn:hover { background: rgba(20, 20, 20, 0.9); }
+
+/* Local-card selection is a paint-only overlay: it never participates in the
+   justified row geometry, so hover/selection cannot move or relayout the grid. */
+.lib-select-toggle {
+  position: absolute; top: 6px; right: 6px; z-index: 7;
+  width: 28px; height: 28px; padding: 0;
+  display: flex; align-items: center; justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.58); border-radius: 7px;
+  background: rgba(20, 20, 20, 0.68); color: #fff;
+  backdrop-filter: blur(8px); cursor: pointer;
+  opacity: 0; pointer-events: none;
+  transition: opacity .12s ease, background .12s ease, border-color .12s ease;
+}
+.lib-select-toggle svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; opacity: 0; }
+.lib-card:hover > .lib-select-toggle,
+.lib-card:focus-within > .lib-select-toggle,
+.lib-select-toggle[aria-checked="true"] { opacity: 1; pointer-events: auto; }
+.lib-select-toggle:hover { background: rgba(20, 20, 20, 0.9); }
+.lib-select-toggle:focus-visible {
+  opacity: 1; pointer-events: auto;
+  outline: 2px solid #fff; outline-offset: 1px;
+  box-shadow: 0 0 0 4px var(--accent);
+}
+.lib-select-toggle[aria-checked="true"] { background: var(--accent); border-color: rgba(255, 255, 255, 0.82); }
+.lib-select-toggle[aria-checked="true"] svg { opacity: 1; }
+
+@media (hover: none) {
+  .lib-select-toggle { opacity: 1; pointer-events: auto; }
+}
 
 /* "Assigned" indicator: a small accent dot with a white halo. Minimal, readable over any
    wallpaper, and distinct from the multi-select overlay (which takes over when selecting). */
@@ -1593,6 +1623,27 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-popup-sep { height: 1px; background: var(--card-border); margin: 6px 4px; }
 .lib-popup-btn.danger { width: 100%; color: var(--destructive); }
 .lib-popup-btn.danger:hover { background: rgba(224, 27, 36, 0.12); }
+
+.lib-context-menu {
+  min-width: 190px; max-width: min(280px, calc(100vw - 16px));
+  max-height: calc(100vh - 16px); overflow-y: auto;
+  padding: 5px;
+}
+.lib-context-item {
+  display: block; width: 100%;
+  border: 0; border-radius: 7px; padding: 7px 10px;
+  background: transparent; color: var(--text);
+  font: inherit; font-size: 13px; line-height: 1.25; text-align: left;
+  cursor: pointer;
+}
+.lib-context-item:hover,
+.lib-context-item:focus-visible {
+  background: var(--row-hover);
+  outline: 2px solid var(--accent); outline-offset: -2px;
+}
+.lib-context-item.danger { color: var(--destructive); }
+.lib-context-item.danger:hover,
+.lib-context-item.danger:focus-visible { background: rgba(224, 27, 36, 0.12); }
 
 /* tags */
 /* Only the tag list scrolls (fixed filter buttons above it stay pinned to the top of
@@ -1991,21 +2042,11 @@ html.dark .lib-folder-front { fill: #d99a34; }
   pointer-events: none;
   z-index: 5;
 }
-.lib-card.selected::after {
-  content: "\2713";
-  position: absolute;
-  top: 7px; right: 7px;
-  background: var(--accent); color: #fff;
-  width: 23px; height: 23px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: bold;
-  z-index: 6;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+.lib-card.selected:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+  box-shadow: 0 0 0 5px var(--accent);
 }
-.lib-card.selected .lib-fav,
-.lib-card.selected .lib-menu-btn { display: none !important; }
-
 /* Floating contextual action bar — a centred elevated pill, not a full-width strip. */
 .lib-selection-bar {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%);
@@ -2019,6 +2060,7 @@ html.dark .lib-folder-front { fill: #d99a34; }
   z-index: 150;
 }
 .lib-selection-bar[hidden] { display: none; }
+.lib-selection-bar button:disabled { opacity: .48; cursor: default; }
 .lib-sel-count { font-size: 13px; font-weight: 600; margin-right: 6px; white-space: nowrap; }
 
 @media (max-width: 1100px) {
