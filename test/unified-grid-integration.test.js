@@ -4,11 +4,14 @@ const assert = require('assert');
 const fs = require('fs');
 const path = require('path');
 
-const renderer = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'renderer.js'), 'utf8');
-const html = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'index.html'), 'utf8');
-const interaction = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'card-interaction.js'), 'utf8');
-const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
-const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+// Read sources with LF-normalized line endings so multi-line substring checks below stay
+// valid on Windows working trees checked out with core.autocrlf=true (CRLF).
+const readSrc = (...p) => fs.readFileSync(path.join(__dirname, '..', ...p), 'utf8').replace(/\r\n/g, '\n');
+const renderer = readSrc('renderer', 'renderer.js');
+const html = readSrc('renderer', 'index.html');
+const interaction = readSrc('renderer', 'card-interaction.js');
+const preload = readSrc('preload.js');
+const main = readSrc('main.js');
 let passed = 0;
 function ok(name, condition) {
   assert.ok(condition, name);

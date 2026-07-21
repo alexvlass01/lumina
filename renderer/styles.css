@@ -1354,21 +1354,6 @@ html.dark .lib-rail { box-shadow: inset 0 1px rgba(255, 255, 255, 0.035); }
 .lib-rail-hash { display: inline-flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; opacity: 0.6; }
 
 .lib-main { flex: 1 1 auto; min-width: 0; width: 100%; }
-.lib-view-head {
-  display: flex; align-items: baseline; gap: 10px;
-  min-height: 36px;
-  margin: 0 2px 8px;
-}
-.lib-view-title { font-size: 21px; line-height: 1.25; font-weight: 700; letter-spacing: -0.01em; }
-.lib-view-count {
-  color: var(--text-dim);
-  font-size: 12px;
-  font-weight: 600;
-  padding: 3px 8px;
-  background: var(--btn-bg);
-  border-radius: 999px;
-}
-.lib-view-count[hidden] { display: none; }
 .lib-toolbar {
   display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap;
   padding: 6px;
@@ -2094,8 +2079,6 @@ html.dark .lib-folder-front { fill: #d99a34; }
   .lib-railbtn.active { box-shadow: inset 0 -3px var(--accent); }
   .lib-rail-separator { width: 1px; height: 22px; margin: 0 4px; flex: 0 0 auto; }
   .lib-railtags { flex: 0 0 auto; flex-direction: row; gap: 2px; overflow: visible; min-height: 0; }
-  .lib-view-head { margin-bottom: 6px; }
-  .lib-view-title { font-size: 19px; }
   .lib-toolbar { margin-bottom: 12px; }
   .lib-search-wrap,
   .lib-searchbox { flex-basis: calc(100% - 44px); }
@@ -2104,7 +2087,6 @@ html.dark .lib-folder-front { fill: #d99a34; }
 }
 
 @media (max-width: 520px) {
-  .lib-view-count { display: none; }
   .lib-search-wrap,
   .lib-searchbox { flex-basis: 100%; }
   .lib-toolbar .select-wrap { flex: 1 1 auto; }

@@ -1175,20 +1175,12 @@ function renderLibRailTags() {
   });
 }
 
+// The duplicate title/count head above the grid was removed (the rail already names the
+// section and the head ate vertical space). The item count now lives in the status bar as
+// its idle text — shown whenever the pointer isn't hovering a card.
 function setLibViewHeader(count = null) {
-  const title = $('#libViewTitle');
-  const countEl = $('#libViewCount');
-  let label = t('library.all');
-  if (LIB.folderPath && LIB.crumbs.length) label = LIB.crumbs[LIB.crumbs.length - 1].name;
-  else if (LIB.filter === 'favorite') label = t('library.favorites');
-  else if (LIB.filter === 'folder') label = t('library.folders');
-  else if (LIB.filter === 'online') label = t('online.rail');
-  else if (LIB.filter.startsWith('tag:')) label = `#${LIB.filter.slice(4)}`;
-  if (title) title.textContent = label;
-  if (!countEl) return;
-  const hasCount = Number.isFinite(count) && count >= 0;
-  countEl.hidden = !hasCount;
-  if (hasCount) countEl.textContent = t('library.itemsCount', { n: count });
+  libIdleStatus = (Number.isFinite(count) && count >= 0) ? t('library.itemsCount', { n: count }) : '';
+  setLibStatus(''); // refresh the status bar back to the idle text
 }
 
 function renderLibrary() {
@@ -2073,9 +2065,12 @@ function renderEntriesLazily(grid, entries, assigned, tok) {
 }
 
 // Faint Explorer-style status line: shows the hovered item's name at the bottom.
+// Idle status-bar text (the Library item count). Hovering a card overrides it with the
+// file name; leaving the card (empty text) restores this.
+let libIdleStatus = '';
 function setLibStatus(text) {
   const el = $('#libStatus');
-  if (el) el.textContent = text || '';
+  if (el) el.textContent = text || libIdleStatus || '';
 }
 
 // Stable local descriptors in display order for Shift-range selection. Most cards may
@@ -4691,9 +4686,11 @@ function homeRecentItems() {
 function homeRecentLabel(item) {
   const file = baseName(item.path).replace(/\.[^.]+$/, '');
   if (!/^wp-[a-f0-9]{16}$/i.test(file)) return file;
+  // Author only — never a random tag as a pseudo-title (it read like a bug when a photo
+  // had no author). Without an author fall back to a neutral label; the date already shows
+  // on the card's second line.
   if (item.author) return item.author;
-  const tag = Array.isArray(item.tags) ? item.tags.find(Boolean) : '';
-  return tag ? String(tag).replace(/_/g, ' ') : t('home.recentWallpaper');
+  return t('home.recentWallpaper');
 }
 
 function homeRecentDate(timestamp) {
