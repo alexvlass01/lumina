@@ -4686,21 +4686,20 @@ function homeRecentItems() {
 function homeRecentLabel(item) {
   const file = baseName(item.path).replace(/\.[^.]+$/, '');
   if (!/^wp-[a-f0-9]{16}$/i.test(file)) return file;
-  // Author only — never a random tag as a pseudo-title (it read like a bug when a photo
-  // had no author). Without an author fall back to a neutral label; the date already shows
-  // on the card's second line.
-  if (item.author) return item.author;
-  return t('home.recentWallpaper');
+  // Author when known; otherwise no title line at all (never a random tag, and never a
+  // meaningless "Wallpaper" filler — most online images from Gelbooru/Wallhaven carry no
+  // artist). The date on the card's second line carries these cards.
+  return item.author || '';
 }
 
 function homeRecentDate(timestamp) {
   const value = Number(timestamp);
-  if (!Number.isFinite(value) || value <= 0) return t('home.recentWallpaper');
+  if (!Number.isFinite(value) || value <= 0) return '';
   try {
     return new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
       day: 'numeric', month: 'short', year: new Date(value).getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
     }).format(new Date(value));
-  } catch { return t('home.recentWallpaper'); }
+  } catch { return ''; }
 }
 
 function openRecentLibrary() {
@@ -4743,11 +4742,18 @@ function renderHomeRecentItems(items, version) {
 
     const copy = document.createElement('span');
     copy.className = 'home-recent-copy';
-    const title = document.createElement('strong');
-    title.textContent = homeRecentLabel(item);
-    const date = document.createElement('small');
-    date.textContent = homeRecentDate(item.addedAt);
-    copy.append(title, date);
+    const label = homeRecentLabel(item);
+    if (label) {
+      const title = document.createElement('strong');
+      title.textContent = label;
+      copy.appendChild(title);
+    }
+    const dateText = homeRecentDate(item.addedAt);
+    if (dateText) {
+      const date = document.createElement('small');
+      date.textContent = dateText;
+      copy.appendChild(date);
+    }
     card.append(preview, copy);
     card.addEventListener('click', () => {
       // Open the assign menu on the existing card; an ephemeral folder image is
