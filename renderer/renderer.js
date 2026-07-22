@@ -4683,25 +4683,6 @@ function homeRecentItems() {
     .slice(0, HOME_RECENT_LIMIT);
 }
 
-function homeRecentLabel(item) {
-  const file = baseName(item.path).replace(/\.[^.]+$/, '');
-  if (!/^wp-[a-f0-9]{16}$/i.test(file)) return file;
-  // Author when known; otherwise no title line at all (never a random tag, and never a
-  // meaningless "Wallpaper" filler — most online images from Gelbooru/Wallhaven carry no
-  // artist). The date on the card's second line carries these cards.
-  return item.author || '';
-}
-
-function homeRecentDate(timestamp) {
-  const value = Number(timestamp);
-  if (!Number.isFinite(value) || value <= 0) return '';
-  try {
-    return new Intl.DateTimeFormat(document.documentElement.lang || undefined, {
-      day: 'numeric', month: 'short', year: new Date(value).getFullYear() === new Date().getFullYear() ? undefined : 'numeric',
-    }).format(new Date(value));
-  } catch { return ''; }
-}
-
 function openRecentLibrary() {
   closeLibPopup();
   clearSelection();
@@ -4740,21 +4721,10 @@ function renderHomeRecentItems(items, version) {
     placeholder.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m5.5 17 4-4.5 3 3 2.4-2.5 3.6 4"/><circle cx="15.5" cy="8.5" r="1.5"/></svg>';
     preview.appendChild(placeholder);
 
-    const copy = document.createElement('span');
-    copy.className = 'home-recent-copy';
-    const label = homeRecentLabel(item);
-    if (label) {
-      const title = document.createElement('strong');
-      title.textContent = label;
-      copy.appendChild(title);
-    }
-    const dateText = homeRecentDate(item.addedAt);
-    if (dateText) {
-      const date = document.createElement('small');
-      date.textContent = dateText;
-      copy.appendChild(date);
-    }
-    card.append(preview, copy);
+    // Caption-less: just the thumbnail. Authors are rarely available (most online images
+    // carry none) and downloaded file names are random hashes, so any caption looked
+    // inconsistent — a clean thumbnail grid reads better.
+    card.appendChild(preview);
     card.addEventListener('click', () => {
       // Open the assign menu on the existing card; an ephemeral folder image is
       // materialized into the pool only when the user commits an action in the menu
