@@ -61,4 +61,33 @@ ok('parseSearch: wrapped response and total drive pagination', parsed.items.leng
 ok('parseSearch: final offset hides next page', G.parseSearch({ '@attributes': { offset: 4, count: 5 }, post: [sample] }, { page: 5, limit: 1 }).meta.hasMore === false);
 ok('responseError: provider search failures are detected', G.responseError({ success: false, message: 'search down' }) === 'search down');
 
+// --- Tag types / artist extraction ---
+const tagUrl = new URL(G.buildTagTypesUrl(['artist_name', 'artist_name', '1girl'], { userId: '42', apiKey: 'secret' }));
+ok('buildTagTypesUrl: DAPI tag endpoint, deduped names, credentials', (() => {
+  return tagUrl.searchParams.get('page') === 'dapi'
+    && tagUrl.searchParams.get('s') === 'tag'
+    && tagUrl.searchParams.get('names') === 'artist_name 1girl'
+    && tagUrl.searchParams.get('user_id') === '42'
+    && tagUrl.searchParams.get('api_key') === 'secret';
+})());
+ok('buildTagTypesUrl: empty names produce no URL', G.buildTagTypesUrl([]) === '' && G.buildTagTypesUrl('   ') === '');
+
+const tagResponse = { tag: [
+  { name: 'artist_name', type: 1, count: 500 },
+  { name: 'other_artist', type: '1' },
+  { name: 'some_series', type: 3 },
+  { name: 'heroine', type: 4 },
+  { name: '1girl', type: 0 },
+] };
+const typeMap = G.parseTagTypes(tagResponse);
+ok('parseTagTypes: numeric and string types map by name', typeMap.get('artist_name') === 1 && typeMap.get('other_artist') === 1 && typeMap.get('some_series') === 3 && typeMap.get('1girl') === 0);
+ok('parseTagTypes: tolerates single-object and bare-array forms', G.parseTagTypes({ tag: { name: 'solo_artist', type: 1 } }).get('solo_artist') === 1 && G.parseTagTypes([{ name: 'x', type: 1 }]).get('x') === 1);
+
+const postTags = 'artist_name heroine some_series 1girl other_artist sky';
+const artists = G.artistNamesFromTypes(postTags, typeMap);
+ok('artistNamesFromTypes: only type===1 tags, underscores normalized', artists.length === 2 && artists[0] === 'artist name' && artists[1] === 'other artist');
+ok('artistNamesFromTypes: no artist tags yields empty', G.artistNamesFromTypes('1girl sky', typeMap).length === 0);
+ok('artistNamesFromTypes: accepts a plain object typeMap', G.artistNamesFromTypes(['a', 'b'], { a: 1, b: 0 }).join(',') === 'a');
+ok('artistLabel: comma-joins and caps at max', G.artistLabel(['a', 'b', 'c', 'd'], 3) === 'a, b, c' && G.artistLabel(['only'], 3) === 'only' && G.artistLabel([]) === '');
+
 console.log('\nAll ' + passed + ' gelbooru tests passed.');

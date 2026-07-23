@@ -163,6 +163,92 @@ function parseSearch(json, opts = {}) {
   };
 }
 
+// --- Tag types (artist extraction) --------------------------------------
+// A Gelbooru post's `tags` string carries names only, without type. The tag
+// endpoint (`s=tag&q=index&json=1&names=...`) returns a `type` per name, where
+// 1 = artist (0=general, 3=copyright, 4=character, 5=metadata). We look these up
+// at download time to fill an item's author, which the base post response omits.
+const TAG_TYPE_ARTIST = 1;
+const TAG_TYPE_BY_NAME = { general: 0, artist: 1, copyright: 3, character: 4, metadata: 5, meta: 5 };
+
+function buildTagTypesUrl(names, { apiKey, userId } = {}) {
+  const list = Array.isArray(names) ? names : String(names || '').split(/\s+/);
+  const clean = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const tag = String(raw || '').trim().toLowerCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    clean.push(tag);
+  }
+  if (!clean.length) return '';
+  const p = new URLSearchParams({
+    page: 'dapi',
+    s: 'tag',
+    q: 'index',
+    json: '1',
+    names: clean.join(' '),
+  });
+  if (apiKey) p.set('api_key', String(apiKey));
+  if (userId) p.set('user_id', String(userId));
+  return `${API_BASE}?${p.toString()}`;
+}
+
+function tagsFromResponse(json) {
+  if (Array.isArray(json)) return json;
+  if (json && Array.isArray(json.tag)) return json.tag;
+  if (json && json.tag && typeof json.tag === 'object') return [json.tag];
+  return [];
+}
+
+// Gelbooru returns `type` as an integer, but tolerate string labels too.
+function normalizeTagType(type) {
+  if (typeof type === 'number') return Number.isFinite(type) ? type : NaN;
+  const s = String(type == null ? '' : type).trim().toLowerCase();
+  if (!s) return NaN;
+  if (/^\d+$/.test(s)) return Number(s);
+  return Object.prototype.hasOwnProperty.call(TAG_TYPE_BY_NAME, s) ? TAG_TYPE_BY_NAME[s] : NaN;
+}
+
+function parseTagTypes(json) {
+  const map = new Map();
+  for (const entry of tagsFromResponse(json)) {
+    if (!entry || entry.name == null) continue;
+    const name = String(entry.name).trim().toLowerCase();
+    if (!name) continue;
+    const type = normalizeTagType(entry.type);
+    if (Number.isFinite(type)) map.set(name, type);
+  }
+  return map;
+}
+
+function displayArtistName(name) {
+  return String(name || '').trim().toLowerCase().replace(/_/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+// tags: post tag names (array or space-separated string); typeMap: Map|object name->type.
+function artistNamesFromTypes(tags, typeMap) {
+  const list = Array.isArray(tags) ? tags : String(tags || '').split(/\s+/);
+  const map = typeMap instanceof Map ? typeMap : new Map(Object.entries(typeMap || {}));
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const key = String(raw || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    if (map.get(key) !== TAG_TYPE_ARTIST) continue;
+    const name = displayArtistName(key);
+    if (name) out.push(name);
+  }
+  return out;
+}
+
+function artistLabel(names, max = 3) {
+  const list = (Array.isArray(names) ? names : [names]).filter(Boolean);
+  const cap = Number(max) > 0 ? Math.floor(Number(max)) : list.length;
+  return list.slice(0, cap).join(', ');
+}
+
 module.exports = {
   API_BASE,
   POST_BASE,
@@ -179,4 +265,9 @@ module.exports = {
   postsFromResponse,
   responseError,
   parseSearch,
+  buildTagTypesUrl,
+  tagsFromResponse,
+  parseTagTypes,
+  artistNamesFromTypes,
+  artistLabel,
 };

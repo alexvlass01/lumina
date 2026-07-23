@@ -2734,6 +2734,48 @@ async function fetchInternetSample(item) {
 }
 ipcMain.handle('internet-sample', (e, item) => fetchInternetSample(item));
 
+// Gelbooru posts carry tag NAMES without types, so the base response can't tell
+// us the artist. At download time we look up the tag types once and cache them per
+// name (popular artist tags recur), then keep the artist(s) as the item's author.
+// Danbooru already provides tag_string_artist; Wallhaven has no artist concept.
+const gelbooruTagTypeCache = new Map();
+const GELBOORU_TAG_TYPE_CACHE_MAX = 4000;
+
+async function gelbooruAuthorForItem(item) {
+  try {
+    const tags = Array.isArray(item && item.tags)
+      ? item.tags.map((t) => String(t || '').trim().toLowerCase()).filter(Boolean)
+      : [];
+    if (!tags.length) return '';
+    const typeMap = new Map();
+    const unknown = [];
+    for (const tag of tags) {
+      if (gelbooruTagTypeCache.has(tag)) typeMap.set(tag, gelbooruTagTypeCache.get(tag));
+      else unknown.push(tag);
+    }
+    if (unknown.length) {
+      const url = gelbooru.buildTagTypesUrl(unknown, BUNDLED_GELBOORU_CREDENTIALS || {});
+      if (url) {
+        const res = await fetch(url, { headers: { 'User-Agent': INTERNET_USER_AGENT }, signal: AbortSignal.timeout(10000) });
+        if (res.ok) {
+          for (const [name, type] of gelbooru.parseTagTypes(await res.json())) {
+            gelbooruTagTypeCache.set(name, type);
+            typeMap.set(name, type);
+          }
+          while (gelbooruTagTypeCache.size > GELBOORU_TAG_TYPE_CACHE_MAX) {
+            gelbooruTagTypeCache.delete(gelbooruTagTypeCache.keys().next().value);
+          }
+        }
+      }
+    }
+    // Owner decision: join multiple artists with a comma, at most 3.
+    return gelbooru.artistLabel(gelbooru.artistNamesFromTypes(tags, typeMap), 3).slice(0, 120);
+  } catch (err) {
+    console.error('gelbooru author:', err);
+    return '';
+  }
+}
+
 // Download a normalized provider item into the local pool. The renderer cannot
 // turn this into an arbitrary downloader: provider and CDN host must match.
 ipcMain.handle('internet-add', async (e, item, query) => {
@@ -2747,6 +2789,10 @@ ipcMain.handle('internet-add', async (e, item, query) => {
     if (it) {
       it.source = online.allowedPageUrl(item) ? item.page : '';
       if (typeof item.artist === 'string' && item.artist.trim()) it.author = item.artist.trim().slice(0, 120);
+      if (!it.author && item.provider === 'gelbooru') {
+        const author = await gelbooruAuthorForItem(item);
+        if (author) it.author = author;
+      }
       (Array.isArray(item.tags) ? item.tags : []).slice(0, 24).forEach((tag) => {
         if (typeof tag === 'string') library.addTag(config.library, id, tag.slice(0, 80));
       });
