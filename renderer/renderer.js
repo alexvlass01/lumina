@@ -4671,7 +4671,9 @@ function renderHome() {
   renderHomeRecent();
 }
 
-const HOME_RECENT_LIMIT = 5;
+// Fetch more than fit one row; layoutHomeRecentRow() shows as many as fill the width and
+// hides the rest, so the visible count adapts to the window instead of being a fixed 5.
+const HOME_RECENT_LIMIT = 15;
 let homeRecentRenderVersion = 0;
 
 function homeRecentItems() {
@@ -4713,6 +4715,7 @@ function renderHomeRecentItems(items, version) {
     card.className = 'home-recent-card';
     card.title = t('home.recentAssignHint');
     card.dataset.pathKey = normPathKey(item.path);
+    card.style.setProperty('--ar', '1.6'); // real aspect fills in from thumbAspects below
 
     const preview = document.createElement('span');
     preview.className = 'home-recent-preview';
@@ -4745,6 +4748,61 @@ function renderHomeRecentItems(items, version) {
       preview.classList.add('loaded');
     }).catch(() => {});
   });
+
+  // Fit the row to the container width right away with the fallback aspect, then refine once
+  // the real aspect ratios arrive. Each card keeps its true proportions (no cropping) and the
+  // row height is chosen so the cards fill the full width — no empty gap on the right.
+  layoutHomeRecentRow();
+  if (!grid.__recentResizeObserver && typeof ResizeObserver === 'function') {
+    grid.__recentResizeObserver = new ResizeObserver(() => layoutHomeRecentRow());
+    grid.__recentResizeObserver.observe(grid);
+  }
+
+  if (items.length && typeof window.api.thumbAspects === 'function') {
+    window.api.thumbAspects(items.map((it) => ({ path: it.path })), 360, 220).then((res) => {
+      if (version !== homeRecentRenderVersion) return;
+      const byPath = new Map((Array.isArray(res) ? res : [])
+        .map((r) => [normPathKey(r && r.path), Number(r && r.aspect) || 0]));
+      grid.querySelectorAll('.home-recent-card').forEach((card) => {
+        const ar = byPath.get(card.dataset.pathKey);
+        if (ar > 0) card.style.setProperty('--ar', ar.toFixed(4));
+      });
+      layoutHomeRecentRow(); // real aspects known → re-fit the row to the width
+    }).catch(() => {});
+  }
+}
+
+// Compact justified single row: keep the cards near a small target height and show as many
+// as fill the width (dynamic count, not a fixed 5), then scale the row so they fill it
+// exactly. Each card keeps its true aspect ratio — the wallpaper is never cropped.
+const HOME_RECENT_TARGET_H = 118;
+function layoutHomeRecentRow() {
+  const grid = $('#homeRecentGrid');
+  if (!grid || grid.hidden) return;
+  const all = Array.from(grid.querySelectorAll('.home-recent-card'));
+  if (!all.length) return;
+  const width = grid.clientWidth;
+  if (width <= 0) return;
+  const gap = 11;
+  // Greedily take cards (at their true aspect) until the next one would overflow the row.
+  const shown = [];
+  let used = 0;
+  for (const c of all) {
+    const ar = parseFloat(c.style.getPropertyValue('--ar')) || 1.6;
+    const w = ar * HOME_RECENT_TARGET_H + 2; // card width at the target height (+ borders)
+    const next = used + w + (shown.length ? gap : 0);
+    if (shown.length && next > width) break;
+    shown.push({ c, ar });
+    used = next;
+  }
+  const shownSet = new Set(shown.map((x) => x.c));
+  all.forEach((c) => { c.style.display = shownSet.has(c) ? '' : 'none'; });
+  // Scale the shown row so it fills the width exactly (justified, no cropping, no gap).
+  const sumAR = shown.reduce((sum, x) => sum + x.ar, 0);
+  const avail = width - gap * (shown.length - 1) - 2 * shown.length;
+  const h = avail > 0 && sumAR > 0
+    ? Math.max(90, Math.min(150, Math.floor(avail / sumAR))) : HOME_RECENT_TARGET_H;
+  grid.style.setProperty('--rowH', `${h}px`);
 }
 
 function renderHomeRecent() {
