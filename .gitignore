@@ -5,6 +5,9 @@ node_modules/
 dist/
 .build/
 
+# Delegated Hermes QA artifacts (reports and screenshots)
+.tmp/hermes-qa/
+
 # Logs
 *.log
 
