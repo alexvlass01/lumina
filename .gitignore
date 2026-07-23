@@ -5,8 +5,8 @@ node_modules/
 dist/
 .build/
 
-# Delegated Hermes QA artifacts (reports and screenshots)
-.tmp/hermes-qa/
+# Local scratch/temp dir (Hermes QA artifacts, generated assets, etc.) — never tracked
+.tmp/
 
 # Logs
 *.log
