@@ -465,6 +465,7 @@ body.first-run .tb-right { display: none; }
 .home-theme-row:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
 
 .home-info-icon {
+  position: relative;
   width: 30px;
   height: 30px;
   flex: 0 0 30px;
@@ -474,6 +475,27 @@ body.first-run .tb-right { display: none; }
   background: rgba(255, 255, 255, 0.12);
   font-size: 16px;
 }
+
+/* Adwaita-style light/dark glyphs (replaced the ☀️/🌙 emoji). They inherit colour,
+   so the same markup works on the hero panel and inside library popup buttons. */
+.theme-ic { width: 15px; height: 15px; flex: 0 0 auto; }
+.home-info-icon .theme-ic { width: 17px; height: 17px; }
+
+/* Manual-override badge: sits in the corner of the 30px icon tile, with its own
+   backdrop so the thumbtack stays readable over the blurred wallpaper. */
+.home-info-icon .theme-pin {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 15px;
+  height: 15px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: rgba(18, 22, 28, 0.88);
+  color: #fff;
+}
+.home-info-icon .theme-pin svg { width: 10px; height: 10px; }
 
 .home-info-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
 .home-info-copy small { color: rgba(255, 255, 255, 0.67); font-size: 11.5px; }
@@ -1575,6 +1597,8 @@ html.dark .lib-folder-front { fill: #d99a34; }
   font-family: inherit; font-size: 12.5px;
   padding: 6px 8px; border-radius: 7px; cursor: pointer; text-align: center;
 }
+/* Theme buttons carry a light/dark glyph, so centre icon + label as a row. */
+.lib-popup-btn.with-ic { display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
 .lib-popup-btn:hover { background: var(--btn-bg-hover); }
 .lib-popup-sep { height: 1px; background: var(--card-border); margin: 6px 4px; }
 .lib-popup-btn.danger { width: 100%; color: var(--destructive); }

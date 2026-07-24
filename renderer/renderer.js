@@ -683,15 +683,31 @@ function updateSeparateThemesUI() {
   }
 }
 
+// Adwaita-style line icons for light/dark. These replace the ☀️/🌙 emoji, which the OS
+// drew as full-colour glyphs that clashed with the rest of the interface and shifted with
+// the emoji font. Static markup only (no interpolation), so innerHTML stays safe.
+const THEME_ICON_SVG = {
+  light: '<svg class="theme-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.5V3.2M8 12.8v1.7M1.5 8h1.7M12.8 8h1.7M3.4 3.4 4.6 4.6M11.4 11.4l1.2 1.2M12.6 3.4 11.4 4.6M4.6 11.4 3.4 12.6"/></svg>',
+  dark: '<svg class="theme-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M14 8.53A6 6 0 1 1 7.47 2 4.67 4.67 0 0 0 14 8.53z"/></svg>',
+};
+// Pin badge for a manual override, drawn as a thumbtack (head + stem) instead of the 📌 emoji.
+const THEME_PIN_SVG = '<span class="theme-pin" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="8" cy="5.6" r="4" fill="currentColor" stroke="none"/><path d="M8 9.8v3.4"/></svg></span>';
+
+function setThemeIndicatorIcon(theme, pinned) {
+  const el = $('#heroIcon');
+  if (!el) return;
+  el.innerHTML = THEME_ICON_SVG[theme === 'dark' ? 'dark' : 'light'] + (pinned ? THEME_PIN_SVG : '');
+}
+
 function applyThemeToUI(theme) {
   currentTheme = theme;
   document.documentElement.classList.toggle('dark', theme === 'dark');
 
   const isDark = theme === 'dark';
-  $('#heroIcon').textContent = isDark ? '🌙' : '☀️';
+  setThemeIndicatorIcon(isDark ? 'dark' : 'light', false);
   $('#heroSub').textContent = isDark ? t('home.themeDark') : t('home.themeLight');
 
-  // Theme indicator doubles as a toggle: a 📌 pin marks a manual override (forced
+  // Theme indicator doubles as a toggle: a pin badge marks a manual override (forced
   // light/dark), no pin means Auto. Tooltip explains the current mode + that it's clickable.
   if (config) {
     const mode = config.themeOverride;
@@ -699,10 +715,10 @@ function applyThemeToUI(theme) {
     ind.style.cursor = 'pointer';
     if (mode === 'light') {
       ind.title = t('home.forceLight');
-      $('#heroIcon').textContent = '☀️📌';
+      setThemeIndicatorIcon('light', true);
     } else if (mode === 'dark') {
       ind.title = t('home.forceDark');
-      $('#heroIcon').textContent = '🌙📌';
+      setThemeIndicatorIcon('dark', true);
     } else {
       ind.title = t('home.themeAuto');
     }
@@ -2675,11 +2691,13 @@ function appendAssignRows(pop, onPick) {
     // Единый режим (separateThemes off): у монитора один слот — одна кнопка «Назначить».
     const themes = (config && config.separateThemes === false)
       ? [['light', '', t('library.assignAction')]]
-      : [['light', '☀ ', t('design.lightTheme')], ['dark', '🌙 ', t('design.darkTheme')]];
+      : [['light', 'light', t('design.lightTheme')], ['dark', 'dark', t('design.darkTheme')]];
     themes.forEach(([th, ic, label]) => {
       const b = document.createElement('button');
-      b.className = 'lib-popup-btn';
-      b.textContent = `${ic}${label}`;
+      b.className = ic ? 'lib-popup-btn with-ic' : 'lib-popup-btn';
+      // Icon is static markup; the label stays a text node so it can never be parsed as HTML.
+      if (ic) b.insertAdjacentHTML('afterbegin', THEME_ICON_SVG[ic]);
+      b.appendChild(document.createTextNode(label));
       b.setAttribute('aria-label', `${monitorLabel} — ${label}`);
       b.addEventListener('click', (e) => { e.stopPropagation(); onPick(m.id, th); });
       row.appendChild(b);
