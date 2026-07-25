@@ -94,7 +94,7 @@ Hard boundaries for this delegated QA run:
 - Existing unrelated files and processes must be left untouched.
 - Use the real Lumina-DIAG profile for manual UI checks when UI is in scope.
 - Drive GUI through computer_use in background mode. Do not steal focus.
-- For every important visual state, persist a CLEAN PNG by invoking capture-window.ps1 for the exact Lumina process. Prefer -ProcessId when known. The main app window may start hidden in the tray, and one diagnostics process owns BOTH the small "Lumina Diagnostics" panel and the "Lumina" app window: pass -WindowTitle "Lumina" -Show to reveal and target the app window in one step. Do NOT relaunch Electron with an inspector port just to expose the window, and do not use whole-desktop screenshots.
+- For every important visual state, persist a CLEAN PNG by invoking capture-window.ps1 for the exact Lumina process. Prefer -ProcessId when known. The main app window may start hidden in the tray, and one diagnostics process owns BOTH the small 'Lumina Diagnostics' panel and the 'Lumina' app window: pass -WindowTitle Lumina -Show to reveal and target the app window in one step. Do NOT relaunch Electron with an inspector port just to expose the window, and do not use whole-desktop screenshots.
 - Put every screenshot path and what it proves into report.md.
 - Return one verdict: PASS, FAIL, or BLOCKED. A report without an explicit verdict is invalid.
 - Before finishing, actually write the complete report to $reportPath.
@@ -103,15 +103,18 @@ This is an autonomous delegated run. Do not ask the caller questions; record mis
 "@
 
 $toolsets = 'terminal,file,vision,computer_use,skills,todo,session_search'
-$arguments = @(
-    '--profile', 'default',
-    'chat',
-    '-Q',
-    '--provider', $Provider,
-    '-m', $Model,
-    '-t', $toolsets,
-    '-q', $prompt
-)
+# Windows PowerShell 5.1 splits a native-command argument on embedded double quotes,
+# so a quoted phrase inside the prompt reaches hermes.exe as extra positional
+# arguments and the run dies with "unrecognized arguments". Single quotes read the
+# same to the model, so normalise them here instead of trusting every future edit.
+$promptArg = $prompt -replace '"', "'"
+# Pass an empty -Provider/-Model to fall back to whatever Hermes itself is configured
+# with. That keeps the gate runnable when the preferred provider is down or its plan
+# quota is exhausted (a 429 there must not silently become a skipped pre-release QA).
+$arguments = @('--profile', 'default', 'chat', '-Q')
+if (-not [string]::IsNullOrWhiteSpace($Provider)) { $arguments += @('--provider', $Provider) }
+if (-not [string]::IsNullOrWhiteSpace($Model)) { $arguments += @('-m', $Model) }
+$arguments += @('-t', $toolsets, '-q', $promptArg)
 
 Push-Location $repoRoot
 $previousErrorActionPreference = $ErrorActionPreference

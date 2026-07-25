@@ -2989,7 +2989,7 @@ ipcMain.handle('thumb-info', (e, p, w, h, priority) => (
 // Pool-item aspects are persisted as additive metadata; folder-expanded images are
 // persisted separately in folder-state by thumbnailData's batched backfill.
 ipcMain.handle('thumb-aspects', async (e, entries, w, h) => {
-  if (!isTrustedThumbnailSender(e)) return [];
+  if (!isTrustedMainWindowSender(e)) return [];
   const input = Array.isArray(entries) ? entries.slice(0, 100) : [];
   const result = new Array(input.length);
   let cursor = 0;

@@ -17,6 +17,21 @@ assert.ok(block.includes("ipcMain.handle('thumb'"), 'thumb IPC remains registere
 assert.ok(block.includes("ipcMain.handle('thumb-info'"), 'thumb-info IPC remains registered');
 assert.ok(block.includes("ipcMain.handle('thumb-aspects'"), 'thumb-aspects IPC remains registered');
 assert.ok(block.includes('thumbPending.get(key)'), 'matching pending work stays deduplicated');
+
+// Renaming a sender guard must not leave a stale call behind. thumb-aspects once kept
+// calling isTrustedThumbnailSender after the helper became isTrustedMainWindowSender,
+// which threw ReferenceError at runtime and silently killed aspect prefetch/persistence.
+// node --check cannot catch that, so assert every guard call resolves to a definition.
+const guardCalls = new Set(
+  Array.from(main.matchAll(/\b(isTrusted[A-Za-z]*Sender)\s*\(/g), (m) => m[1]),
+);
+assert.ok(guardCalls.size > 0, 'trusted-sender guards are still in use');
+for (const name of guardCalls) {
+  assert.ok(
+    new RegExp(`function\\s+${name}\\s*\\(`).test(main),
+    `${name}() is called but never defined in main.js`,
+  );
+}
 assert.ok(block.includes('runThumbnailTask(async () =>'), 'thumbnail work stays in the bounded task queue');
 assert.ok(block.includes('}, { priority }).finally'), 'current virtual window priority reaches the task queue');
 assert.ok(block.includes('queueLiveFolderAspect(p, data.width / data.height)'),
