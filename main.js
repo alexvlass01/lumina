@@ -1,6 +1,6 @@
 'use strict';
 
-const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification } = require('electron');
+const { app, BrowserWindow, Tray, Menu, ipcMain, nativeTheme, dialog, shell, nativeImage, screen, autoUpdater, globalShortcut, powerMonitor, safeStorage, Notification, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -18,6 +18,7 @@ const gelbooru = require('./src/gelbooru'); // Gelbooru: основной booru-
 const danbooru = require('./src/danbooru'); // Danbooru: URL + нормализация в общую онлайн-карточку
 const online = require('./src/online'); // смешивание и дедуп результатов внешних провайдеров
 const tagSuggest = require('./src/tag-suggest'); // anonymous Gelbooru tag autocomplete
+const itemDetails = require('./src/item-details'); // bounded metadata reader + URL/path validation
 const { WallpaperHost, HOST_SCRIPT } = require('./src/wallpaper-host'); // живой PowerShell-COM-хост
 const configMod = require('./src/config'); // дефолты + load/migrate/save (тестируется отдельно)
 const { createTrayController } = require('./src/tray'); // системный трей (меню + иконка)
@@ -2434,6 +2435,63 @@ ipcMain.handle('library-path-sizes', async (e, paths) => {
   return out;
 });
 
+// --- Details view ("Подробнее") -----------------------------------------
+// Metadata the pool does not store: file size, modification time and true pixel
+// dimensions. Dimensions come from a bounded file-header read (src/item-details),
+// never from a full decode.
+// Path-based (not id-based) because details also open on transient live-folder
+// cards that were never materialized into the pool; the same precedent as
+// `library-path-sizes`, which already stats renderer-supplied paths.
+const readItemDetails = itemDetails.createDetailsReader();
+function isAuthorizedItemPath(p) {
+  if (!itemDetails.isValidAbsolutePath(p)) return false;
+  return Object.values((config && config.library) || {}).some((item) => {
+    if (!item || !itemDetails.isValidAbsolutePath(item.path)) return false;
+    if (itemDetails.isSameOrDescendant(p, item.path)) {
+      return item.type === 'folder' || itemDetails.isSameOrDescendant(item.path, p);
+    }
+    return false;
+  });
+}
+
+ipcMain.handle('item-details', (e, p) => (
+  isTrustedMainWindowSender(e) && isAuthorizedItemPath(p)
+    ? readItemDetails(p) : itemDetails.emptyDetails()
+));
+
+// Reveal in Explorer. Only selects an existing path — no execution, no content leaves
+// the machine — and the renderer can still only pass paths it already displays.
+ipcMain.handle('item-reveal', async (e, p) => {
+  if (!isTrustedMainWindowSender(e) || !isAuthorizedItemPath(p)) return false;
+  try {
+    await fs.promises.access(p, fs.constants.F_OK);
+    shell.showItemInFolder(p);
+    return true;
+  } catch { return false; }
+});
+
+// Open an item's source page. The URL is NOT taken from the renderer: we look up the
+// pool item and open the source we stored at download time, validated as http(s).
+ipcMain.handle('item-open-source', async (e, id) => {
+  if (!isTrustedMainWindowSender(e)) return false;
+  const item = id && config.library ? config.library[id] : null;
+  const raw = item && typeof item.source === 'string' ? item.source : '';
+  const url = itemDetails.normalizeHttpUrl(raw);
+  if (!url) return false;
+  try {
+    await shell.openExternal(url);
+    return true;
+  } catch { return false; }
+});
+
+ipcMain.handle('item-copy-path', (e, p) => {
+  if (!isTrustedMainWindowSender(e) || !isAuthorizedItemPath(p)) return false;
+  try {
+    clipboard.writeText(p);
+    return true;
+  } catch { return false; }
+});
+
 ipcMain.handle('library-add-tag', (e, id, tag) => {
   if (library.addTag(config.library, id, tag)) saveConfig();
   return config;
@@ -2913,17 +2971,17 @@ async function thumbnailData(p, w, h, priority = 0) {
   thumbPending.set(key, job);
   return job;
 }
-function isTrustedThumbnailSender(event) {
+function isTrustedMainWindowSender(event) {
   return !!(event && mainWindow && !mainWindow.isDestroyed()
     && event.sender === mainWindow.webContents);
 }
 ipcMain.handle('thumb', async (e, p, w, h) => {
-  if (!isTrustedThumbnailSender(e)) return '';
+  if (!isTrustedMainWindowSender(e)) return '';
   const data = await thumbnailData(p, w, h);
   return data.url;
 });
 ipcMain.handle('thumb-info', (e, p, w, h, priority) => (
-  isTrustedThumbnailSender(e) ? thumbnailData(p, w, h, priority) : { url: '', width: 0, height: 0 }
+  isTrustedMainWindowSender(e) ? thumbnailData(p, w, h, priority) : { url: '', width: 0, height: 0 }
 ));
 
 // Resolve proportions before renderer inserts the next justified-grid chunk. A small

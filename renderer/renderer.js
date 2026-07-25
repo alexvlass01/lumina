@@ -154,6 +154,10 @@ if (!window.api) {
       return mock;
     },
     libraryPathSizes: async (paths) => (Array.isArray(paths) ? paths : []).map((p) => ({ path: p, size: 0 })),
+    itemDetails: async () => ({ exists: true, size: 2451234, modifiedAt: Date.now() - 864e5, width: 3840, height: 2160, isFolder: false }),
+    itemReveal: async () => true,
+    itemOpenSource: async () => true,
+    itemCopyPath: async () => true,
     libraryMaterialize: async (p, type) => ({ config: mock, id: mockAdd(type === 'folder' ? 'folder' : 'image', p) }),
     getCloudCapability: async () => ({ environment: 'unavailable', available: false, authAvailable: false, reason: 'coming_soon' }),
     cloudCatalog: async (opts) => {
@@ -3049,6 +3053,293 @@ async function removeRecordFromLibrary(record) {
   toast(t('library.removedToast'));
 }
 
+// --- Details view (UX1 step C) -------------------------------------------
+// Read-only properties sheet for a card. Everything shown is either already in the
+// pool item or fetched once per open through `item-details`; the view never writes
+// to the library, so it works for transient live-folder cards without materializing
+// them. Actions are limited to reveal / copy path / open source page.
+let detailsCloseHandler = null;
+
+function detailsLocale() {
+  return document.documentElement.lang || undefined;
+}
+
+function formatFileSize(bytes) {
+  const n = Number(bytes);
+  if (!Number.isFinite(n) || n < 0) return '';
+  const units = [t('details.unitB'), t('details.unitKb'), t('details.unitMb'), t('details.unitGb')];
+  let value = n;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit++; }
+  const rounded = unit === 0 ? Math.round(value) : Math.round(value * 10) / 10;
+  return `${rounded.toLocaleString(detailsLocale(), { maximumFractionDigits: unit === 0 ? 0 : 1 })} ${units[unit]}`;
+}
+
+function formatDetailsDate(value) {
+  const date = new Date(Number(value));
+  if (!Number.isFinite(date.getTime()) || date.getTime() <= 0) return '';
+  try {
+    return new Intl.DateTimeFormat(detailsLocale(), {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    }).format(date);
+  } catch {
+    return date.toLocaleString(detailsLocale());
+  }
+}
+
+function isOpenableDetailsSource(value) {
+  if (typeof value !== 'string' || !value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch { return false; }
+}
+
+function detailsSourceLabel(value) {
+  const raw = String(value || '');
+  return raw.toLowerCase().startsWith('lumina:') ? 'Lumina' : raw;
+}
+
+function closeCardDetails() {
+  const backdrop = $('#detailsBackdrop');
+  if (!backdrop) return;
+  if (detailsCloseHandler) {
+    document.removeEventListener('keydown', detailsCloseHandler, true);
+    detailsCloseHandler = null;
+  }
+  const restore = backdrop.__restoreFocus;
+  backdrop.remove();
+  if (restore && restore.isConnected) restore.focus({ preventScroll: true });
+}
+
+function detailsRow(label, value, opts = {}) {
+  const row = document.createElement('div');
+  row.className = 'details-row' + (opts.wide ? ' wide' : '');
+  const dt = document.createElement('dt');
+  dt.textContent = label;
+  const dd = document.createElement('dd');
+  if (opts.node) dd.appendChild(opts.node);
+  else {
+    dd.textContent = value;
+    if (opts.mono) dd.className = 'mono';
+  }
+  row.append(dt, dd);
+  return row;
+}
+
+async function openCardDetails(record) {
+  closeCardDetails();
+  const item = poolItemForRecord(record);
+  const filePath = String((item && item.path) || (record && record.path) || '');
+  if (!filePath) return;
+  const isFolder = (item && item.type === 'folder') || (record && record.type === 'folder');
+  const displayName = baseName(filePath) || filePath;
+  const sourceIsOpenable = !!(item && isOpenableDetailsSource(item.source));
+
+  const backdrop = document.createElement('div');
+  backdrop.className = 'lib-modal-backdrop';
+  backdrop.id = 'detailsBackdrop';
+  backdrop.__restoreFocus = document.activeElement;
+
+  const modal = document.createElement('div');
+  modal.className = 'lib-modal';
+  modal.setAttribute('role', 'dialog');
+  modal.setAttribute('aria-modal', 'true');
+  modal.setAttribute('aria-labelledby', 'detailsTitle');
+  modal.tabIndex = -1;
+
+  const head = document.createElement('div');
+  head.className = 'lib-modal-head';
+  const title = document.createElement('strong');
+  title.id = 'detailsTitle';
+  title.textContent = displayName;
+  title.title = displayName;
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'lib-modal-close';
+  close.setAttribute('aria-label', t('details.close'));
+  close.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  close.addEventListener('click', closeCardDetails);
+  head.append(title, close);
+
+  const body = document.createElement('div');
+  body.className = 'lib-modal-body';
+
+  const preview = document.createElement('div');
+  preview.className = 'details-preview';
+  preview.hidden = isFolder;
+  if (!isFolder) {
+    preview.classList.add('loading');
+    preview.setAttribute('aria-busy', 'true');
+  }
+  body.appendChild(preview);
+
+  const rows = document.createElement('dl');
+  rows.className = 'details-rows';
+  body.appendChild(rows);
+
+  const foot = document.createElement('div');
+  foot.className = 'lib-modal-foot';
+  const runAction = async (button, handler, failureKey) => {
+    if (button.disabled) return;
+    button.disabled = true;
+    let ok = false;
+    try { ok = (await handler()) !== false; } catch { ok = false; }
+    if (!ok && failureKey) toast(t(failureKey));
+    if (button.isConnected) button.disabled = false;
+  };
+  const addAction = (label, handler, failureKey) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pill ghost';
+    b.textContent = label;
+    b.addEventListener('click', () => runAction(b, handler, failureKey));
+    foot.appendChild(b);
+    return b;
+  };
+  addAction(
+    t('details.openFolder'),
+    () => window.api.itemReveal(filePath),
+    'details.revealFailed',
+  );
+  addAction(t('details.copyPath'), async () => {
+    const ok = await window.api.itemCopyPath(filePath);
+    if (ok) toast(t('details.copied'));
+    return ok;
+  }, 'details.copyFailed');
+  if (sourceIsOpenable) {
+    addAction(
+      t('details.openSource'),
+      () => window.api.itemOpenSource(item.id),
+      'details.openFailed',
+    );
+  }
+
+  modal.append(head, body, foot);
+  backdrop.appendChild(modal);
+  backdrop.addEventListener('mousedown', (e) => { if (e.target === backdrop) closeCardDetails(); });
+  document.body.appendChild(backdrop);
+
+  detailsCloseHandler = (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      e.stopPropagation();
+      closeCardDetails();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusable = Array.from(modal.querySelectorAll(
+      'button:not(:disabled), [href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex]:not([tabindex="-1"])',
+    )).filter((el) => !el.hidden && el.getClientRects().length);
+    if (!focusable.length) {
+      e.preventDefault();
+      modal.focus({ preventScroll: true });
+      return;
+    }
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (e.shiftKey && (document.activeElement === first || !modal.contains(document.activeElement))) {
+      e.preventDefault();
+      last.focus({ preventScroll: true });
+    } else if (!e.shiftKey && (document.activeElement === last || !modal.contains(document.activeElement))) {
+      e.preventDefault();
+      first.focus({ preventScroll: true });
+    }
+  };
+  document.addEventListener('keydown', detailsCloseHandler, true);
+  requestAnimationFrame(() => close.focus({ preventScroll: true }));
+
+  // Static rows first so the sheet never appears empty, then fill in disk metadata.
+  const unknown = t('details.unknown');
+  rows.appendChild(detailsRow(t('details.type'), isFolder ? t('details.typeFolder') : t('details.typeImage')));
+  const resRow = detailsRow(t('details.resolution'), unknown);
+  const sizeRow = detailsRow(t('details.size'), unknown);
+  if (!isFolder) rows.append(resRow, sizeRow);
+  const added = item ? formatDetailsDate(item.addedAt) : '';
+  if (added) rows.appendChild(detailsRow(t('details.added'), added));
+  const modRow = detailsRow(t('details.modified'), unknown);
+  rows.appendChild(modRow);
+  if (item && item.author) rows.appendChild(detailsRow(t('details.author'), item.author));
+  if (item && item.source) {
+    let sourceNode;
+    if (sourceIsOpenable) {
+      sourceNode = document.createElement('button');
+      sourceNode.type = 'button';
+      sourceNode.className = 'details-link';
+      sourceNode.textContent = detailsSourceLabel(item.source);
+      sourceNode.addEventListener('click', () => runAction(
+        sourceNode,
+        () => window.api.itemOpenSource(item.id),
+        'details.openFailed',
+      ));
+    } else {
+      sourceNode = document.createElement('span');
+      sourceNode.textContent = detailsSourceLabel(item.source);
+    }
+    rows.appendChild(detailsRow(t('details.source'), '', { node: sourceNode, wide: true }));
+  }
+  rows.appendChild(detailsRow(t('details.path'), filePath, { mono: true, wide: true }));
+  if (item && Array.isArray(item.tags) && item.tags.length) {
+    const chips = document.createElement('div');
+    chips.className = 'details-tags';
+    const maxVisibleTags = 80;
+    item.tags.slice(0, maxVisibleTags).forEach((tag) => {
+      const chip = document.createElement('span');
+      chip.className = 'details-tag';
+      chip.textContent = tag;
+      chips.appendChild(chip);
+    });
+    if (item.tags.length > maxVisibleTags) {
+      const more = document.createElement('span');
+      more.className = 'details-tag more';
+      more.textContent = t('library.moreTags', { n: item.tags.length - maxVisibleTags });
+      chips.appendChild(more);
+    }
+    rows.appendChild(detailsRow(t('details.tags'), '', { node: chips, wide: true }));
+  }
+
+  if (!isFolder) {
+    const finishPreview = () => {
+      preview.setAttribute('aria-busy', 'false');
+      preview.classList.remove('loading');
+    };
+    window.api.thumbInfo(filePath, 360, 360).then((info) => {
+      if (!backdrop.isConnected) return;
+      if (!info || !info.url) {
+        finishPreview();
+        return;
+      }
+      const img = document.createElement('img');
+      img.alt = '';
+      img.decoding = 'async';
+      img.addEventListener('load', finishPreview, { once: true });
+      img.addEventListener('error', finishPreview, { once: true });
+      img.src = info.url;
+      preview.appendChild(img);
+    }).catch(() => {
+      if (!backdrop.isConnected) return;
+      finishPreview();
+    });
+  }
+
+  try {
+    const meta = await window.api.itemDetails(filePath);
+    if (!backdrop.isConnected) return;
+    if (!meta || !meta.exists) {
+      modRow.querySelector('dd').textContent = t('details.missing');
+      return;
+    }
+    if (meta.width > 0 && meta.height > 0) {
+      resRow.querySelector('dd').textContent = `${meta.width} × ${meta.height}`;
+    }
+    const size = formatFileSize(meta.size);
+    if (size) sizeRow.querySelector('dd').textContent = size;
+    const modified = formatDetailsDate(meta.modifiedAt);
+    if (modified) modRow.querySelector('dd').textContent = modified;
+  } catch { /* metadata is optional; the sheet stays usable without it */ }
+}
+
 function openLocalCardContextMenu(record, card, point = null) {
   closeLibPopup();
   const current = poolItemForRecord(record);
@@ -3084,6 +3375,9 @@ function openLocalCardContextMenu(record, card, point = null) {
         assign: false, tags: true, remove: false, focusTags: true,
       });
     });
+  }
+  if (actions.details) {
+    appendContextMenuItem(pop, t('library.details'), () => openCardDetails(freshRecord));
   }
   if (actions.remove) {
     const sep = document.createElement('div');

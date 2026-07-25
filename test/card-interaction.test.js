@@ -89,4 +89,8 @@ ok('folder and image keys stay in separate namespaces',
   ok('persistent pool items expose remove', persistent.remove);
   ok('folder actions expose navigation without requiring a pool id',
     transientFolder.open && transientFolder.assign && !transientFolder.remove);
+  ok('details are offered for transient, pool and folder records alike',
+    transient.details && persistent.details && transientFolder.details);
+  ok('details are withheld from an invalid record',
+    !CardInteraction.actionsFor(null).details && !CardInteraction.actionsFor({}).details);
 }

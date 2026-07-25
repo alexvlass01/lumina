@@ -49,6 +49,11 @@ contextBridge.exposeInMainWorld('api', {
   libraryRecent: (limit) => ipcRenderer.invoke('library-recent', limit),
   libraryEnsureSizes: () => ipcRenderer.invoke('library-ensure-sizes'),
   libraryPathSizes: (paths) => ipcRenderer.invoke('library-path-sizes', paths),
+  // Details view: on-demand file metadata + reveal/source/copy actions.
+  itemDetails: (p) => ipcRenderer.invoke('item-details', p),
+  itemReveal: (p) => ipcRenderer.invoke('item-reveal', p),
+  itemOpenSource: (id) => ipcRenderer.invoke('item-open-source', id),
+  itemCopyPath: (p) => ipcRenderer.invoke('item-copy-path', p),
 
   // Lumina Cloud (C2): safe capability state only (environment/available/reason).
   getCloudCapability: () => ipcRenderer.invoke('get-cloud-capability'),

@@ -74,6 +74,9 @@
       assign: validRecord(record),
       favorite: validRecord(record),
       tags: validRecord(record),
+      // Details are read-only, so they stay available for transient cards too: the
+      // view reads metadata from disk by path and never materializes the item.
+      details: validRecord(record),
       remove: !!(record && record.id),
     };
   }
