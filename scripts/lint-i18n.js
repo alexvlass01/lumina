@@ -26,6 +26,15 @@ const i18nState = require('../src/i18n-state');
 const CORE_LANGS = ['en', 'ru', 'uk'];
 // ───────────────────────────────────────────────────────────────────
 
+// ── Уровни языков (plans/i18n_semantic_system.md, этап 5) ──────────
+// Уровень задаёт ЧАСТОТУ обновления, а не строгость сборки: `uk` остаётся
+// обязательным (CORE) сознательно — ослаблять проверку молча нельзя, это
+// отдельное решение владельца. Уровни нужны, чтобы в отчёте было видно, какие
+// языки пора обновлять в ближайшем релизе, а какие могут подождать.
+const TIER_1 = ['uk', 'de', 'fr', 'es', 'pt', 'pl', 'zh', 'ja', 'it', 'tr'];
+const tierOf = (lang) => (lang === 'en' || lang === 'ru' ? 0 : TIER_1.includes(lang) ? 1 : 2);
+const TIER_LABEL = { 0: 'эталон', 1: 'популярный', 2: 'редкий' };
+
 const localesDir = path.join(__dirname, '..', 'locales');
 const refFile = path.join(localesDir, 'en.json');
 
@@ -132,6 +141,15 @@ console.log(`Core languages: ${CORE_LANGS.join(', ')}\n`);
 
 const totalKeys = countKeys(refData);
 let extraWarnings = 0;
+// Сколько ключей ждёт работы в языках уровня 1 — тех, что обновляются каждый релиз.
+let tierOneWork = 0;
+
+function readReference(lang) {
+  try { return JSON.parse(fs.readFileSync(path.join(localesDir, `${lang}.json`), 'utf8')); } catch { return {}; }
+}
+function readState(lang) {
+  try { return JSON.parse(fs.readFileSync(path.join(localesDir, 'state', `${lang}.json`), 'utf8')); } catch { return null; }
+}
 
 for (const file of targetFiles) {
   const lang = file.replace('.json', '');
@@ -160,12 +178,25 @@ for (const file of targetFiles) {
   } else {
     // ── Дополнительный язык: мягкие предупреждения ──
     const missing = countMissing(refData, data);
-    if (missing > 0) {
+    const tier = tierOf(lang);
+    // Свежесть важнее полноты: язык может быть переведён на 100% и при этом весь
+    // состоять из переводов давно переписанных строк. Отчёт показывает и то, и другое.
+    const audit = i18nState.auditLanguage({
+      enDict: refData,
+      ruDict: readReference('ru'),
+      langDict: data,
+      lang,
+      state: readState(lang),
+    });
+    const label = `${TIER_LABEL[tier]}, ур. ${tier}`;
+    if (missing > 0 || audit.counts.stale > 0) {
       const pct = Math.round(((totalKeys - missing) / totalKeys) * 100);
-      console.log(`⚠ ${relativePath} (extra): ${missing} missing keys (${pct}% translated) — OK, not blocking build.\n`);
+      const stale = audit.counts.stale > 0 ? `, устарело ${audit.counts.stale}` : '';
+      console.log(`⚠ ${relativePath} (${label}): ${missing} missing keys (${pct}% translated)${stale} — OK, not blocking build.\n`);
       extraWarnings++;
+      if (tier === 1) tierOneWork += audit.needsWork;
     } else {
-      console.log(`✓ ${relativePath} (extra) is fully in sync with en.json.\n`);
+      console.log(`✓ ${relativePath} (${label}) is fully in sync with en.json.\n`);
     }
   }
 }
@@ -209,4 +240,8 @@ if (hasErrors) {
     msg += ` (${extraWarnings} extra language(s) have missing keys — translate when ready)`;
   }
   console.log(msg);
+  if (tierOneWork > 0) {
+    console.log(`Уровень 1 (обновляется каждый релиз): ${tierOneWork} ключ(а/ей) ждут работы.`);
+    console.log('Набор для перевода: node scripts/i18n-kit.js <lang> --out kit.json');
+  }
 }

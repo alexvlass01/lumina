@@ -17,9 +17,11 @@ const result = spawnSync(process.execPath, [path.join(ROOT, 'scripts', 'lint-i18
 });
 
 assert.strictEqual(result.status, 0, result.stderr || result.stdout);
+// The label in parentheses carries the language tier and may be reworded; what this
+// test guards is the COUNT, so match any label rather than pinning today's wording.
 assert.match(
   result.stdout,
-  new RegExp(`locales[\\\\/]de\\.json \\(extra\\): ${expectedMissing} missing keys`),
+  new RegExp(`locales[\\\\/]de\\.json \\([^)]*\\): ${expectedMissing} missing keys`),
   'extra-language summary must count missing leaf strings, not a whole absent subtree as one key',
 );
 
