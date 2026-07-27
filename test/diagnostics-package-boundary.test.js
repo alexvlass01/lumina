@@ -34,6 +34,9 @@ for (const leak of ['/plans/knowledge_index.md', '/STATUS.md', '/ROADMAP.md', '/
 // the app must still get its dictionaries, but the sidecar has no business shipping.
 ok('package command excludes the i18n state sidecar',
   ignorePatterns.some((pattern) => pattern.test('/locales/state/de.json')));
+ok('package command excludes generated and manual i18n context',
+  ignorePatterns.some((pattern) => pattern.test('/locales/context/generated.json'))
+  && ignorePatterns.some((pattern) => pattern.test('/locales/context/manual.json')));
 ok('package command still ships the runtime dictionaries',
   !ignorePatterns.some((pattern) => pattern.test('/locales/de.json'))
   && !ignorePatterns.some((pattern) => pattern.test('/locales/en.json')));

@@ -19,6 +19,8 @@
 
 const fs = require('fs');
 const path = require('path');
+const i18nContext = require('../src/i18n-context');
+const i18nState = require('../src/i18n-state');
 
 // ── Обязательные языки (AI переводит сразу) ────────────────────────
 const CORE_LANGS = ['en', 'ru', 'uk'];
@@ -107,17 +109,8 @@ function lintObject(ref, target, filePath, currentPath = '') {
 
 /** Count missing keys (flat, recursive) for summary */
 function countMissing(ref, target, currentPath = '') {
-  let missing = 0;
-  for (const key of Object.keys(ref)) {
-    const keyPath = currentPath ? `${currentPath}.${key}` : key;
-    if (!(key in target)) {
-      missing++;
-    } else if (typeof ref[key] === 'object' && ref[key] !== null &&
-               typeof target[key] === 'object' && target[key] !== null) {
-      missing += countMissing(ref[key], target[key], keyPath);
-    }
-  }
-  return missing;
+  void currentPath;
+  return i18nState.countMissingLeaves(ref, target);
 }
 
 /** Count total leaf keys in ref */
@@ -180,34 +173,30 @@ for (const file of targetFiles) {
 // ── Ключи, на которые ссылается код, но которых нет в en.json ───────
 // `tMain`/`t` при отсутствии ключа возвращают САМ КЛЮЧ, и он молча уезжает в интерфейс:
 // заголовок диалога выбора файлов буквально показывал строку «design.addPhotos», потому
-// что ключ когда-то убрали из словарей, а вызов в main.js остался. Проверяем только
-// литеральные ссылки — динамические (`t('a.' + x)`) сюда не попадают by design.
-const REFERENCE_SCANS = [
-  ['main.js', /tMain\('([^']+)'\)/g],
-  ['renderer/index.html', /data-i18n(?:-title|-ph|-tooltip)?="([^"]+)"/g],
-  ['renderer/renderer.js', /\bt\('([^']+)'/g],
-];
-
-function hasKey(obj, dottedKey) {
-  return dottedKey.split('.').reduce((node, part) => (
-    node && typeof node === 'object' && part in node ? node[part] : undefined
-  ), obj) !== undefined;
-}
-
-let danglingRefs = 0;
-for (const [relPath, pattern] of REFERENCE_SCANS) {
-  const file = path.join(__dirname, '..', relPath);
-  if (!fs.existsSync(file)) continue;
-  const source = fs.readFileSync(file, 'utf8');
-  const keys = new Set(Array.from(source.matchAll(pattern), (m) => m[1]));
-  for (const key of keys) {
-    if (hasKey(refData, key)) continue;
-    console.error(`✗ ${relPath}: ключ "${key}" используется в коде, но отсутствует в en.json`);
-    danglingRefs++;
+// что ключ когда-то убрали из словарей, а вызов в main.js остался. Переиспользуем
+// scanner I18N-SEM, чтобы граница включала viewer/tray, разные кавычки и HTML-атрибуты,
+// а не расходилась со вторым неполным набором regex.
+const contextSources = i18nContext.DEFAULT_SOURCE_FILES.map((relPath) => {
+  const file = path.join(__dirname, '..', ...relPath.split('/'));
+  if (!fs.existsSync(file)) {
+    console.error(`✗ Не найден production source для i18n-проверки: ${relPath}`);
+    hasErrors = true;
+    return { file: relPath, content: '' };
   }
+  return { file: relPath, content: fs.readFileSync(file, 'utf8') };
+});
+const contextCatalog = i18nContext.buildContextCatalog({
+  reference: refData,
+  sources: contextSources,
+});
+for (const key of contextCatalog.danglingReferences) {
+  console.error(`✗ ключ "${key}" используется в production-коде, но отсутствует в en.json`);
 }
-if (danglingRefs > 0) {
-  console.error(`\ni18n Linting failed: ${danglingRefs} ссыл(ка/ки) на несуществующие ключи.`);
+if (contextCatalog.danglingReferences.length > 0) {
+  console.error(
+    `\ni18n Linting failed: ${contextCatalog.danglingReferences.length} `
+    + 'ссыл(ка/ки) на несуществующие ключи.',
+  );
   process.exit(1);
 }
 
