@@ -47,21 +47,12 @@
     "start": "はじめる"
   },
   "home": {
-    "themeTitle": "現在の Windows テーマ",
     "detecting": "検出中…",
-    "applyNow": "今すぐ適用",
     "currentDesktop": "現在のデスクトップ壁紙",
-    "statusGroup": "ステータス",
-    "trayNote": "ウィンドウを閉じても、アプリはシステムトレイで動作し続けます。",
     "noWallpaper": "壁紙なし",
     "noMonitors": "モニターが検出されません",
     "themeLight": "ライト（日中）",
     "themeDark": "ダーク（夜間）"
-  },
-  "status": {
-    "autoSwitch": "テーマ変更時に自動切り替え",
-    "autostart": "Windows と一緒に起動",
-    "monitors": "接続中のモニター"
   },
   "design": {
     "monitorNote": "モニターを選択してください — 下の壁紙がそのモニターに適用されます。各モニターに日中/夜間の壁紙ペアを設定できます。",
@@ -69,10 +60,7 @@
     "lightTheme": "日中テーマ",
     "darkTheme": "夜間テーマ",
     "notSelected": "未選択",
-    "pick": "画像を選択…",
     "behaviorGroup": "動作",
-    "autoSwitchTitle": "テーマ変更時に自動切り替え",
-    "autoSwitchSub": "Windows がライト/ダークモードを切り替えたとき壁紙を自動で変更",
     "styleTitle": "配置",
     "styleSub": "画像のデスクトップへの配置方法",
     "singleTitle": "全モニターで同じ壁紙を使用",
@@ -107,10 +95,8 @@
     "sortTop": "人気",
     "sortRandom": "ランダム",
     "sortViews": "閲覧数",
-    "nsfw": "NSFW",
     "search": "検索",
     "more": "もっと見る",
-    "hint": "タグを入力して「検索」を押すと Wallhaven を閲覧できます。",
     "loading": "読み込み中…",
     "noResults": "見つかりませんでした",
     "error": "エラー: {e}",
@@ -157,16 +143,9 @@
     "span": "モニターをまたいで表示"
   },
   "monitor": { "label": "モニター {n}", "primary": "メイン", "vertical": "縦向き" },
-  "val": { "on": "オン", "off": "オフ" },
   "toast": {
     "applied": "壁紙を適用しました",
-    "noWallpaper": "壁紙が選択されていません",
-    "noWallpaperTheme": "現在のテーマに壁紙が設定されていません",
     "error": "エラー: {msg}",
-    "lightChosen": "日中の壁紙を選択しました",
-    "darkChosen": "夜間の壁紙を選択しました",
-    "autoOn": "自動切り替えを有効にしました",
-    "autoOff": "自動切り替えを無効にしました",
     "startupOn": "自動起動を有効にしました",
     "startupOff": "自動起動を無効にしました",
     "styleUpdated": "配置を更新しました",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Lumina を開く",
-    "applyLight": "日中の壁紙を適用",
-    "applyDark": "夜間の壁紙を適用",
     "applyCurrent": "現在のテーマの壁紙を適用",
     "nextWallpaper": "次の壁紙",
     "installUpdate": "再起動して更新",
-    "autoSwitch": "テーマ変更時に自動切り替え",
-    "autostart": "Windows と一緒に起動",
     "quit": "終了"
   }
 }

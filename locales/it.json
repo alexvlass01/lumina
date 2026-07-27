@@ -47,21 +47,12 @@
     "start": "Inizia"
   },
   "home": {
-    "themeTitle": "Tema attuale di Windows",
     "detecting": "Rilevamento…",
-    "applyNow": "Applica ora",
     "currentDesktop": "Ora sul tuo desktop",
-    "statusGroup": "Stato",
-    "trayNote": "L'app continua a funzionare nell'area di notifica dopo aver chiuso la finestra.",
     "noWallpaper": "Nessuno sfondo",
     "noMonitors": "Nessun monitor rilevato",
     "themeLight": "Chiaro (giorno)",
     "themeDark": "Scuro (notte)"
-  },
-  "status": {
-    "autoSwitch": "Cambio automatico con il tema",
-    "autostart": "Avvia con Windows",
-    "monitors": "Monitor collegati"
   },
   "design": {
     "monitorNote": "Scegli un monitor — gli sfondi qui sotto si applicano ad esso. Ogni monitor ha la propria coppia giorno/notte.",
@@ -69,10 +60,7 @@
     "lightTheme": "Tema giorno",
     "darkTheme": "Tema notte",
     "notSelected": "Non selezionato",
-    "pick": "Scegli immagine…",
     "behaviorGroup": "Comportamento",
-    "autoSwitchTitle": "Cambio automatico con il tema",
-    "autoSwitchSub": "Cambia lo sfondo automaticamente quando Windows passa dalla modalità chiara a quella scura",
     "styleTitle": "Posizione",
     "styleSub": "Come l'immagine si adatta al desktop",
     "singleTitle": "Uno sfondo per tutti i monitor",
@@ -107,10 +95,8 @@
     "sortTop": "Popolari",
     "sortRandom": "Casuale",
     "sortViews": "Visualizzazioni",
-    "nsfw": "NSFW",
     "search": "Cerca",
     "more": "Mostra altro",
-    "hint": "Inserisci dei tag e premi Cerca per esplorare Wallhaven.",
     "loading": "Caricamento…",
     "noResults": "Nessun risultato",
     "error": "Errore: {e}",
@@ -157,16 +143,9 @@
     "span": "Estendi su tutti i monitor"
   },
   "monitor": { "label": "Monitor {n}", "primary": "principale", "vertical": "verticale" },
-  "val": { "on": "Attivo", "off": "Disattivo" },
   "toast": {
     "applied": "Sfondo applicato",
-    "noWallpaper": "Nessuno sfondo selezionato",
-    "noWallpaperTheme": "Nessuno sfondo impostato per il tema attuale",
     "error": "Errore: {msg}",
-    "lightChosen": "Sfondo diurno selezionato",
-    "darkChosen": "Sfondo notturno selezionato",
-    "autoOn": "Cambio automatico attivato",
-    "autoOff": "Cambio automatico disattivato",
     "startupOn": "Avvio automatico attivato",
     "startupOff": "Avvio automatico disattivato",
     "styleUpdated": "Posizione aggiornata",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Apri Lumina",
-    "applyLight": "Applica sfondo diurno",
-    "applyDark": "Applica sfondo notturno",
     "applyCurrent": "Applica per il tema attuale",
     "nextWallpaper": "Sfondo successivo",
     "installUpdate": "Riavvia per aggiornare",
-    "autoSwitch": "Cambio automatico con il tema",
-    "autostart": "Avvia con Windows",
     "quit": "Esci"
   }
 }

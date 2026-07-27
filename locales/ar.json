@@ -47,21 +47,12 @@
     "start": "لنبدأ"
   },
   "home": {
-    "themeTitle": "نسق Windows الحالي",
     "detecting": "جارٍ الكشف…",
-    "applyNow": "تطبيق الآن",
     "currentDesktop": "حاليًا على سطح المكتب",
-    "statusGroup": "الحالة",
-    "trayNote": "يستمر التطبيق في العمل في منطقة الإعلام بعد إغلاق النافذة.",
     "noWallpaper": "لا توجد خلفية",
     "noMonitors": "لم يتم اكتشاف شاشات",
     "themeLight": "فاتح (نهار)",
     "themeDark": "داكن (ليل)"
-  },
-  "status": {
-    "autoSwitch": "تبديل تلقائي عند تغيير النسق",
-    "autostart": "البدء مع Windows",
-    "monitors": "الشاشات المتصلة"
   },
   "design": {
     "monitorNote": "اختر شاشة — الخلفيات أدناه تُطبّق عليها. كل شاشة لها زوج نهار/ليل خاص بها.",
@@ -69,10 +60,7 @@
     "lightTheme": "نسق النهار",
     "darkTheme": "نسق الليل",
     "notSelected": "غير محدد",
-    "pick": "اختيار صورة…",
     "behaviorGroup": "السلوك",
-    "autoSwitchTitle": "تبديل تلقائي عند تغيير النسق",
-    "autoSwitchSub": "تبديل الخلفية تلقائيًا عند انتقال Windows بين الوضع الفاتح والداكن",
     "styleTitle": "الموضع",
     "styleSub": "كيفية ملاءمة الصورة لسطح المكتب",
     "singleTitle": "خلفية واحدة لجميع الشاشات",
@@ -107,10 +95,8 @@
     "sortTop": "الأفضل",
     "sortRandom": "عشوائي",
     "sortViews": "المشاهدات",
-    "nsfw": "NSFW",
     "search": "بحث",
     "more": "عرض المزيد",
-    "hint": "اكتب الوسوم واضغط بحث لتصفح Wallhaven.",
     "loading": "جارٍ التحميل…",
     "noResults": "لم يتم العثور على نتائج",
     "error": "خطأ: {e}",
@@ -157,16 +143,9 @@
     "span": "امتداد عبر الشاشات"
   },
   "monitor": { "label": "شاشة {n}", "primary": "رئيسية", "vertical": "عمودية" },
-  "val": { "on": "مفعّل", "off": "معطّل" },
   "toast": {
     "applied": "تم تطبيق الخلفية",
-    "noWallpaper": "لم يتم اختيار خلفية بعد",
-    "noWallpaperTheme": "لم يتم تعيين خلفية للنسق الحالي",
     "error": "خطأ: {msg}",
-    "lightChosen": "تم اختيار خلفية النهار",
-    "darkChosen": "تم اختيار خلفية الليل",
-    "autoOn": "تم تفعيل التبديل التلقائي",
-    "autoOff": "تم تعطيل التبديل التلقائي",
     "startupOn": "تم تفعيل التشغيل التلقائي",
     "startupOff": "تم تعطيل التشغيل التلقائي",
     "styleUpdated": "تم تحديث الموضع",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "فتح Lumina",
-    "applyLight": "تطبيق خلفية النهار",
-    "applyDark": "تطبيق خلفية الليل",
     "applyCurrent": "تطبيق للنسق الحالي",
     "nextWallpaper": "الخلفية التالية",
     "installUpdate": "إعادة التشغيل للتحديث",
-    "autoSwitch": "تبديل تلقائي عند تغيير النسق",
-    "autostart": "البدء مع Windows",
     "quit": "إنهاء"
   }
 }

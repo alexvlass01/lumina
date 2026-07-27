@@ -47,21 +47,12 @@
     "start": "Kom i gang"
   },
   "home": {
-    "themeTitle": "Nuværende Windows-tema",
     "detecting": "Registrerer…",
-    "applyNow": "Anvend nu",
     "currentDesktop": "På dit skrivebord nu",
-    "statusGroup": "Status",
-    "trayNote": "Appen fortsætter i systembakken, efter vinduet er lukket.",
     "noWallpaper": "ingen baggrund",
     "noMonitors": "Ingen skærme fundet",
     "themeLight": "Lyst (dag)",
     "themeDark": "Mørkt (nat)"
-  },
-  "status": {
-    "autoSwitch": "Skift automatisk ved temaændring",
-    "autostart": "Start med Windows",
-    "monitors": "Tilsluttede skærme"
   },
   "design": {
     "monitorNote": "Vælg en skærm — baggundene nedenfor gælder for den. Hver skærm har sit eget dag-/natpar.",
@@ -69,10 +60,7 @@
     "lightTheme": "Dagtema",
     "darkTheme": "Nattema",
     "notSelected": "Ikke valgt",
-    "pick": "Vælg billede…",
     "behaviorGroup": "Adfærd",
-    "autoSwitchTitle": "Skift automatisk ved temaændring",
-    "autoSwitchSub": "Skift baggrunden automatisk, når Windows skifter mellem lys og mørk tilstand",
     "styleTitle": "Placering",
     "styleSub": "Hvordan billedet passer til skrivebordet",
     "singleTitle": "Én baggrund til alle skærme",
@@ -107,10 +95,8 @@
     "sortTop": "Top",
     "sortRandom": "Tilfældig",
     "sortViews": "Visninger",
-    "nsfw": "NSFW",
     "search": "Søg",
     "more": "Vis flere",
-    "hint": "Skriv tags, og tryk Søg for at browse Wallhaven.",
     "loading": "Indlæser…",
     "noResults": "Intet fundet",
     "error": "Fejl: {e}",
@@ -157,16 +143,9 @@
     "span": "Spænd over skærme"
   },
   "monitor": { "label": "Skærm {n}", "primary": "primær", "vertical": "vertikal" },
-  "val": { "on": "Til", "off": "Fra" },
   "toast": {
     "applied": "Baggrund anvendt",
-    "noWallpaper": "Ingen baggrund valgt endnu",
-    "noWallpaperTheme": "Ingen baggrund sat for det nuværende tema",
     "error": "Fejl: {msg}",
-    "lightChosen": "Dagbaggrund valgt",
-    "darkChosen": "Natbaggrund valgt",
-    "autoOn": "Automatisk skift aktiveret",
-    "autoOff": "Automatisk skift deaktiveret",
     "startupOn": "Autostart aktiveret",
     "startupOff": "Autostart deaktiveret",
     "styleUpdated": "Placering opdateret",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Åbn Lumina",
-    "applyLight": "Anvend dagbaggrund",
-    "applyDark": "Anvend natbaggrund",
     "applyCurrent": "Anvend for nuværende tema",
     "nextWallpaper": "Næste baggrund",
     "installUpdate": "Genstart for at opdatere",
-    "autoSwitch": "Skift automatisk ved temaændring",
-    "autostart": "Start med Windows",
     "quit": "Afslut"
   }
 }

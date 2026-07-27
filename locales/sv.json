@@ -47,21 +47,12 @@
     "start": "Kom igång"
   },
   "home": {
-    "themeTitle": "Aktuellt Windows-tema",
     "detecting": "Identifierar…",
-    "applyNow": "Använd nu",
     "currentDesktop": "På ditt skrivbord nu",
-    "statusGroup": "Status",
-    "trayNote": "Appen fortsätter köra i aktivitetsfältet när fönstret stängs.",
     "noWallpaper": "ingen bakgrund",
     "noMonitors": "Inga bildskärmar hittades",
     "themeLight": "Ljust (dag)",
     "themeDark": "Mörkt (natt)"
-  },
-  "status": {
-    "autoSwitch": "Byt automatiskt vid temaändring",
-    "autostart": "Starta med Windows",
-    "monitors": "Anslutna bildskärmar"
   },
   "design": {
     "monitorNote": "Välj en bildskärm — bakgrunderna nedan gäller för den. Varje bildskärm har ett eget dag-/nattpar.",
@@ -69,10 +60,7 @@
     "lightTheme": "Dagtema",
     "darkTheme": "Natttema",
     "notSelected": "Inte vald",
-    "pick": "Välj bild…",
     "behaviorGroup": "Beteende",
-    "autoSwitchTitle": "Byt automatiskt vid temaändring",
-    "autoSwitchSub": "Ändra bakgrunden automatiskt när Windows växlar mellan ljust och mörkt läge",
     "styleTitle": "Position",
     "styleSub": "Hur bilden anpassas till skrivbordet",
     "singleTitle": "En bakgrund för alla bildskärmar",
@@ -107,10 +95,8 @@
     "sortTop": "Topp",
     "sortRandom": "Slumpmässigt",
     "sortViews": "Visningar",
-    "nsfw": "NSFW",
     "search": "Sök",
     "more": "Visa fler",
-    "hint": "Skriv taggar och tryck på Sök för att bläddra i Wallhaven.",
     "loading": "Laddar…",
     "noResults": "Inget hittades",
     "error": "Fel: {e}",
@@ -157,16 +143,9 @@
     "span": "Sträck över bildskärmar"
   },
   "monitor": { "label": "Bildskärm {n}", "primary": "primär", "vertical": "vertikal" },
-  "val": { "on": "På", "off": "Av" },
   "toast": {
     "applied": "Bakgrund tillämpad",
-    "noWallpaper": "Ingen bakgrund vald ännu",
-    "noWallpaperTheme": "Ingen bakgrund inställd för aktuellt tema",
     "error": "Fel: {msg}",
-    "lightChosen": "Dagbakgrund vald",
-    "darkChosen": "Nattbakgrund vald",
-    "autoOn": "Automatiskt byte aktiverat",
-    "autoOff": "Automatiskt byte inaktiverat",
     "startupOn": "Autostart aktiverad",
     "startupOff": "Autostart inaktiverad",
     "styleUpdated": "Position uppdaterad",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Öppna Lumina",
-    "applyLight": "Använd dagbakgrund",
-    "applyDark": "Använd nattbakgrund",
     "applyCurrent": "Använd för aktuellt tema",
     "nextWallpaper": "Nästa bakgrund",
     "installUpdate": "Starta om för att uppdatera",
-    "autoSwitch": "Byt automatiskt vid temaändring",
-    "autostart": "Starta med Windows",
     "quit": "Avsluta"
   }
 }

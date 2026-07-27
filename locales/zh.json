@@ -47,21 +47,12 @@
     "start": "开始使用"
   },
   "home": {
-    "themeTitle": "当前 Windows 主题",
     "detecting": "正在检测…",
-    "applyNow": "立即应用",
     "currentDesktop": "当前桌面壁纸",
-    "statusGroup": "状态",
-    "trayNote": "关闭窗口后，应用会继续在系统托盘中运行。",
     "noWallpaper": "无壁纸",
     "noMonitors": "未检测到显示器",
     "themeLight": "浅色（日间）",
     "themeDark": "深色（夜间）"
-  },
-  "status": {
-    "autoSwitch": "主题切换时自动更换",
-    "autostart": "随 Windows 启动",
-    "monitors": "已连接的显示器"
   },
   "design": {
     "monitorNote": "选择一台显示器 — 下方的壁纸将应用于该显示器。每台显示器有自己的日间/夜间壁纸组合。",
@@ -69,10 +60,7 @@
     "lightTheme": "日间主题",
     "darkTheme": "夜间主题",
     "notSelected": "未选择",
-    "pick": "选择图片…",
     "behaviorGroup": "行为",
-    "autoSwitchTitle": "主题切换时自动更换",
-    "autoSwitchSub": "在 Windows 切换浅色和深色模式时自动更换壁纸",
     "styleTitle": "位置",
     "styleSub": "图片在桌面上的显示方式",
     "singleTitle": "所有显示器使用同一壁纸",
@@ -107,10 +95,8 @@
     "sortTop": "热门",
     "sortRandom": "随机",
     "sortViews": "浏览量",
-    "nsfw": "NSFW",
     "search": "搜索",
     "more": "显示更多",
-    "hint": "输入标签并点击“搜索”来浏览 Wallhaven。",
     "loading": "加载中…",
     "noResults": "没有找到结果",
     "error": "错误：{e}",
@@ -157,16 +143,9 @@
     "span": "跨显示器"
   },
   "monitor": { "label": "显示器 {n}", "primary": "主显示器", "vertical": "竖屏" },
-  "val": { "on": "开", "off": "关" },
   "toast": {
     "applied": "壁纸已应用",
-    "noWallpaper": "尚未选择壁纸",
-    "noWallpaperTheme": "当前主题没有设置壁纸",
     "error": "错误：{msg}",
-    "lightChosen": "已选择日间壁纸",
-    "darkChosen": "已选择夜间壁纸",
-    "autoOn": "自动切换已启用",
-    "autoOff": "自动切换已禁用",
     "startupOn": "开机自启已启用",
     "startupOff": "开机自启已禁用",
     "styleUpdated": "显示位置已更新",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "打开 Lumina",
-    "applyLight": "应用日间壁纸",
-    "applyDark": "应用夜间壁纸",
     "applyCurrent": "应用当前主题壁纸",
     "nextWallpaper": "下一张壁纸",
     "installUpdate": "重启以更新",
-    "autoSwitch": "主题切换时自动更换",
-    "autostart": "随 Windows 启动",
     "quit": "退出"
   }
 }

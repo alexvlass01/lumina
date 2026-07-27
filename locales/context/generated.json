@@ -8,10 +8,10 @@
     "src/tray.js"
   ],
   "stats": {
-    "total": 388,
+    "total": 348,
     "contextualized": 345,
-    "coveragePct": 88.9,
-    "unresolved": 43
+    "coveragePct": 99.1,
+    "unresolved": 3
   },
   "entries": {
     "nav.home": {
@@ -818,9 +818,6 @@
         }
       ]
     },
-    "home.themeTitle": {
-      "contexts": []
-    },
     "home.detecting": {
       "contexts": [
         {
@@ -836,9 +833,6 @@
         }
       ]
     },
-    "home.applyNow": {
-      "contexts": []
-    },
     "home.currentDesktop": {
       "contexts": [
         {
@@ -853,12 +847,6 @@
           "selector": "h2.home-scene-title"
         }
       ]
-    },
-    "home.editMonitor": {
-      "contexts": []
-    },
-    "home.nextWallpaper": {
-      "contexts": []
     },
     "home.nextWallpaperHint": {
       "contexts": [
@@ -884,12 +872,6 @@
           "function": "updateHomeInfo"
         }
       ]
-    },
-    "home.statusGroup": {
-      "contexts": []
-    },
-    "home.trayNote": {
-      "contexts": []
     },
     "home.noWallpaper": {
       "contexts": [
@@ -1404,9 +1386,6 @@
         }
       ]
     },
-    "home.recentWallpaper": {
-      "contexts": []
-    },
     "home.recentAssignHint": {
       "contexts": [
         {
@@ -1420,15 +1399,6 @@
           "function": "renderHomeRecentItems"
         }
       ]
-    },
-    "status.autoSwitch": {
-      "contexts": []
-    },
-    "status.autostart": {
-      "contexts": []
-    },
-    "status.monitors": {
-      "contexts": []
     },
     "design.monitorNote": {
       "contexts": [
@@ -1570,9 +1540,6 @@
         }
       ]
     },
-    "design.pick": {
-      "contexts": []
-    },
     "design.behaviorGroup": {
       "contexts": [
         {
@@ -1587,12 +1554,6 @@
           "selector": "h2.group-title"
         }
       ]
-    },
-    "design.autoSwitchTitle": {
-      "contexts": []
-    },
-    "design.autoSwitchSub": {
-      "contexts": []
     },
     "design.wallpaperScheduleTitle": {
       "contexts": [
@@ -1773,9 +1734,6 @@
           "selector": "div.row-sub"
         }
       ]
-    },
-    "design.selectFromLibrary": {
-      "contexts": []
     },
     "design.removeItem": {
       "contexts": [
@@ -2679,9 +2637,6 @@
         }
       ]
     },
-    "details.title": {
-      "contexts": []
-    },
     "details.type": {
       "contexts": [
         {
@@ -3414,9 +3369,6 @@
         }
       ]
     },
-    "online.nsfw": {
-      "contexts": []
-    },
     "online.search": {
       "contexts": [
         {
@@ -3446,9 +3398,6 @@
           "selector": "#whMore"
         }
       ]
-    },
-    "online.hint": {
-      "contexts": []
     },
     "online.loading": {
       "contexts": [
@@ -3760,33 +3709,6 @@
         }
       ]
     },
-    "online.luminaSectionHint": {
-      "contexts": []
-    },
-    "online.internetSectionHint": {
-      "contexts": []
-    },
-    "online.comingSoonTitle": {
-      "contexts": []
-    },
-    "online.comingSoonBody": {
-      "contexts": []
-    },
-    "online.cloudReadyTitle": {
-      "contexts": []
-    },
-    "online.cloudReadyBody": {
-      "contexts": []
-    },
-    "online.cloudBadgeSoon": {
-      "contexts": []
-    },
-    "online.cloudBadgeStaging": {
-      "contexts": []
-    },
-    "online.cloudBadgeLive": {
-      "contexts": []
-    },
     "online.ratingGeneral": {
       "contexts": [
         {
@@ -3953,9 +3875,6 @@
           "function": "renderCloudAccount"
         }
       ]
-    },
-    "online.viewCatalog": {
-      "contexts": []
     },
     "online.viewFavorites": {
       "contexts": [
@@ -4742,12 +4661,6 @@
         }
       ]
     },
-    "val.on": {
-      "contexts": []
-    },
-    "val.off": {
-      "contexts": []
-    },
     "journal.group": {
       "contexts": [
         {
@@ -5106,12 +5019,6 @@
         }
       ]
     },
-    "toast.noWallpaper": {
-      "contexts": []
-    },
-    "toast.noWallpaperTheme": {
-      "contexts": []
-    },
     "toast.error": {
       "contexts": [
         {
@@ -5180,18 +5087,6 @@
           "lookup": "APPLY_ERROR_KEYS"
         }
       ]
-    },
-    "toast.lightChosen": {
-      "contexts": []
-    },
-    "toast.darkChosen": {
-      "contexts": []
-    },
-    "toast.autoOn": {
-      "contexts": []
-    },
-    "toast.autoOff": {
-      "contexts": []
     },
     "toast.startupOn": {
       "contexts": [
@@ -5683,12 +5578,6 @@
         }
       ]
     },
-    "tray.applyLight": {
-      "contexts": []
-    },
-    "tray.applyDark": {
-      "contexts": []
-    },
     "tray.applyCurrent": {
       "contexts": [
         {
@@ -5731,12 +5620,6 @@
         }
       ]
     },
-    "tray.autoSwitch": {
-      "contexts": []
-    },
-    "tray.autostart": {
-      "contexts": []
-    },
     "tray.quit": {
       "contexts": [
         {
@@ -5750,9 +5633,6 @@
           "function": "buildMenuTemplate"
         }
       ]
-    },
-    "triggers.group": {
-      "contexts": []
     },
     "triggers.startupTitle": {
       "contexts": [
@@ -6281,46 +6161,6 @@
     }
   },
   "unresolved": [
-    "home.themeTitle",
-    "home.applyNow",
-    "home.editMonitor",
-    "home.nextWallpaper",
-    "home.statusGroup",
-    "home.trayNote",
-    "home.recentWallpaper",
-    "status.autoSwitch",
-    "status.autostart",
-    "status.monitors",
-    "design.pick",
-    "design.autoSwitchTitle",
-    "design.autoSwitchSub",
-    "design.selectFromLibrary",
-    "details.title",
-    "online.nsfw",
-    "online.hint",
-    "online.luminaSectionHint",
-    "online.internetSectionHint",
-    "online.comingSoonTitle",
-    "online.comingSoonBody",
-    "online.cloudReadyTitle",
-    "online.cloudReadyBody",
-    "online.cloudBadgeSoon",
-    "online.cloudBadgeStaging",
-    "online.cloudBadgeLive",
-    "online.viewCatalog",
-    "val.on",
-    "val.off",
-    "toast.noWallpaper",
-    "toast.noWallpaperTheme",
-    "toast.lightChosen",
-    "toast.darkChosen",
-    "toast.autoOn",
-    "toast.autoOff",
-    "tray.applyLight",
-    "tray.applyDark",
-    "tray.autoSwitch",
-    "tray.autostart",
-    "triggers.group",
     "viewerBg.charcoal",
     "viewerBg.aurora",
     "viewerBg.color"

@@ -59,15 +59,9 @@
     "start": "Начать"
   },
   "home": {
-    "themeTitle": "Текущая тема Windows",
     "detecting": "Определяю…",
-    "applyNow": "Применить сейчас",
     "currentDesktop": "Сейчас на рабочем столе",
-    "editMonitor": "Настроить обои",
-    "nextWallpaper": "Сменить обои",
     "nextWallpaperHint": "Применить следующие обои",
-    "statusGroup": "Статус",
-    "trayNote": "Приложение продолжает работать в системном трее после закрытия окна.",
     "noWallpaper": "нет обоев",
     "noMonitors": "Мониторы не обнаружены",
     "themeLight": "Светлая (дневная)",
@@ -101,13 +95,7 @@
     "recentEmpty": "Здесь появятся новые обои",
     "recentEmptyHint": "Добавьте изображения с компьютера или из онлайн-каталога",
     "recentAdd": "Добавить фото…",
-    "recentWallpaper": "Обои",
     "recentAssignHint": "Назначить эти обои"
-  },
-  "status": {
-    "autoSwitch": "Автосмена при переключении темы",
-    "autostart": "Автозапуск с Windows",
-    "monitors": "Мониторов подключено"
   },
   "design": {
     "monitorNote": "Выберите монитор — обои ниже задаются именно для него. У каждого монитора своя пара день/ночь.",
@@ -116,10 +104,7 @@
     "lightTheme": "Дневная тема",
     "darkTheme": "Ночная тема",
     "notSelected": "Не выбрано",
-    "pick": "Выбрать изображение…",
     "behaviorGroup": "Поведение",
-    "autoSwitchTitle": "Автосмена при переключении темы",
-    "autoSwitchSub": "Менять обои автоматически, когда Windows переходит в светлый или тёмный режим",
     "wallpaperScheduleTitle": "Триггер дневных и ночных обоев",
     "wallpaperScheduleSub": "Выберите, что определяет дневной или ночной слот обоев",
     "wallpaperModeSystem": "Синхронно с Windows",
@@ -132,7 +117,6 @@
     "singleSub": "Использовать одно изображение для всех мониторов сразу",
     "separateTitle": "Раздельные обои для светлой и тёмной темы",
     "separateSub": "У каждого монитора своя пара день/ночь, выбранная триггером ниже. Выключите, чтобы вести один общий список обоев",
-    "selectFromLibrary": "Выбрать из Библиотеки",
     "removeItem": "Убрать",
     "dropPrompt": "Перетащите картинки или папку сюда"
   },
@@ -184,7 +168,6 @@
     "itemsCount": "Элементов: {n}"
   },
   "details": {
-    "title": "Подробнее",
     "type": "Тип",
     "typeImage": "Изображение",
     "typeFolder": "Папка",
@@ -235,10 +218,8 @@
     "sortViews": "Просмотры",
     "filterToggle": "Фильтры контента",
     "purityLabel": "Допуск контента:",
-    "nsfw": "NSFW",
     "search": "Найти",
     "more": "Показать ещё",
-    "hint": "Введите теги и нажмите «Найти» — покажу обои из сети.",
     "loading": "Загрузка…",
     "noResults": "Ничего не найдено",
     "error": "Ошибка: {e}",
@@ -248,15 +229,6 @@
     "sourceLumina": "Lumina",
     "sourceInternet": "Интернет",
     "sourcesLabel": "Источники",
-    "luminaSectionHint": "Каталог Lumina и избранное аккаунта",
-    "internetSectionHint": "Поиск обоев по тегам во внешних каталогах",
-    "comingSoonTitle": "Облако Lumina скоро",
-    "comingSoonBody": "Здесь появятся подобранные обои из сервиса Lumina. В этой сборке функция пока недоступна — она включится автоматически, когда сервис заработает.",
-    "cloudReadyTitle": "Каталог Lumina",
-    "cloudReadyBody": "Подключено к сервису Lumina. Каталог обоев появится здесь.",
-    "cloudBadgeSoon": "Скоро",
-    "cloudBadgeStaging": "Staging",
-    "cloudBadgeLive": "Lumina",
     "ratingGeneral": "Обычные",
     "ratingSuggestive": "Пикантные",
     "ratingExplicit": "Откровенные",
@@ -268,7 +240,6 @@
     "signedOut": "Вы вышли",
     "signinFailed": "Не удалось войти",
     "sessionExpired": "Сессия истекла — войдите снова.",
-    "viewCatalog": "Каталог",
     "viewFavorites": "Избранное",
     "favAdd": "В избранное Lumina",
     "favRemove": "Убрать из избранного Lumina",
@@ -321,10 +292,6 @@
     "primary": "основной",
     "vertical": "вертикальный"
   },
-  "val": {
-    "on": "Вкл.",
-    "off": "Выкл."
-  },
   "journal": {
     "group": "Журнал событий",
     "sub": "Последние сбои фоновых операций и их восстановления",
@@ -351,17 +318,11 @@
   "toast": {
     "applied": "Обои применены",
     "nextWallpaper": "Обои сменены",
-    "noWallpaper": "Обои ещё не выбраны",
-    "noWallpaperTheme": "Для текущей темы не выбраны обои",
     "error": "Ошибка: {msg}",
     "applyFailed": "Не удалось сменить обои — Windows не приняла их. Попробуйте ещё раз",
     "applyNoWallpaper": "Применять нечего: для этого монитора и темы обои не выбраны",
     "applyGameMode": "Отложено: запущена игра или полноэкранное приложение",
     "applyMissingFile": "Этого изображения больше нет в плейлисте (файл перемещён или исключён)",
-    "lightChosen": "Дневные обои выбраны",
-    "darkChosen": "Ночные обои выбраны",
-    "autoOn": "Автосмена включена",
-    "autoOff": "Автосмена выключена",
     "startupOn": "Автозапуск включён",
     "startupOff": "Автозапуск выключен",
     "gameModeOn": "Игровой режим включён",
@@ -395,17 +356,12 @@
   },
   "tray": {
     "open": "Открыть Lumina",
-    "applyLight": "Применить дневные обои",
-    "applyDark": "Применить ночные обои",
     "applyCurrent": "Применить обои заново",
     "nextWallpaper": "Следующие обои",
     "installUpdate": "Перезапустить и обновить",
-    "autoSwitch": "Автосмена при переключении темы",
-    "autostart": "Автозапуск с Windows",
     "quit": "Выход"
   },
   "triggers": {
-    "group": "События смены обоев",
     "startupTitle": "При запуске Windows",
     "startupSub": "Переключать обои при каждом старте системы",
     "wakeupTitle": "При выходе из спящего режима",

@@ -47,21 +47,12 @@
     "start": "Bắt đầu"
   },
   "home": {
-    "themeTitle": "Giao diện Windows hiện tại",
     "detecting": "Đang phát hiện…",
-    "applyNow": "Áp dụng ngay",
     "currentDesktop": "Đang hiển thị trên màn hình",
-    "statusGroup": "Trạng thái",
-    "trayNote": "Ứng dụng vẫn chạy trong khay hệ thống sau khi đóng cửa sổ.",
     "noWallpaper": "chưa có hình nền",
     "noMonitors": "Không phát hiện màn hình nào",
     "themeLight": "Sáng (ngày)",
     "themeDark": "Tối (đêm)"
-  },
-  "status": {
-    "autoSwitch": "Tự chuyển khi đổi giao diện",
-    "autostart": "Khởi động cùng Windows",
-    "monitors": "Màn hình đã kết nối"
   },
   "design": {
     "monitorNote": "Chọn một màn hình — hình nền bên dưới áp dụng cho nó. Mỗi màn hình có cặp ngày/đêm riêng.",
@@ -69,10 +60,7 @@
     "lightTheme": "Giao diện ngày",
     "darkTheme": "Giao diện đêm",
     "notSelected": "Chưa chọn",
-    "pick": "Chọn ảnh…",
     "behaviorGroup": "Hành vi",
-    "autoSwitchTitle": "Tự chuyển khi đổi giao diện",
-    "autoSwitchSub": "Tự động đổi hình nền khi Windows chuyển giữa chế độ sáng và tối",
     "styleTitle": "Vị trí",
     "styleSub": "Cách ảnh hiển thị trên màn hình",
     "singleTitle": "Một hình nền cho tất cả màn hình",
@@ -107,10 +95,8 @@
     "sortTop": "Nổi bật",
     "sortRandom": "Ngẫu nhiên",
     "sortViews": "Lượt xem",
-    "nsfw": "NSFW",
     "search": "Tìm kiếm",
     "more": "Xem thêm",
-    "hint": "Nhập thẻ và nhấn Tìm kiếm để duyệt Wallhaven.",
     "loading": "Đang tải…",
     "noResults": "Không tìm thấy",
     "error": "Lỗi: {e}",
@@ -157,16 +143,9 @@
     "span": "Trải qua các màn hình"
   },
   "monitor": { "label": "Màn hình {n}", "primary": "chính", "vertical": "dọc" },
-  "val": { "on": "Bật", "off": "Tắt" },
   "toast": {
     "applied": "Đã áp dụng hình nền",
-    "noWallpaper": "Chưa chọn hình nền",
-    "noWallpaperTheme": "Chưa đặt hình nền cho giao diện hiện tại",
     "error": "Lỗi: {msg}",
-    "lightChosen": "Đã chọn hình nền ngày",
-    "darkChosen": "Đã chọn hình nền đêm",
-    "autoOn": "Đã bật tự chuyển đổi",
-    "autoOff": "Đã tắt tự chuyển đổi",
     "startupOn": "Đã bật tự khởi động",
     "startupOff": "Đã tắt tự khởi động",
     "styleUpdated": "Đã cập nhật vị trí",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Mở Lumina",
-    "applyLight": "Áp dụng hình nền ngày",
-    "applyDark": "Áp dụng hình nền đêm",
     "applyCurrent": "Áp dụng cho giao diện hiện tại",
     "nextWallpaper": "Hình nền tiếp theo",
     "installUpdate": "Khởi động lại để cập nhật",
-    "autoSwitch": "Tự chuyển khi đổi giao diện",
-    "autostart": "Khởi động cùng Windows",
     "quit": "Thoát"
   }
 }

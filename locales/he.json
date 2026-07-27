@@ -47,21 +47,12 @@
     "start": "בואו נתחיל"
   },
   "home": {
-    "themeTitle": "ערכת הנושא הנוכחית של Windows",
     "detecting": "מזהה…",
-    "applyNow": "החל עכשיו",
     "currentDesktop": "כרגע על שולחן העבודה",
-    "statusGroup": "מצב",
-    "trayNote": "היישום ממשיך לפעול במגש המערכת לאחר סגירת החלון.",
     "noWallpaper": "אין טפט",
     "noMonitors": "לא זוהו צגים",
     "themeLight": "בהיר (יום)",
     "themeDark": "כהה (לילה)"
-  },
-  "status": {
-    "autoSwitch": "החלפה אוטומטית בעת שינוי ערכת נושא",
-    "autostart": "הפעלה עם Windows",
-    "monitors": "צגים מחוברים"
   },
   "design": {
     "monitorNote": "בחרו צג — הטפטים למטה יוחלו עליו. לכל צג יש זוג יום/לילה משלו.",
@@ -69,10 +60,7 @@
     "lightTheme": "ערכת יום",
     "darkTheme": "ערכת לילה",
     "notSelected": "לא נבחר",
-    "pick": "בחירת תמונה…",
     "behaviorGroup": "התנהגות",
-    "autoSwitchTitle": "החלפה אוטומטית בעת שינוי ערכת נושא",
-    "autoSwitchSub": "החלפת טפט אוטומטית כש-Windows עובר בין מצב בהיר לכהה",
     "styleTitle": "מיקום",
     "styleSub": "איך התמונה מותאמת לשולחן העבודה",
     "singleTitle": "טפט אחד לכל הצגים",
@@ -107,10 +95,8 @@
     "sortTop": "מובילים",
     "sortRandom": "אקראי",
     "sortViews": "צפיות",
-    "nsfw": "NSFW",
     "search": "חיפוש",
     "more": "הצג עוד",
-    "hint": "הקלידו תגיות ולחצו חיפוש כדי לגלוש ב-Wallhaven.",
     "loading": "טוען…",
     "noResults": "לא נמצאו תוצאות",
     "error": "שגיאה: {e}",
@@ -157,16 +143,9 @@
     "span": "פרישה על כל הצגים"
   },
   "monitor": { "label": "צג {n}", "primary": "ראשי", "vertical": "אנכי" },
-  "val": { "on": "פעיל", "off": "כבוי" },
   "toast": {
     "applied": "הטפט הוחל",
-    "noWallpaper": "לא נבחר טפט עדיין",
-    "noWallpaperTheme": "לא הוגדר טפט לערכת הנושא הנוכחית",
     "error": "שגיאה: {msg}",
-    "lightChosen": "נבחר טפט יום",
-    "darkChosen": "נבחר טפט לילה",
-    "autoOn": "החלפה אוטומטית הופעלה",
-    "autoOff": "החלפה אוטומטית כובתה",
     "startupOn": "הפעלה אוטומטית הופעלה",
     "startupOff": "הפעלה אוטומטית כובתה",
     "styleUpdated": "המיקום עודכן",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "פתיחת Lumina",
-    "applyLight": "החלת טפט יום",
-    "applyDark": "החלת טפט לילה",
     "applyCurrent": "החלה לערכת הנושא הנוכחית",
     "nextWallpaper": "הטפט הבא",
     "installUpdate": "הפעלה מחדש לעדכון",
-    "autoSwitch": "החלפה אוטומטית בעת שינוי ערכת נושא",
-    "autostart": "הפעלה עם Windows",
     "quit": "יציאה"
   }
 }

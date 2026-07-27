@@ -47,21 +47,12 @@
     "start": "Başlayın"
   },
   "home": {
-    "themeTitle": "Geçerli Windows teması",
     "detecting": "Algılanıyor…",
-    "applyNow": "Şimdi uygula",
     "currentDesktop": "Şu an masaüstünüzde",
-    "statusGroup": "Durum",
-    "trayNote": "Pencere kapatıldıktan sonra uygulama sistem tepsisinde çalışmaya devam eder.",
     "noWallpaper": "duvar kağıdı yok",
     "noMonitors": "Monitör algılanamadı",
     "themeLight": "Aydınlık (gündüz)",
     "themeDark": "Karanlık (gece)"
-  },
-  "status": {
-    "autoSwitch": "Tema değişiminde otomatik geçiş",
-    "autostart": "Windows ile başlat",
-    "monitors": "Bağlı monitörler"
   },
   "design": {
     "monitorNote": "Bir monitör seçin — aşağıdaki duvar kağıtları o monitöre uygulanır. Her monitörün kendi gündüz/gece çifti vardır.",
@@ -69,10 +60,7 @@
     "lightTheme": "Gündüz teması",
     "darkTheme": "Gece teması",
     "notSelected": "Seçilmedi",
-    "pick": "Görsel seç…",
     "behaviorGroup": "Davranış",
-    "autoSwitchTitle": "Tema değişiminde otomatik geçiş",
-    "autoSwitchSub": "Windows aydınlık ve karanlık mod arasında geçiş yaptığında duvar kağıdını otomatik olarak değiştir",
     "styleTitle": "Konum",
     "styleSub": "Görselin masaüstüne nasıl sığdırılacağı",
     "singleTitle": "Tüm monitörler için tek duvar kağıdı",
@@ -107,10 +95,8 @@
     "sortTop": "En popüler",
     "sortRandom": "Rastgele",
     "sortViews": "Görüntülenme",
-    "nsfw": "NSFW",
     "search": "Ara",
     "more": "Daha fazla göster",
-    "hint": "Etiket yazın ve Wallhaven'da aramak için Ara'ya tıklayın.",
     "loading": "Yükleniyor…",
     "noResults": "Sonuç bulunamadı",
     "error": "Hata: {e}",
@@ -157,16 +143,9 @@
     "span": "Monitörlere yay"
   },
   "monitor": { "label": "Monitör {n}", "primary": "birincil", "vertical": "dikey" },
-  "val": { "on": "Açık", "off": "Kapalı" },
   "toast": {
     "applied": "Duvar kağıdı uygulandı",
-    "noWallpaper": "Henüz duvar kağıdı seçilmedi",
-    "noWallpaperTheme": "Geçerli tema için duvar kağıdı ayarlanmamış",
     "error": "Hata: {msg}",
-    "lightChosen": "Gündüz duvar kağıdı seçildi",
-    "darkChosen": "Gece duvar kağıdı seçildi",
-    "autoOn": "Otomatik geçiş etkinleştirildi",
-    "autoOff": "Otomatik geçiş devre dışı bırakıldı",
     "startupOn": "Otomatik başlatma etkinleştirildi",
     "startupOff": "Otomatik başlatma devre dışı bırakıldı",
     "styleUpdated": "Konum güncellendi",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Lumina'yı Aç",
-    "applyLight": "Gündüz duvar kağıdını uygula",
-    "applyDark": "Gece duvar kağıdını uygula",
     "applyCurrent": "Geçerli tema için uygula",
     "nextWallpaper": "Sonraki duvar kağıdı",
     "installUpdate": "Güncellemek için yeniden başlat",
-    "autoSwitch": "Tema değişiminde otomatik geçiş",
-    "autostart": "Windows ile başlat",
     "quit": "Çıkış"
   }
 }

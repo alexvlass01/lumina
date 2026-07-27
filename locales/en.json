@@ -59,15 +59,9 @@
     "start": "Get started"
   },
   "home": {
-    "themeTitle": "Current Windows theme",
     "detecting": "Detecting…",
-    "applyNow": "Apply now",
     "currentDesktop": "On your desktop now",
-    "editMonitor": "Set up wallpapers",
-    "nextWallpaper": "Switch wallpaper",
     "nextWallpaperHint": "Apply the next wallpaper now",
-    "statusGroup": "Status",
-    "trayNote": "The app keeps running in the system tray after the window is closed.",
     "noWallpaper": "no wallpaper",
     "noMonitors": "No monitors detected",
     "themeLight": "Light (day)",
@@ -101,13 +95,7 @@
     "recentEmpty": "New wallpapers will appear here",
     "recentEmptyHint": "Add images from your computer or the online catalog",
     "recentAdd": "Add photos…",
-    "recentWallpaper": "Wallpaper",
     "recentAssignHint": "Assign this wallpaper"
-  },
-  "status": {
-    "autoSwitch": "Auto-switch on theme change",
-    "autostart": "Start with Windows",
-    "monitors": "Monitors connected"
   },
   "design": {
     "monitorNote": "Pick a monitor — the wallpapers below apply to it. Each monitor has its own day/night pair.",
@@ -116,10 +104,7 @@
     "lightTheme": "Day theme",
     "darkTheme": "Night theme",
     "notSelected": "Not selected",
-    "pick": "Choose image…",
     "behaviorGroup": "Behavior",
-    "autoSwitchTitle": "Auto-switch on theme change",
-    "autoSwitchSub": "Change the wallpaper automatically when Windows switches between light and dark mode",
     "wallpaperScheduleTitle": "Day/night wallpaper trigger",
     "wallpaperScheduleSub": "Choose what selects the day or night wallpaper slot",
     "wallpaperModeSystem": "Follow Windows",
@@ -132,7 +117,6 @@
     "singleSub": "Use a single image across every monitor",
     "separateTitle": "Separate wallpapers for light and dark themes",
     "separateSub": "Each monitor keeps a day/night pair selected by the trigger below. Turn off for a single shared wallpaper list",
-    "selectFromLibrary": "Select from Library",
     "removeItem": "Remove",
     "dropPrompt": "Drop images or folder here"
   },
@@ -184,7 +168,6 @@
     "itemsCount": "Items: {n}"
   },
   "details": {
-    "title": "Details",
     "type": "Type",
     "typeImage": "Image",
     "typeFolder": "Folder",
@@ -235,10 +218,8 @@
     "sortViews": "Views",
     "filterToggle": "Content filters",
     "purityLabel": "Content purity:",
-    "nsfw": "NSFW",
     "search": "Search",
     "more": "Show more",
-    "hint": "Type tags and hit Search to browse online wallpapers.",
     "loading": "Loading…",
     "noResults": "Nothing found",
     "error": "Error: {e}",
@@ -248,15 +229,6 @@
     "sourceLumina": "Lumina",
     "sourceInternet": "Internet",
     "sourcesLabel": "Sources",
-    "luminaSectionHint": "Lumina catalog and account favorites",
-    "internetSectionHint": "Search external wallpaper catalogs by tags",
-    "comingSoonTitle": "Lumina Cloud is coming soon",
-    "comingSoonBody": "Curated wallpapers from the Lumina service will appear here. This feature isn't available in this build yet — it turns on automatically once the service is live.",
-    "cloudReadyTitle": "Lumina catalog",
-    "cloudReadyBody": "Connected to the Lumina service. The wallpaper catalog will appear here.",
-    "cloudBadgeSoon": "Coming soon",
-    "cloudBadgeStaging": "Staging",
-    "cloudBadgeLive": "Lumina",
     "ratingGeneral": "General",
     "ratingSuggestive": "Suggestive",
     "ratingExplicit": "Explicit",
@@ -268,7 +240,6 @@
     "signedOut": "Signed out",
     "signinFailed": "Sign-in failed",
     "sessionExpired": "Your session expired — please sign in again.",
-    "viewCatalog": "Catalog",
     "viewFavorites": "Favorites",
     "favAdd": "Add to Lumina favorites",
     "favRemove": "Remove from Lumina favorites",
@@ -321,10 +292,6 @@
     "primary": "primary",
     "vertical": "vertical"
   },
-  "val": {
-    "on": "On",
-    "off": "Off"
-  },
   "journal": {
     "group": "Event journal",
     "sub": "Recent background failures and recoveries",
@@ -351,17 +318,11 @@
   "toast": {
     "applied": "Wallpaper applied",
     "nextWallpaper": "Wallpaper switched",
-    "noWallpaper": "No wallpaper selected yet",
-    "noWallpaperTheme": "No wallpaper set for the current theme",
     "error": "Error: {msg}",
     "applyFailed": "Couldn't change the wallpaper — Windows didn't accept it. Try again",
     "applyNoWallpaper": "Nothing to apply: no wallpaper is set for this monitor and theme",
     "applyGameMode": "Postponed: a game or fullscreen app is running",
     "applyMissingFile": "This image is no longer in the playlist (file was moved or excluded)",
-    "lightChosen": "Day wallpaper selected",
-    "darkChosen": "Night wallpaper selected",
-    "autoOn": "Auto-switch enabled",
-    "autoOff": "Auto-switch disabled",
     "startupOn": "Autostart enabled",
     "startupOff": "Autostart disabled",
     "gameModeOn": "Game Mode enabled",
@@ -395,17 +356,12 @@
   },
   "tray": {
     "open": "Open Lumina",
-    "applyLight": "Apply day wallpaper",
-    "applyDark": "Apply night wallpaper",
     "applyCurrent": "Reapply wallpapers",
     "nextWallpaper": "Next wallpaper",
     "installUpdate": "Restart to update",
-    "autoSwitch": "Auto-switch on theme change",
-    "autostart": "Start with Windows",
     "quit": "Quit"
   },
   "triggers": {
-    "group": "Wallpaper Events",
     "startupTitle": "At Windows startup",
     "startupSub": "Switch wallpapers on every system boot",
     "wakeupTitle": "On waking from sleep",

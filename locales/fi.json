@@ -47,21 +47,12 @@
     "start": "Aloita"
   },
   "home": {
-    "themeTitle": "Nykyinen Windows-teema",
     "detecting": "Tunnistetaan…",
-    "applyNow": "Käytä nyt",
     "currentDesktop": "Työpöydälläsi nyt",
-    "statusGroup": "Tila",
-    "trayNote": "Sovellus jatkaa toimintaansa ilmaisinalueella ikkunan sulkemisen jälkeen.",
     "noWallpaper": "ei taustakuvaa",
     "noMonitors": "Näyttöjä ei havaittu",
     "themeLight": "Vaalea (päivä)",
     "themeDark": "Tumma (yö)"
-  },
-  "status": {
-    "autoSwitch": "Automaattinen vaihto teeman muuttuessa",
-    "autostart": "Käynnistä Windowsin kanssa",
-    "monitors": "Liitetyt näytöt"
   },
   "design": {
     "monitorNote": "Valitse näyttö — alla olevat taustakuvat koskevat sitä. Jokaisella näytöllä on oma päivä-/yöpari.",
@@ -69,10 +60,7 @@
     "lightTheme": "Päiväteema",
     "darkTheme": "Yöteema",
     "notSelected": "Ei valittu",
-    "pick": "Valitse kuva…",
     "behaviorGroup": "Toiminta",
-    "autoSwitchTitle": "Automaattinen vaihto teeman muuttuessa",
-    "autoSwitchSub": "Vaihda taustakuva automaattisesti, kun Windows vaihtaa vaalean ja tumman tilan välillä",
     "styleTitle": "Sijainti",
     "styleSub": "Miten kuva sovitetaan työpöydälle",
     "singleTitle": "Yksi taustakuva kaikille näytöille",
@@ -107,10 +95,8 @@
     "sortTop": "Suosituimmat",
     "sortRandom": "Satunnainen",
     "sortViews": "Katselut",
-    "nsfw": "NSFW",
     "search": "Hae",
     "more": "Näytä lisää",
-    "hint": "Kirjoita tunnisteet ja paina Hae selataksesi Wallhavenia.",
     "loading": "Ladataan…",
     "noResults": "Ei tuloksia",
     "error": "Virhe: {e}",
@@ -157,16 +143,9 @@
     "span": "Levitä näyttöjen yli"
   },
   "monitor": { "label": "Näyttö {n}", "primary": "ensisijainen", "vertical": "pysty" },
-  "val": { "on": "Päällä", "off": "Pois" },
   "toast": {
     "applied": "Taustakuva käytetty",
-    "noWallpaper": "Taustakuvaa ei ole vielä valittu",
-    "noWallpaperTheme": "Nykyiselle teemalle ei ole asetettu taustakuvaa",
     "error": "Virhe: {msg}",
-    "lightChosen": "Päivätaustakuva valittu",
-    "darkChosen": "Yötaustakuva valittu",
-    "autoOn": "Automaattinen vaihto käytössä",
-    "autoOff": "Automaattinen vaihto pois käytöstä",
     "startupOn": "Automaattikäynnistys käytössä",
     "startupOff": "Automaattikäynnistys pois käytöstä",
     "styleUpdated": "Sijainti päivitetty",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Avaa Lumina",
-    "applyLight": "Käytä päivätaustakuvaa",
-    "applyDark": "Käytä yötaustakuvaa",
     "applyCurrent": "Käytä nykyiselle teemalle",
     "nextWallpaper": "Seuraava taustakuva",
     "installUpdate": "Käynnistä uudelleen päivittääksesi",
-    "autoSwitch": "Automaattinen vaihto teeman muuttuessa",
-    "autostart": "Käynnistä Windowsin kanssa",
     "quit": "Sulje"
   }
 }

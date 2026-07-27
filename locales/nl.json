@@ -47,21 +47,12 @@
     "start": "Aan de slag"
   },
   "home": {
-    "themeTitle": "Huidig Windows-thema",
     "detecting": "Detecteren…",
-    "applyNow": "Nu toepassen",
     "currentDesktop": "Nu op je bureaublad",
-    "statusGroup": "Status",
-    "trayNote": "De app blijft draaien in het systeemvak nadat het venster is gesloten.",
     "noWallpaper": "geen achtergrond",
     "noMonitors": "Geen beeldschermen gedetecteerd",
     "themeLight": "Licht (dag)",
     "themeDark": "Donker (nacht)"
-  },
-  "status": {
-    "autoSwitch": "Automatisch wisselen bij themawijziging",
-    "autostart": "Starten met Windows",
-    "monitors": "Aangesloten beeldschermen"
   },
   "design": {
     "monitorNote": "Kies een beeldscherm — de onderstaande achtergronden gelden daarvoor. Elk beeldscherm heeft een eigen dag-/nachtpaar.",
@@ -69,10 +60,7 @@
     "lightTheme": "Dagthema",
     "darkTheme": "Nachtthema",
     "notSelected": "Niet geselecteerd",
-    "pick": "Afbeelding kiezen…",
     "behaviorGroup": "Gedrag",
-    "autoSwitchTitle": "Automatisch wisselen bij themawijziging",
-    "autoSwitchSub": "De achtergrond automatisch aanpassen wanneer Windows tussen licht en donker wisselt",
     "styleTitle": "Positie",
     "styleSub": "Hoe de afbeelding op het bureaublad past",
     "singleTitle": "Eén achtergrond voor alle beeldschermen",
@@ -107,10 +95,8 @@
     "sortTop": "Populairst",
     "sortRandom": "Willekeurig",
     "sortViews": "Weergaven",
-    "nsfw": "NSFW",
     "search": "Zoeken",
     "more": "Meer tonen",
-    "hint": "Typ tags en klik op Zoeken om door Wallhaven te bladeren.",
     "loading": "Laden…",
     "noResults": "Niets gevonden",
     "error": "Fout: {e}",
@@ -157,16 +143,9 @@
     "span": "Spreiden over beeldschermen"
   },
   "monitor": { "label": "Beeldscherm {n}", "primary": "primair", "vertical": "verticaal" },
-  "val": { "on": "Aan", "off": "Uit" },
   "toast": {
     "applied": "Achtergrond toegepast",
-    "noWallpaper": "Nog geen achtergrond geselecteerd",
-    "noWallpaperTheme": "Geen achtergrond ingesteld voor het huidige thema",
     "error": "Fout: {msg}",
-    "lightChosen": "Dagachtergrond geselecteerd",
-    "darkChosen": "Nachtachtergrond geselecteerd",
-    "autoOn": "Automatisch wisselen ingeschakeld",
-    "autoOff": "Automatisch wisselen uitgeschakeld",
     "startupOn": "Automatisch starten ingeschakeld",
     "startupOff": "Automatisch starten uitgeschakeld",
     "styleUpdated": "Positie bijgewerkt",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Lumina openen",
-    "applyLight": "Dagachtergrond toepassen",
-    "applyDark": "Nachtachtergrond toepassen",
     "applyCurrent": "Toepassen voor huidig thema",
     "nextWallpaper": "Volgende achtergrond",
     "installUpdate": "Herstart om bij te werken",
-    "autoSwitch": "Automatisch wisselen bij themawijziging",
-    "autostart": "Starten met Windows",
     "quit": "Afsluiten"
   }
 }

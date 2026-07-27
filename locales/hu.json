@@ -47,21 +47,12 @@
     "start": "Kezdjük"
   },
   "home": {
-    "themeTitle": "Jelenlegi Windows téma",
     "detecting": "Felismerés…",
-    "applyNow": "Alkalmazás most",
     "currentDesktop": "Jelenleg az asztalon",
-    "statusGroup": "Állapot",
-    "trayNote": "Az alkalmazás az ablak bezárása után tovább fut a tálcán.",
     "noWallpaper": "nincs háttérkép",
     "noMonitors": "Nem található monitor",
     "themeLight": "Világos (nappali)",
     "themeDark": "Sötét (éjszakai)"
-  },
-  "status": {
-    "autoSwitch": "Automatikus váltás témaváltáskor",
-    "autostart": "Indítás a Windows-zal",
-    "monitors": "Csatlakoztatott monitorok"
   },
   "design": {
     "monitorNote": "Válasszon monitort — az alábbi háttérképek arra vonatkoznak. Minden monitornak saját nappali/éjszakai párja van.",
@@ -69,10 +60,7 @@
     "lightTheme": "Nappali téma",
     "darkTheme": "Éjszakai téma",
     "notSelected": "Nincs kiválasztva",
-    "pick": "Kép kiválasztása…",
     "behaviorGroup": "Viselkedés",
-    "autoSwitchTitle": "Automatikus váltás témaváltáskor",
-    "autoSwitchSub": "Háttérkép automatikus váltása, amikor a Windows világos és sötét mód között vált",
     "styleTitle": "Elhelyezés",
     "styleSub": "Hogyan illeszkedjen a kép az asztalra",
     "singleTitle": "Egy háttérkép minden monitorra",
@@ -107,10 +95,8 @@
     "sortTop": "Legnépszerűbb",
     "sortRandom": "Véletlenszerű",
     "sortViews": "Megtekintések",
-    "nsfw": "NSFW",
     "search": "Keresés",
     "more": "Továbbiak",
-    "hint": "Írjon be címkéket, és nyomja meg a Keresés gombot a Wallhaven böngészéséhez.",
     "loading": "Betöltés…",
     "noResults": "Nincs találat",
     "error": "Hiba: {e}",
@@ -157,16 +143,9 @@
     "span": "Átívelés a monitorokon"
   },
   "monitor": { "label": "Monitor {n}", "primary": "elsődleges", "vertical": "függőleges" },
-  "val": { "on": "Be", "off": "Ki" },
   "toast": {
     "applied": "Háttérkép alkalmazva",
-    "noWallpaper": "Még nincs háttérkép kiválasztva",
-    "noWallpaperTheme": "Nincs háttérkép beállítva az aktuális témához",
     "error": "Hiba: {msg}",
-    "lightChosen": "Nappali háttérkép kiválasztva",
-    "darkChosen": "Éjszakai háttérkép kiválasztva",
-    "autoOn": "Automatikus váltás bekapcsolva",
-    "autoOff": "Automatikus váltás kikapcsolva",
     "startupOn": "Automatikus indítás bekapcsolva",
     "startupOff": "Automatikus indítás kikapcsolva",
     "styleUpdated": "Elhelyezés frissítve",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Lumina megnyitása",
-    "applyLight": "Nappali háttérkép alkalmazása",
-    "applyDark": "Éjszakai háttérkép alkalmazása",
     "applyCurrent": "Alkalmazás az aktuális témához",
     "nextWallpaper": "Következő háttérkép",
     "installUpdate": "Újraindítás a frissítéshez",
-    "autoSwitch": "Automatikus váltás témaváltáskor",
-    "autostart": "Indítás a Windows-zal",
     "quit": "Kilépés"
   }
 }

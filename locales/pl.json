@@ -47,21 +47,12 @@
     "start": "Rozpocznij"
   },
   "home": {
-    "themeTitle": "Bieżący motyw Windows",
     "detecting": "Wykrywanie…",
-    "applyNow": "Zastosuj teraz",
     "currentDesktop": "Aktualnie na pulpicie",
-    "statusGroup": "Stan",
-    "trayNote": "Aplikacja działa dalej w zasobniku systemowym po zamknięciu okna.",
     "noWallpaper": "brak tapety",
     "noMonitors": "Nie wykryto monitorów",
     "themeLight": "Jasny (dzień)",
     "themeDark": "Ciemny (noc)"
-  },
-  "status": {
-    "autoSwitch": "Automatyczna zmiana przy zmianie motywu",
-    "autostart": "Uruchamianie z Windows",
-    "monitors": "Podłączone monitory"
   },
   "design": {
     "monitorNote": "Wybierz monitor — poniższe tapety dotyczą wybranego. Każdy monitor ma własną parę dzień/noc.",
@@ -69,10 +60,7 @@
     "lightTheme": "Motyw dzienny",
     "darkTheme": "Motyw nocny",
     "notSelected": "Nie wybrano",
-    "pick": "Wybierz obraz…",
     "behaviorGroup": "Zachowanie",
-    "autoSwitchTitle": "Automatyczna zmiana przy zmianie motywu",
-    "autoSwitchSub": "Zmieniaj tapetę automatycznie, gdy Windows przełącza między jasnym a ciemnym trybem",
     "styleTitle": "Pozycja",
     "styleSub": "Sposób dopasowania obrazu do pulpitu",
     "singleTitle": "Jedna tapeta na wszystkie monitory",
@@ -107,10 +95,8 @@
     "sortTop": "Najlepsze",
     "sortRandom": "Losowe",
     "sortViews": "Wyświetlenia",
-    "nsfw": "NSFW",
     "search": "Szukaj",
     "more": "Pokaż więcej",
-    "hint": "Wpisz tagi i naciśnij Szukaj, aby przeglądać Wallhaven.",
     "loading": "Ładowanie…",
     "noResults": "Nic nie znaleziono",
     "error": "Błąd: {e}",
@@ -157,16 +143,9 @@
     "span": "Rozciągnij na monitory"
   },
   "monitor": { "label": "Monitor {n}", "primary": "główny", "vertical": "pionowy" },
-  "val": { "on": "Wł.", "off": "Wył." },
   "toast": {
     "applied": "Tapeta zastosowana",
-    "noWallpaper": "Nie wybrano jeszcze tapety",
-    "noWallpaperTheme": "Brak tapety dla bieżącego motywu",
     "error": "Błąd: {msg}",
-    "lightChosen": "Wybrano tapetę dzienną",
-    "darkChosen": "Wybrano tapetę nocną",
-    "autoOn": "Automatyczne przełączanie włączone",
-    "autoOff": "Automatyczne przełączanie wyłączone",
     "startupOn": "Autostart włączony",
     "startupOff": "Autostart wyłączony",
     "styleUpdated": "Pozycja zaktualizowana",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Otwórz Lumina",
-    "applyLight": "Zastosuj tapetę dzienną",
-    "applyDark": "Zastosuj tapetę nocną",
     "applyCurrent": "Zastosuj dla bieżącego motywu",
     "nextWallpaper": "Następna tapeta",
     "installUpdate": "Uruchom ponownie, aby zaktualizować",
-    "autoSwitch": "Automatyczna zmiana przy zmianie motywu",
-    "autostart": "Uruchamiaj z Windows",
     "quit": "Zamknij"
   }
 }

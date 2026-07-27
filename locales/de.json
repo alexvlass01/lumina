@@ -47,21 +47,12 @@
     "start": "Los geht's"
   },
   "home": {
-    "themeTitle": "Aktuelles Windows-Design",
     "detecting": "Wird erkannt…",
-    "applyNow": "Jetzt anwenden",
     "currentDesktop": "Aktuell auf dem Desktop",
-    "statusGroup": "Status",
-    "trayNote": "Die App läuft nach dem Schließen des Fensters weiter im Infobereich.",
     "noWallpaper": "Kein Hintergrundbild",
     "noMonitors": "Keine Monitore erkannt",
     "themeLight": "Hell (Tag)",
     "themeDark": "Dunkel (Nacht)"
-  },
-  "status": {
-    "autoSwitch": "Automatisch bei Designwechsel",
-    "autostart": "Mit Windows starten",
-    "monitors": "Verbundene Monitore"
   },
   "design": {
     "monitorNote": "Wähle einen Monitor — die Hintergrundbilder unten gelten dafür. Jeder Monitor hat sein eigenes Tag-/Nachtpaar.",
@@ -69,10 +60,7 @@
     "lightTheme": "Tag-Design",
     "darkTheme": "Nacht-Design",
     "notSelected": "Nicht ausgewählt",
-    "pick": "Bild auswählen…",
     "behaviorGroup": "Verhalten",
-    "autoSwitchTitle": "Automatisch bei Designwechsel",
-    "autoSwitchSub": "Hintergrundbild automatisch wechseln, wenn Windows zwischen hellem und dunklem Modus umschaltet",
     "styleTitle": "Position",
     "styleSub": "Wie das Bild auf dem Desktop dargestellt wird",
     "singleTitle": "Ein Hintergrundbild für alle Monitore",
@@ -107,10 +95,8 @@
     "sortTop": "Beliebteste",
     "sortRandom": "Zufällig",
     "sortViews": "Aufrufe",
-    "nsfw": "NSFW",
     "search": "Suchen",
     "more": "Mehr anzeigen",
-    "hint": "Gib Tags ein und klicke auf Suchen, um Wallhaven zu durchsuchen.",
     "loading": "Wird geladen…",
     "noResults": "Nichts gefunden",
     "error": "Fehler: {e}",
@@ -157,16 +143,9 @@
     "span": "Über alle Monitore"
   },
   "monitor": { "label": "Monitor {n}", "primary": "Primär", "vertical": "Hochformat" },
-  "val": { "on": "Ein", "off": "Aus" },
   "toast": {
     "applied": "Hintergrundbild angewendet",
-    "noWallpaper": "Noch kein Hintergrundbild ausgewählt",
-    "noWallpaperTheme": "Kein Hintergrundbild für das aktuelle Design festgelegt",
     "error": "Fehler: {msg}",
-    "lightChosen": "Tag-Hintergrundbild ausgewählt",
-    "darkChosen": "Nacht-Hintergrundbild ausgewählt",
-    "autoOn": "Automatischer Wechsel aktiviert",
-    "autoOff": "Automatischer Wechsel deaktiviert",
     "startupOn": "Autostart aktiviert",
     "startupOff": "Autostart deaktiviert",
     "styleUpdated": "Position aktualisiert",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Lumina öffnen",
-    "applyLight": "Tag-Hintergrundbild anwenden",
-    "applyDark": "Nacht-Hintergrundbild anwenden",
     "applyCurrent": "Für aktuelles Design anwenden",
     "nextWallpaper": "Nächstes Hintergrundbild",
     "installUpdate": "Neu starten für Update",
-    "autoSwitch": "Automatisch bei Designwechsel",
-    "autostart": "Mit Windows starten",
     "quit": "Beenden"
   }
 }

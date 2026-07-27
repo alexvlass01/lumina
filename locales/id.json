@@ -47,21 +47,12 @@
     "start": "Mulai"
   },
   "home": {
-    "themeTitle": "Tema Windows saat ini",
     "detecting": "Mendeteksi…",
-    "applyNow": "Terapkan sekarang",
     "currentDesktop": "Sedang tampil di desktop Anda",
-    "statusGroup": "Status",
-    "trayNote": "Aplikasi tetap berjalan di baki sistem setelah jendela ditutup.",
     "noWallpaper": "belum ada wallpaper",
     "noMonitors": "Tidak ada monitor yang terdeteksi",
     "themeLight": "Terang (siang)",
     "themeDark": "Gelap (malam)"
-  },
-  "status": {
-    "autoSwitch": "Ganti otomatis saat tema berubah",
-    "autostart": "Mulai bersama Windows",
-    "monitors": "Monitor terhubung"
   },
   "design": {
     "monitorNote": "Pilih monitor — wallpaper di bawah berlaku untuknya. Setiap monitor punya pasangan siang/malam sendiri.",
@@ -69,10 +60,7 @@
     "lightTheme": "Tema siang",
     "darkTheme": "Tema malam",
     "notSelected": "Belum dipilih",
-    "pick": "Pilih gambar…",
     "behaviorGroup": "Perilaku",
-    "autoSwitchTitle": "Ganti otomatis saat tema berubah",
-    "autoSwitchSub": "Ganti wallpaper secara otomatis saat Windows beralih antara mode terang dan gelap",
     "styleTitle": "Posisi",
     "styleSub": "Cara gambar ditampilkan di desktop",
     "singleTitle": "Satu wallpaper untuk semua monitor",
@@ -107,10 +95,8 @@
     "sortTop": "Teratas",
     "sortRandom": "Acak",
     "sortViews": "Dilihat",
-    "nsfw": "NSFW",
     "search": "Cari",
     "more": "Tampilkan lagi",
-    "hint": "Ketik tag dan tekan Cari untuk menjelajahi Wallhaven.",
     "loading": "Memuat…",
     "noResults": "Tidak ditemukan",
     "error": "Error: {e}",
@@ -157,16 +143,9 @@
     "span": "Bentang ke semua monitor"
   },
   "monitor": { "label": "Monitor {n}", "primary": "utama", "vertical": "vertikal" },
-  "val": { "on": "Aktif", "off": "Nonaktif" },
   "toast": {
     "applied": "Wallpaper diterapkan",
-    "noWallpaper": "Belum ada wallpaper yang dipilih",
-    "noWallpaperTheme": "Belum ada wallpaper untuk tema saat ini",
     "error": "Error: {msg}",
-    "lightChosen": "Wallpaper siang dipilih",
-    "darkChosen": "Wallpaper malam dipilih",
-    "autoOn": "Pergantian otomatis diaktifkan",
-    "autoOff": "Pergantian otomatis dinonaktifkan",
     "startupOn": "Mulai otomatis diaktifkan",
     "startupOff": "Mulai otomatis dinonaktifkan",
     "styleUpdated": "Posisi diperbarui",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Buka Lumina",
-    "applyLight": "Terapkan wallpaper siang",
-    "applyDark": "Terapkan wallpaper malam",
     "applyCurrent": "Terapkan untuk tema saat ini",
     "nextWallpaper": "Wallpaper berikutnya",
     "installUpdate": "Mulai ulang untuk memperbarui",
-    "autoSwitch": "Ganti otomatis saat tema berubah",
-    "autostart": "Mulai bersama Windows",
     "quit": "Keluar"
   }
 }

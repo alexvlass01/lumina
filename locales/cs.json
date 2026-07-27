@@ -47,21 +47,12 @@
     "start": "Začít"
   },
   "home": {
-    "themeTitle": "Aktuální motiv Windows",
     "detecting": "Zjišťování…",
-    "applyNow": "Použít nyní",
     "currentDesktop": "Aktuálně na ploše",
-    "statusGroup": "Stav",
-    "trayNote": "Po zavření okna aplikace běží dál v oznamovací oblasti.",
     "noWallpaper": "žádná tapeta",
     "noMonitors": "Nebyly zjištěny žádné monitory",
     "themeLight": "Světlý (den)",
     "themeDark": "Tmavý (noc)"
-  },
-  "status": {
-    "autoSwitch": "Automatická změna při změně motivu",
-    "autostart": "Spouštění s Windows",
-    "monitors": "Připojené monitory"
   },
   "design": {
     "monitorNote": "Vyberte monitor — tapety níže se vztahují k němu. Každý monitor má vlastní pár den/noc.",
@@ -69,10 +60,7 @@
     "lightTheme": "Denní motiv",
     "darkTheme": "Noční motiv",
     "notSelected": "Nevybráno",
-    "pick": "Zvolit obrázek…",
     "behaviorGroup": "Chování",
-    "autoSwitchTitle": "Automatická změna při změně motivu",
-    "autoSwitchSub": "Automaticky změnit tapetu, když Windows přepne mezi světlým a tmavým režimem",
     "styleTitle": "Umístění",
     "styleSub": "Jak se obrázek přizpůsobí ploše",
     "singleTitle": "Jedna tapeta pro všechny monitory",
@@ -107,10 +95,8 @@
     "sortTop": "Nejlepší",
     "sortRandom": "Náhodné",
     "sortViews": "Zobrazení",
-    "nsfw": "NSFW",
     "search": "Hledat",
     "more": "Zobrazit více",
-    "hint": "Zadejte štítky a stiskněte Hledat pro procházení Wallhaven.",
     "loading": "Načítání…",
     "noResults": "Nic nenalezeno",
     "error": "Chyba: {e}",
@@ -157,16 +143,9 @@
     "span": "Roztáhnout přes monitory"
   },
   "monitor": { "label": "Monitor {n}", "primary": "hlavní", "vertical": "vertikální" },
-  "val": { "on": "Zapnuto", "off": "Vypnuto" },
   "toast": {
     "applied": "Tapeta použita",
-    "noWallpaper": "Zatím nebyla vybrána žádná tapeta",
-    "noWallpaperTheme": "Pro aktuální motiv není nastavena tapeta",
     "error": "Chyba: {msg}",
-    "lightChosen": "Denní tapeta vybrána",
-    "darkChosen": "Noční tapeta vybrána",
-    "autoOn": "Automatické přepínání zapnuto",
-    "autoOff": "Automatické přepínání vypnuto",
     "startupOn": "Autostart zapnut",
     "startupOff": "Autostart vypnut",
     "styleUpdated": "Umístění aktualizováno",
@@ -187,13 +166,9 @@
   },
   "tray": {
     "open": "Otevřít Lumina",
-    "applyLight": "Použít denní tapetu",
-    "applyDark": "Použít noční tapetu",
     "applyCurrent": "Použít pro aktuální motiv",
     "nextWallpaper": "Další tapeta",
     "installUpdate": "Restartovat pro aktualizaci",
-    "autoSwitch": "Automatická změna při změně motivu",
-    "autostart": "Spouštět s Windows",
     "quit": "Ukončit"
   }
 }
