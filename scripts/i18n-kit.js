@@ -72,7 +72,8 @@ if (limit > 0) keys = keys.slice(0, limit);
 const en = state.flatten(enDict);
 const ru = state.flatten(ruDict);
 const current = state.flatten(langDict);
-const manualEntries = (manual && manual.entries) || {};
+// Файл ручного контекста хранит записи в keys (схема Codex); entries — на случай старой формы.
+const manualEntries = (manual && (manual.keys || manual.entries)) || {};
 
 // Контекст — самое ценное для переводчика, но он многословен: оставляем роль,
 // место и «через что», а координаты файла в набор не тащим.

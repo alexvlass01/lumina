@@ -59,7 +59,7 @@
     "start": "Начать"
   },
   "home": {
-    "detecting": "Определяю…",
+    "detecting": "Определение…",
     "currentDesktop": "Сейчас на рабочем столе",
     "nextWallpaperHint": "Применить следующие обои",
     "noWallpaper": "нет обоев",
@@ -351,7 +351,7 @@
     "group": "Горячие клавиши",
     "nextTitle": "Следующие обои",
     "nextSub": "Переключить на следующие обои на всех мониторах по горячей клавише",
-    "pressKeys": "Назначить...",
+    "pressKeys": "Назначить…",
     "recording": "Запись..."
   },
   "tray": {
@@ -359,7 +359,7 @@
     "applyCurrent": "Применить обои заново",
     "nextWallpaper": "Следующие обои",
     "installUpdate": "Перезапустить и обновить",
-    "quit": "Выход"
+    "quit": "Выйти"
   },
   "triggers": {
     "startupTitle": "При запуске Windows",
