@@ -30,6 +30,13 @@ for (const leak of ['/plans/knowledge_index.md', '/STATUS.md', '/ROADMAP.md', '/
   ok(`package command excludes ${leak}`,
     ignorePatterns.some((pattern) => pattern.test(leak)));
 }
+// Translation freshness state is agent/maintenance bookkeeping, not runtime data:
+// the app must still get its dictionaries, but the sidecar has no business shipping.
+ok('package command excludes the i18n state sidecar',
+  ignorePatterns.some((pattern) => pattern.test('/locales/state/de.json')));
+ok('package command still ships the runtime dictionaries',
+  !ignorePatterns.some((pattern) => pattern.test('/locales/de.json'))
+  && !ignorePatterns.some((pattern) => pattern.test('/locales/en.json')));
 ok('package command excludes thumbnail helper sources, build scripts and intermediate tree',
   ignorePatterns.some((pattern) => pattern.test('/native/thumbnail-helper/Program.cs'))
   && ignorePatterns.some((pattern) => pattern.test('/scripts/build-thumbnail-helper.js'))
