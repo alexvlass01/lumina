@@ -159,7 +159,7 @@
     "assignPartialToast": "Einige Dateien waren nicht verfügbar",
     "removedToast": "Aus der Bibliothek entfernt",
     "selected": "Ausgewählt: {n}",
-    "massAssign": "Zuweisen...",
+    "massAssign": "Zuweisen…",
     "massDelete": "Aus der Bibliothek entfernen",
     "massDeleteUnavailable": "Nur Elemente, die bereits in der Bibliothek sind, können entfernt werden",
     "massDeleteFailed": "Die ausgewählten Elemente konnten nicht entfernt werden",
@@ -198,7 +198,7 @@
     "title": "Vorschau",
     "local": "Lokale Bibliothek",
     "localFolder": "Bild aus einem Ordner",
-    "loading": "Bild wird geladen...",
+    "loading": "Bild wird geladen…",
     "loadingFull": "Volle Qualität wird geladen…",
     "loadError": "Dieses Bild konnte nicht geöffnet werden",
     "counter": "{current} von {total}",
@@ -262,7 +262,7 @@
     "autoCoordsTitle": "Per IP erkennen",
     "autoCoordsSub": "Koordinaten anhand des Standorts automatisch festlegen",
     "autoCoordsBtn": "Erkennen",
-    "autoCoordsChecking": "Standort wird erkannt...",
+    "autoCoordsChecking": "Standort wird erkannt…",
     "autoCoordsSuccess": "Standort erkannt: {city} ({lat}, {lng})",
     "autoCoordsError": "Standort konnte nicht erkannt werden: {msg}"
   },
@@ -352,7 +352,7 @@
     "nextTitle": "Nächstes Hintergrundbild",
     "nextSub": "Per globaler Tastenkombination auf allen Monitoren zum nächsten Hintergrundbild wechseln",
     "pressKeys": "Festlegen…",
-    "recording": "Aufzeichnung..."
+    "recording": "Aufzeichnung…"
   },
   "tray": {
     "open": "Lumina öffnen",

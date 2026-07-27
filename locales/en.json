@@ -159,7 +159,7 @@
     "assignPartialToast": "Some files were unavailable",
     "removedToast": "Removed from library",
     "selected": "Selected: {n}",
-    "massAssign": "Assign...",
+    "massAssign": "Assign…",
     "massDelete": "Remove from library",
     "massDeleteUnavailable": "Only items already in the library can be removed",
     "massDeleteFailed": "Could not remove the selected items",
@@ -198,7 +198,7 @@
     "title": "Preview",
     "local": "Local library",
     "localFolder": "Folder image",
-    "loading": "Loading image...",
+    "loading": "Loading image…",
     "loadingFull": "Loading full quality…",
     "loadError": "Could not open this image",
     "counter": "{current} of {total}",
@@ -262,7 +262,7 @@
     "autoCoordsTitle": "Detect by IP",
     "autoCoordsSub": "Automatically set coordinates based on your location",
     "autoCoordsBtn": "Detect",
-    "autoCoordsChecking": "Detecting location...",
+    "autoCoordsChecking": "Detecting location…",
     "autoCoordsSuccess": "Location detected: {city} ({lat}, {lng})",
     "autoCoordsError": "Failed to detect location: {msg}"
   },
@@ -351,8 +351,8 @@
     "group": "Global Shortcuts",
     "nextTitle": "Next wallpaper",
     "nextSub": "Switch to the next wallpaper on all monitors via global hotkey",
-    "pressKeys": "Press keys...",
-    "recording": "Recording..."
+    "pressKeys": "Press keys…",
+    "recording": "Recording…"
   },
   "tray": {
     "open": "Open Lumina",
