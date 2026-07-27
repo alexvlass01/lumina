@@ -11,9 +11,6 @@
     "languageSub": "Grænsefladesprog",
     "telemetryTitle": "Anonym brugsstatistik",
     "telemetrySub": "Hjælper med at finde og rette fejl. Fra som standard; intet sendes endnu.",
-    "wallhavenTitle": "Wallhaven API-nøgle",
-    "wallhavenSub": "Valgfrit. Din egen nøgle fra wallhaven.cc låser op for NSFW blandt onlinebaggrunde.",
-    "wallhavenPh": "API-nøgle",
     "welcomeTitle": "Velkomstskærm",
     "welcomeSub": "Vis velkomstskærmen igen",
     "welcomeBtn": "Vis",
@@ -80,8 +77,6 @@
     "styleSub": "Hvordan billedet passer til skrivebordet",
     "singleTitle": "Én baggrund til alle skærme",
     "singleSub": "Brug ét billede på tværs af alle skærme",
-    "addPhotos": "Tilføj billeder…",
-    "addFolder": "Tilføj mappe…",
     "removeItem": "Fjern",
     "dropPrompt": "Slip billeder eller mappe her"
   },

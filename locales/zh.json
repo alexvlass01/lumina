@@ -11,9 +11,6 @@
     "languageSub": "界面语言",
     "telemetryTitle": "匿名使用统计",
     "telemetrySub": "帮助发现和修复错误。默认关闭，不会发送任何数据。",
-    "wallhavenTitle": "Wallhaven API 密钥",
-    "wallhavenSub": "可选。填入你在 wallhaven.cc 的密钥可解锁在线壁纸中的 NSFW 内容。",
-    "wallhavenPh": "API 密钥",
     "welcomeTitle": "欢迎页面",
     "welcomeSub": "重新显示首次运行的欢迎页面",
     "welcomeBtn": "显示",
@@ -80,8 +77,6 @@
     "styleSub": "图片在桌面上的显示方式",
     "singleTitle": "所有显示器使用同一壁纸",
     "singleSub": "在所有显示器上使用同一张图片",
-    "addPhotos": "添加图片…",
-    "addFolder": "添加文件夹…",
     "removeItem": "移除",
     "dropPrompt": "将图片或文件夹拖放至此"
   },

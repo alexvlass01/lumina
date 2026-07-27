@@ -11,9 +11,6 @@
     "languageSub": "Bahasa antarmuka",
     "telemetryTitle": "Statistik penggunaan anonim",
     "telemetrySub": "Membantu menemukan dan memperbaiki bug. Nonaktif secara default; belum ada data yang dikirim.",
-    "wallhavenTitle": "Kunci API Wallhaven",
-    "wallhavenSub": "Opsional. Kunci Anda sendiri dari wallhaven.cc membuka akses NSFW di wallpaper online.",
-    "wallhavenPh": "Kunci API",
     "welcomeTitle": "Layar sambutan",
     "welcomeSub": "Tampilkan lagi layar sambutan pertama kali",
     "welcomeBtn": "Tampilkan",
@@ -80,8 +77,6 @@
     "styleSub": "Cara gambar ditampilkan di desktop",
     "singleTitle": "Satu wallpaper untuk semua monitor",
     "singleSub": "Gunakan satu gambar untuk semua monitor",
-    "addPhotos": "Tambah foto…",
-    "addFolder": "Tambah folder…",
     "removeItem": "Hapus",
     "dropPrompt": "Seret dan lepas gambar atau folder di sini"
   },

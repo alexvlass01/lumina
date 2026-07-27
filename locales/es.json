@@ -11,9 +11,6 @@
     "languageSub": "Idioma de la interfaz",
     "telemetryTitle": "Estadísticas de uso anónimas",
     "telemetrySub": "Ayuda a encontrar y corregir errores. Desactivado por defecto; aún no se envía nada.",
-    "wallhavenTitle": "Clave API de Wallhaven",
-    "wallhavenSub": "Opcional. Tu propia clave de wallhaven.cc desbloquea contenido NSFW en fondos en línea.",
-    "wallhavenPh": "Clave API",
     "welcomeTitle": "Pantalla de bienvenida",
     "welcomeSub": "Mostrar de nuevo la pantalla de bienvenida inicial",
     "welcomeBtn": "Mostrar",
@@ -80,8 +77,6 @@
     "styleSub": "Cómo se ajusta la imagen al escritorio",
     "singleTitle": "Un fondo para todos los monitores",
     "singleSub": "Usar una sola imagen en todos los monitores",
-    "addPhotos": "Añadir fotos…",
-    "addFolder": "Añadir carpeta…",
     "removeItem": "Eliminar",
     "dropPrompt": "Arrastra imágenes o una carpeta aquí"
   },

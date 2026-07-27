@@ -177,6 +177,40 @@ for (const file of targetFiles) {
   }
 }
 
+// ── Ключи, на которые ссылается код, но которых нет в en.json ───────
+// `tMain`/`t` при отсутствии ключа возвращают САМ КЛЮЧ, и он молча уезжает в интерфейс:
+// заголовок диалога выбора файлов буквально показывал строку «design.addPhotos», потому
+// что ключ когда-то убрали из словарей, а вызов в main.js остался. Проверяем только
+// литеральные ссылки — динамические (`t('a.' + x)`) сюда не попадают by design.
+const REFERENCE_SCANS = [
+  ['main.js', /tMain\('([^']+)'\)/g],
+  ['renderer/index.html', /data-i18n(?:-title|-ph|-tooltip)?="([^"]+)"/g],
+  ['renderer/renderer.js', /\bt\('([^']+)'/g],
+];
+
+function hasKey(obj, dottedKey) {
+  return dottedKey.split('.').reduce((node, part) => (
+    node && typeof node === 'object' && part in node ? node[part] : undefined
+  ), obj) !== undefined;
+}
+
+let danglingRefs = 0;
+for (const [relPath, pattern] of REFERENCE_SCANS) {
+  const file = path.join(__dirname, '..', relPath);
+  if (!fs.existsSync(file)) continue;
+  const source = fs.readFileSync(file, 'utf8');
+  const keys = new Set(Array.from(source.matchAll(pattern), (m) => m[1]));
+  for (const key of keys) {
+    if (hasKey(refData, key)) continue;
+    console.error(`✗ ${relPath}: ключ "${key}" используется в коде, но отсутствует в en.json`);
+    danglingRefs++;
+  }
+}
+if (danglingRefs > 0) {
+  console.error(`\ni18n Linting failed: ${danglingRefs} ссыл(ка/ки) на несуществующие ключи.`);
+  process.exit(1);
+}
+
 if (hasErrors) {
   console.error('i18n Linting failed (core languages have errors).');
   process.exit(1);

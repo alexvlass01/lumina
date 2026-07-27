@@ -11,9 +11,6 @@
     "languageSub": "Idioma da interface",
     "telemetryTitle": "Estatísticas de uso anônimas",
     "telemetrySub": "Ajuda a encontrar e corrigir erros. Desativado por padrão; nada é enviado ainda.",
-    "wallhavenTitle": "Chave de API do Wallhaven",
-    "wallhavenSub": "Opcional. Sua chave do wallhaven.cc libera conteúdo NSFW nos papéis de parede online.",
-    "wallhavenPh": "Chave de API",
     "welcomeTitle": "Tela de boas-vindas",
     "welcomeSub": "Mostrar novamente a tela de boas-vindas inicial",
     "welcomeBtn": "Mostrar",
@@ -80,8 +77,6 @@
     "styleSub": "Como a imagem se ajusta à área de trabalho",
     "singleTitle": "Um papel de parede para todos os monitores",
     "singleSub": "Usar uma única imagem em todos os monitores",
-    "addPhotos": "Adicionar fotos…",
-    "addFolder": "Adicionar pasta…",
     "removeItem": "Remover",
     "dropPrompt": "Arraste imagens ou uma pasta aqui"
   },

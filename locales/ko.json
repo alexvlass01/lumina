@@ -15,9 +15,6 @@
     "languageSub": "인터페이스 언어",
     "telemetryTitle": "익명의 사용 통계",
     "telemetrySub": "버그를 찾고 수정하는 데 도움이 됩니다. 기본적으로 꺼져 있습니다. 아직 아무것도 전송되지 않았습니다.",
-    "wallhavenTitle": "월헤이븐 API 키",
-    "wallhavenSub": "선택사항. wallhaven.cc의 나만의 키로 온라인 배경화면에서 NSFW를 잠금 해제할 수 있습니다.",
-    "wallhavenPh": "API 키",
     "welcomeTitle": "환영 화면",
     "welcomeSub": "첫 실행 시작 화면을 다시 표시",
     "welcomeBtn": "쇼",
@@ -86,8 +83,6 @@
     "styleSub": "이미지가 데스크탑에 어떻게 맞는지",
     "singleTitle": "모든 모니터에 대한 하나의 배경화면",
     "singleSub": "모든 모니터에서 단일 이미지 사용",
-    "addPhotos": "사진 추가…",
-    "addFolder": "폴더 추가…",
     "removeItem": "제거",
     "dropPrompt": "여기에 이미지 또는 폴더를 드롭하세요."
   },

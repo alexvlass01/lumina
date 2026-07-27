@@ -11,9 +11,6 @@
     "languageSub": "لغة الواجهة",
     "telemetryTitle": "إحصائيات استخدام مجهولة",
     "telemetrySub": "تساعد في اكتشاف الأخطاء وإصلاحها. معطّلة افتراضيًا؛ لا يتم إرسال أي شيء بعد.",
-    "wallhavenTitle": "مفتاح API لـ Wallhaven",
-    "wallhavenSub": "اختياري. مفتاحك الخاص من wallhaven.cc يتيح محتوى NSFW في الخلفيات عبر الإنترنت.",
-    "wallhavenPh": "مفتاح API",
     "welcomeTitle": "شاشة الترحيب",
     "welcomeSub": "عرض شاشة الترحيب الأولى مرة أخرى",
     "welcomeBtn": "عرض",
@@ -80,8 +77,6 @@
     "styleSub": "كيفية ملاءمة الصورة لسطح المكتب",
     "singleTitle": "خلفية واحدة لجميع الشاشات",
     "singleSub": "استخدام صورة واحدة على جميع الشاشات",
-    "addPhotos": "إضافة صور…",
-    "addFolder": "إضافة مجلد…",
     "removeItem": "إزالة",
     "dropPrompt": "اسحب الصور أو المجلد إلى هنا"
   },

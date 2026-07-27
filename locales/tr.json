@@ -11,9 +11,6 @@
     "languageSub": "Arayüz dili",
     "telemetryTitle": "Anonim kullanım istatistikleri",
     "telemetrySub": "Hataların bulunup düzeltilmesine yardımcı olur. Varsayılan olarak kapalı; henüz hiçbir şey gönderilmiyor.",
-    "wallhavenTitle": "Wallhaven API anahtarı",
-    "wallhavenSub": "İsteğe bağlı. wallhaven.cc'den aldığınız anahtar, çevrimiçi duvar kağıtlarında NSFW içeriğin kilidini açar.",
-    "wallhavenPh": "API anahtarı",
     "welcomeTitle": "Karşılama ekranı",
     "welcomeSub": "İlk çalıştırma karşılama ekranını tekrar göster",
     "welcomeBtn": "Göster",
@@ -80,8 +77,6 @@
     "styleSub": "Görselin masaüstüne nasıl sığdırılacağı",
     "singleTitle": "Tüm monitörler için tek duvar kağıdı",
     "singleSub": "Tüm monitörlerde tek bir görsel kullan",
-    "addPhotos": "Fotoğraf ekle…",
-    "addFolder": "Klasör ekle…",
     "removeItem": "Kaldır",
     "dropPrompt": "Görselleri veya klasörü buraya sürükleyin"
   },

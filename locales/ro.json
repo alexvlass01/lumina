@@ -11,9 +11,6 @@
     "languageSub": "Limba interfeței",
     "telemetryTitle": "Statistici anonime de utilizare",
     "telemetrySub": "Ajută la identificarea și remedierea erorilor. Dezactivat implicit; nimic nu este trimis încă.",
-    "wallhavenTitle": "Cheie API Wallhaven",
-    "wallhavenSub": "Opțional. Cheia ta de pe wallhaven.cc deblochează NSFW în imaginile de fundal online.",
-    "wallhavenPh": "Cheie API",
     "welcomeTitle": "Ecran de bun venit",
     "welcomeSub": "Afișează din nou ecranul de bun venit",
     "welcomeBtn": "Afișează",
@@ -80,8 +77,6 @@
     "styleSub": "Cum se potrivește imaginea pe desktop",
     "singleTitle": "O singură imagine de fundal pentru toate monitoarele",
     "singleSub": "Folosește o singură imagine pe toate monitoarele",
-    "addPhotos": "Adaugă fotografii…",
-    "addFolder": "Adaugă dosar…",
     "removeItem": "Elimină",
     "dropPrompt": "Trage imagini sau un dosar aici"
   },

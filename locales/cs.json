@@ -11,9 +11,6 @@
     "languageSub": "Jazyk rozhraní",
     "telemetryTitle": "Anonymní statistiky používání",
     "telemetrySub": "Pomáhají hledat a opravovat chyby. Ve výchozím stavu vypnuto; zatím se nic neodesílá.",
-    "wallhavenTitle": "API klíč Wallhaven",
-    "wallhavenSub": "Volitelné. Váš vlastní klíč z wallhaven.cc odemkne NSFW v online tapetách.",
-    "wallhavenPh": "API klíč",
     "welcomeTitle": "Uvítací obrazovka",
     "welcomeSub": "Znovu zobrazit uvítací obrazovku",
     "welcomeBtn": "Zobrazit",
@@ -80,8 +77,6 @@
     "styleSub": "Jak se obrázek přizpůsobí ploše",
     "singleTitle": "Jedna tapeta pro všechny monitory",
     "singleSub": "Použít jeden obrázek na všech monitorech",
-    "addPhotos": "Přidat fotky…",
-    "addFolder": "Přidat složku…",
     "removeItem": "Odebrat",
     "dropPrompt": "Přetáhněte sem obrázky nebo složku"
   },

@@ -11,9 +11,6 @@
     "languageSub": "Felület nyelve",
     "telemetryTitle": "Névtelen használati statisztikák",
     "telemetrySub": "Segít a hibák felderítésében és javításában. Alapértelmezetten kikapcsolva; egyelőre semmi nem kerül elküldésre.",
-    "wallhavenTitle": "Wallhaven API-kulcs",
-    "wallhavenSub": "Opcionális. A wallhaven.cc saját kulcsa feloldja az NSFW tartalmakat az online háttérképeknél.",
-    "wallhavenPh": "API-kulcs",
     "welcomeTitle": "Üdvözlő képernyő",
     "welcomeSub": "Az üdvözlő képernyő újbóli megjelenítése",
     "welcomeBtn": "Megjelenítés",
@@ -80,8 +77,6 @@
     "styleSub": "Hogyan illeszkedjen a kép az asztalra",
     "singleTitle": "Egy háttérkép minden monitorra",
     "singleSub": "Egyetlen kép használata az összes monitoron",
-    "addPhotos": "Fotók hozzáadása…",
-    "addFolder": "Mappa hozzáadása…",
     "removeItem": "Eltávolítás",
     "dropPrompt": "Húzzon ide képeket vagy mappát"
   },

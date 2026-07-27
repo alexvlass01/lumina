@@ -11,9 +11,6 @@
     "languageSub": "Lingua dell'interfaccia",
     "telemetryTitle": "Statistiche d'uso anonime",
     "telemetrySub": "Aiuta a trovare e correggere i bug. Disattivato per impostazione predefinita; nulla viene ancora inviato.",
-    "wallhavenTitle": "Chiave API Wallhaven",
-    "wallhavenSub": "Facoltativa. La tua chiave di wallhaven.cc sblocca i contenuti NSFW negli sfondi online.",
-    "wallhavenPh": "Chiave API",
     "welcomeTitle": "Schermata di benvenuto",
     "welcomeSub": "Mostra di nuovo la schermata di benvenuto iniziale",
     "welcomeBtn": "Mostra",
@@ -80,8 +77,6 @@
     "styleSub": "Come l'immagine si adatta al desktop",
     "singleTitle": "Uno sfondo per tutti i monitor",
     "singleSub": "Usa una sola immagine per tutti i monitor",
-    "addPhotos": "Aggiungi foto…",
-    "addFolder": "Aggiungi cartella…",
     "removeItem": "Rimuovi",
     "dropPrompt": "Trascina immagini o una cartella qui"
   },

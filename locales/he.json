@@ -11,9 +11,6 @@
     "languageSub": "שפת הממשק",
     "telemetryTitle": "סטטיסטיקות שימוש אנונימיות",
     "telemetrySub": "עוזר למצוא ולתקן באגים. כבוי כברירת מחדל; שום דבר לא נשלח עדיין.",
-    "wallhavenTitle": "מפתח API של Wallhaven",
-    "wallhavenSub": "אופציונלי. המפתח שלך מ-wallhaven.cc פותח תוכן NSFW בטפטים מקוונים.",
-    "wallhavenPh": "מפתח API",
     "welcomeTitle": "מסך ברוכים הבאים",
     "welcomeSub": "הצגת מסך ברוכים הבאים שוב",
     "welcomeBtn": "הצג",
@@ -80,8 +77,6 @@
     "styleSub": "איך התמונה מותאמת לשולחן העבודה",
     "singleTitle": "טפט אחד לכל הצגים",
     "singleSub": "שימוש בתמונה אחת בכל הצגים",
-    "addPhotos": "הוספת תמונות…",
-    "addFolder": "הוספת תיקייה…",
     "removeItem": "הסרה",
     "dropPrompt": "גררו תמונות או תיקייה לכאן"
   },

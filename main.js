@@ -2150,7 +2150,10 @@ function removeFromLibrary(id) {
 ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
   if (!monitorId) return { config, added: 0 };
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: tMain('design.addPhotos'),
+    // design.addPhotos was dropped from the dictionaries long ago, so tMain fell back to
+    // echoing the key itself as the dialog title. The library wording is identical and
+    // translated everywhere, so both entry points share it.
+    title: tMain('library.addPhotos'),
     properties: ['openFile', 'multiSelections'],
     filters: IMG_FILTERS,
   });
@@ -2172,7 +2175,7 @@ ipcMain.handle('add-slot-images', async (e, monitorId, which) => {
 ipcMain.handle('add-slot-folder', async (e, monitorId, which) => {
   if (!monitorId) return { config, added: 0 };
   const res = await dialog.showOpenDialog(mainWindow, {
-    title: tMain('design.addFolder'),
+    title: tMain('library.addFolder'), // see add-slot-images: design.* keys no longer exist
     properties: ['openDirectory'],
   });
   if (res.canceled || !res.filePaths.length) return { config, added: 0 };

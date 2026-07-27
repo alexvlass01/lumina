@@ -11,9 +11,6 @@
     "languageSub": "Sprache der Benutzeroberfläche",
     "telemetryTitle": "Anonyme Nutzungsstatistiken",
     "telemetrySub": "Hilft, Fehler zu finden und zu beheben. Standardmäßig aus; es wird noch nichts gesendet.",
-    "wallhavenTitle": "Wallhaven-API-Schlüssel",
-    "wallhavenSub": "Optional. Dein eigener Schlüssel von wallhaven.cc schaltet NSFW bei Online-Hintergründen frei.",
-    "wallhavenPh": "API-Schlüssel",
     "welcomeTitle": "Willkommensbildschirm",
     "welcomeSub": "Den Willkommensbildschirm erneut anzeigen",
     "welcomeBtn": "Anzeigen",
@@ -80,8 +77,6 @@
     "styleSub": "Wie das Bild auf dem Desktop dargestellt wird",
     "singleTitle": "Ein Hintergrundbild für alle Monitore",
     "singleSub": "Ein einziges Bild für alle Monitore verwenden",
-    "addPhotos": "Fotos hinzufügen…",
-    "addFolder": "Ordner hinzufügen…",
     "removeItem": "Entfernen",
     "dropPrompt": "Bilder oder Ordner hierher ziehen"
   },

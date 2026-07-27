@@ -11,9 +11,6 @@
     "languageSub": "Käyttöliittymän kieli",
     "telemetryTitle": "Anonyymi käyttötilasto",
     "telemetrySub": "Auttaa löytämään ja korjaamaan virheitä. Oletuksena pois; mitään ei lähetetä vielä.",
-    "wallhavenTitle": "Wallhaven API-avain",
-    "wallhavenSub": "Valinnainen. Oma avain wallhaven.cc:stä avaa NSFW-sisällön verkkotaustakuvissa.",
-    "wallhavenPh": "API-avain",
     "welcomeTitle": "Tervetuloruutu",
     "welcomeSub": "Näytä ensikäynnistyksen tervetuloruutu uudelleen",
     "welcomeBtn": "Näytä",
@@ -80,8 +77,6 @@
     "styleSub": "Miten kuva sovitetaan työpöydälle",
     "singleTitle": "Yksi taustakuva kaikille näytöille",
     "singleSub": "Käytä yhtä kuvaa kaikissa näytöissä",
-    "addPhotos": "Lisää kuvia…",
-    "addFolder": "Lisää kansio…",
     "removeItem": "Poista",
     "dropPrompt": "Pudota kuvia tai kansio tähän"
   },

@@ -11,9 +11,6 @@
     "languageSub": "Ngôn ngữ giao diện",
     "telemetryTitle": "Thống kê sử dụng ẩn danh",
     "telemetrySub": "Giúp tìm và sửa lỗi. Tắt theo mặc định; chưa gửi dữ liệu nào.",
-    "wallhavenTitle": "Khóa API Wallhaven",
-    "wallhavenSub": "Tùy chọn. Khóa riêng từ wallhaven.cc cho phép xem nội dung NSFW trong hình nền trực tuyến.",
-    "wallhavenPh": "Khóa API",
     "welcomeTitle": "Màn hình chào mừng",
     "welcomeSub": "Hiện lại màn hình chào mừng lần đầu",
     "welcomeBtn": "Hiện",
@@ -80,8 +77,6 @@
     "styleSub": "Cách ảnh hiển thị trên màn hình",
     "singleTitle": "Một hình nền cho tất cả màn hình",
     "singleSub": "Dùng chung một ảnh cho mọi màn hình",
-    "addPhotos": "Thêm ảnh…",
-    "addFolder": "Thêm thư mục…",
     "removeItem": "Xóa",
     "dropPrompt": "Kéo thả ảnh hoặc thư mục vào đây"
   },

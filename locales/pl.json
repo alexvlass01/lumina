@@ -11,9 +11,6 @@
     "languageSub": "Język interfejsu",
     "telemetryTitle": "Anonimowe statystyki użytkowania",
     "telemetrySub": "Pomagają znajdować i naprawiać błędy. Domyślnie wyłączone; nic nie jest jeszcze wysyłane.",
-    "wallhavenTitle": "Klucz API Wallhaven",
-    "wallhavenSub": "Opcjonalnie. Twój klucz z wallhaven.cc odblokuje NSFW w tapetach online.",
-    "wallhavenPh": "Klucz API",
     "welcomeTitle": "Ekran powitalny",
     "welcomeSub": "Pokaż ponownie ekran powitalny",
     "welcomeBtn": "Pokaż",
@@ -80,8 +77,6 @@
     "styleSub": "Sposób dopasowania obrazu do pulpitu",
     "singleTitle": "Jedna tapeta na wszystkie monitory",
     "singleSub": "Użyj jednego obrazu na wszystkich monitorach",
-    "addPhotos": "Dodaj zdjęcia…",
-    "addFolder": "Dodaj folder…",
     "removeItem": "Usuń",
     "dropPrompt": "Upuść tutaj obrazy lub folder"
   },

@@ -11,9 +11,6 @@
     "languageSub": "Interfacetaal",
     "telemetryTitle": "Anonieme gebruiksstatistieken",
     "telemetrySub": "Helpt bij het vinden en oplossen van fouten. Standaard uit; er wordt nog niets verstuurd.",
-    "wallhavenTitle": "Wallhaven API-sleutel",
-    "wallhavenSub": "Optioneel. Je eigen sleutel van wallhaven.cc ontgrendelt NSFW bij online achtergronden.",
-    "wallhavenPh": "API-sleutel",
     "welcomeTitle": "Welkomstscherm",
     "welcomeSub": "Het welkomstscherm opnieuw tonen",
     "welcomeBtn": "Tonen",
@@ -80,8 +77,6 @@
     "styleSub": "Hoe de afbeelding op het bureaublad past",
     "singleTitle": "Eén achtergrond voor alle beeldschermen",
     "singleSub": "Eén afbeelding gebruiken voor elk beeldscherm",
-    "addPhotos": "Foto's toevoegen…",
-    "addFolder": "Map toevoegen…",
     "removeItem": "Verwijderen",
     "dropPrompt": "Sleep afbeeldingen of een map hierheen"
   },

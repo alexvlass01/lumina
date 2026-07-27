@@ -11,9 +11,6 @@
     "languageSub": "表示言語",
     "telemetryTitle": "匿名の使用統計",
     "telemetrySub": "バグの発見と修正に役立ちます。既定ではオフで、データは送信されません。",
-    "wallhavenTitle": "Wallhaven API キー",
-    "wallhavenSub": "任意。wallhaven.cc の API キーを入力すると、オンライン壁紙で NSFW を表示できます。",
-    "wallhavenPh": "API キー",
     "welcomeTitle": "ようこそ画面",
     "welcomeSub": "初回起動時のようこそ画面を再表示します",
     "welcomeBtn": "表示",
@@ -80,8 +77,6 @@
     "styleSub": "画像のデスクトップへの配置方法",
     "singleTitle": "全モニターで同じ壁紙を使用",
     "singleSub": "すべてのモニターに同じ画像を使用",
-    "addPhotos": "写真を追加…",
-    "addFolder": "フォルダーを追加…",
     "removeItem": "削除",
     "dropPrompt": "画像またはフォルダーをここにドロップ"
   },
