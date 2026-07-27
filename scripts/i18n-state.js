@@ -7,7 +7,8 @@
  *   node scripts/i18n-state.js report            состояние всех языков
  *   node scripts/i18n-state.js report de fr      только указанные
  *   node scripts/i18n-state.js keys de           что именно нужно перевести/пересмотреть
- *   node scripts/i18n-state.js baseline de       зафиксировать текущий перевод как сверенный
+ *   node scripts/i18n-state.js baseline de --reviewed
+ *                                                зафиксировать реально сверенный перевод
  *
  * Отпечаток берётся с ПАРЫ en+ru: английский — технический базис, русский — эталон
  * смысла и тона, поэтому изменение любого из них требует пересмотра перевода.
@@ -47,16 +48,56 @@ function loadSources() {
   const enDict = readJson(path.join(LOCALES_DIR, 'en.json'));
   const ruDict = readJson(path.join(LOCALES_DIR, 'ru.json'));
   if (!enDict) { console.error('locales/en.json не читается — без него состояние не посчитать.'); process.exit(1); }
-  if (!ruDict) console.warn('⚠ locales/ru.json не читается: отпечаток считается только по английскому.\n');
-  return { enDict, ruDict: ruDict || {} };
+  if (!ruDict) { console.error('locales/ru.json не читается — отпечаток обязан учитывать en + ru.'); process.exit(1); }
+  const en = state.flatten(enDict);
+  const ru = state.flatten(ruDict);
+  const invalidRu = Object.keys(en).filter((key) => typeof ru[key] !== 'string');
+  if (invalidRu.length) {
+    console.error(
+      `locales/ru.json не содержит ${invalidRu.length} строк(и) из en.json; `
+      + 'неполный эталон нельзя использовать для baseline.',
+    );
+    process.exit(1);
+  }
+  return { enDict, ruDict };
 }
 
-function statePath(lang) { return path.join(STATE_DIR, `${lang}.json`); }
+function statePath(lang) {
+  const file = path.resolve(STATE_DIR, `${lang}.json`);
+  if (path.dirname(file) !== path.resolve(STATE_DIR)) {
+    throw new Error(`Недопустимый код языка: ${lang}`);
+  }
+  return file;
+}
+
+function validateLangs(langs, { allowEmpty = false } = {}) {
+  if (!langs.length && allowEmpty) return [];
+  if (!langs.length) {
+    console.error('Укажи язык.');
+    process.exit(1);
+  }
+  const available = new Set(localeCodes());
+  const invalid = langs.filter((lang) => !/^[a-z]{2,3}(?:-[a-z0-9]+)*$/i.test(lang) || !available.has(lang));
+  if (invalid.length) {
+    console.error(`Неизвестный или недопустимый язык: ${invalid.join(', ')}`);
+    process.exit(1);
+  }
+  return langs;
+}
+
+function loadLanguage(lang) {
+  const file = path.join(LOCALES_DIR, `${lang}.json`);
+  const langDict = readJson(file);
+  if (!langDict) {
+    console.error(`locales/${lang}.json не читается — команда не выполнена.`);
+    process.exit(1);
+  }
+  return langDict;
+}
 
 function auditOne(lang, sources) {
-  const langDict = readJson(path.join(LOCALES_DIR, `${lang}.json`));
-  if (!langDict) return null;
-  return state.auditLanguage({ ...sources, langDict, state: readJson(statePath(lang)) });
+  const langDict = loadLanguage(lang);
+  return state.auditLanguage({ ...sources, langDict, state: readJson(statePath(lang)), lang });
 }
 
 function pad(s, n) { return String(s).padEnd(n); }
@@ -64,11 +105,10 @@ function padL(s, n) { return String(s).padStart(n); }
 
 function cmdReport(langs) {
   const sources = loadSources();
-  const codes = (langs.length ? langs : localeCodes());
+  const codes = langs.length ? validateLangs(langs) : localeCodes();
   const rows = [];
   for (const lang of codes) {
     const audit = auditOne(lang, sources);
-    if (!audit) { console.error(`⚠ locales/${lang}.json не читается — пропущен`); continue; }
     rows.push({ lang, tier: tierOf(lang), ...audit });
   }
   rows.sort((a, b) => a.tier - b.tier || b.needsWork - a.needsWork || a.lang.localeCompare(b.lang));
@@ -101,17 +141,16 @@ function cmdReport(langs) {
   const unverified = rows.reduce((n, r) => n + r.counts.unverified, 0);
   if (unverified > 0) {
     console.log(`\n  «не сверено» = перевод есть, но нет доказательства, что он сделан с текущего текста.`);
-    console.log(`  Это честное «неизвестно», а не «плохо». После реального прохода: node scripts/i18n-state.js baseline <lang>`);
+    console.log(`  Это честное «неизвестно», а не «плохо». После реального прохода: node scripts/i18n-state.js baseline <lang> --reviewed`);
   }
   console.log('');
 }
 
 function cmdKeys(langs) {
-  if (!langs.length) { console.error('Укажи язык: node scripts/i18n-state.js keys de'); process.exit(1); }
+  validateLangs(langs);
   const sources = loadSources();
   for (const lang of langs) {
     const audit = auditOne(lang, sources);
-    if (!audit) { console.error(`⚠ locales/${lang}.json не читается`); continue; }
     const keys = state.keysNeedingWork(audit);
     console.log(`\n${lang}: к работе ${keys.length} из ${audit.total}`);
     for (const key of keys) console.log(`  ${pad(audit.byKey[key], 12)}${key}`);
@@ -119,25 +158,44 @@ function cmdKeys(langs) {
   console.log('');
 }
 
-function cmdBaseline(langs) {
-  if (!langs.length) { console.error('Укажи язык: node scripts/i18n-state.js baseline de'); process.exit(1); }
+function cmdBaseline(langs, { reviewed = false } = {}) {
+  validateLangs(langs);
+  const nonReference = langs.filter((lang) => lang !== 'en' && lang !== 'ru');
+  if (nonReference.length && !reviewed) {
+    console.error(
+      `Нельзя объявить ${nonReference.join(', ')} свежим без явного подтверждения реальной ревизии.\n`
+      + 'После проверки перевода повтори команду с --reviewed.',
+    );
+    process.exit(1);
+  }
   const sources = loadSources();
+  const dictionaries = new Map(langs.map((lang) => [lang, loadLanguage(lang)]));
   fs.mkdirSync(STATE_DIR, { recursive: true });
   for (const lang of langs) {
-    const langDict = readJson(path.join(LOCALES_DIR, `${lang}.json`));
-    if (!langDict) { console.error(`⚠ locales/${lang}.json не читается — пропущен`); continue; }
+    const langDict = dictionaries.get(lang);
     const next = state.buildState({ ...sources, langDict, lang });
     fs.writeFileSync(statePath(lang), `${JSON.stringify(next, null, 2)}\n`, 'utf8');
     console.log(`✓ ${lang}: зафиксировано ${Object.keys(next.keys).length} ключей (${next.verifiedAt})`);
   }
 }
 
-const [command, ...args] = process.argv.slice(2);
+const [command, ...rawArgs] = process.argv.slice(2);
+const unknownFlags = rawArgs.filter((arg) => arg.startsWith('--') && arg !== '--reviewed');
+if (unknownFlags.length) {
+  console.error(`Неизвестный параметр: ${unknownFlags.join(', ')}`);
+  process.exit(1);
+}
+const reviewed = rawArgs.includes('--reviewed');
+const args = rawArgs.filter((arg) => !arg.startsWith('--'));
+if (reviewed && command !== 'baseline') {
+  console.error('Параметр --reviewed допустим только для команды baseline.');
+  process.exit(1);
+}
 switch (command) {
   case 'report': case undefined: cmdReport(args); break;
   case 'keys': cmdKeys(args); break;
-  case 'baseline': cmdBaseline(args); break;
+  case 'baseline': cmdBaseline(args, { reviewed }); break;
   default:
-    console.error(`Неизвестная команда: ${command}\n  report [langs…] | keys <lang> | baseline <lang>`);
+    console.error(`Неизвестная команда: ${command}\n  report [langs…] | keys <lang> | baseline <lang> [--reviewed]`);
     process.exit(1);
 }

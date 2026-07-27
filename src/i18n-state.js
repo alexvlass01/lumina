@@ -50,6 +50,32 @@ function fingerprint(enValue, ruValue) {
   return crypto.createHash('sha1').update(payload, 'utf8').digest('hex').slice(0, 12);
 }
 
+// A verified entry must be bound to the translation as well as to its sources.
+// Otherwise any later edit of the target string (including accidental garbage)
+// would still report as fresh. Include the language code too, so copying a state
+// file from one locale to another cannot manufacture a false fresh result.
+function translationFingerprint(lang, value) {
+  const payload = JSON.stringify([
+    typeof lang === 'string' ? lang : '',
+    typeof value === 'string' ? value : null,
+  ]);
+  return crypto.createHash('sha1').update(payload, 'utf8').digest('hex').slice(0, 12);
+}
+
+function encodeRecord(sourceHash, translationHash) {
+  return `${sourceHash}:${translationHash}`;
+}
+
+function decodeRecord(record) {
+  if (typeof record !== 'string') return null;
+  const match = /^([0-9a-f]{12}):([0-9a-f]{12})$/.exec(record);
+  if (match) return { sourceHash: match[1], translationHash: match[2], legacy: false };
+  if (/^[0-9a-f]{12}$/.test(record)) {
+    return { sourceHash: record, translationHash: '', legacy: true };
+  }
+  return null;
+}
+
 // Build the fingerprint map for every key the reference defines.
 function sourceFingerprints(enDict, ruDict) {
   const en = flatten(enDict);
@@ -64,15 +90,27 @@ function sourceFingerprints(enDict, ruDict) {
  * @param {object} opts.enDict   reference dictionary (defines the key set)
  * @param {object} opts.ruDict   meaning/tone reference
  * @param {object} opts.langDict the language being audited
- * @param {object} opts.state    previously recorded { key: fingerprint }
+ * @param {string} opts.lang     language code being audited
+ * @param {object} opts.state    previously recorded state file
  * @returns {{ byKey: object, counts: object, total: number, translatedPct: number, freshPct: number }}
  */
-function auditLanguage({ enDict, ruDict, langDict, state } = {}) {
+function auditLanguage({ enDict, ruDict, langDict, state, lang } = {}) {
   const sources = sourceFingerprints(enDict, ruDict);
-  const lang = flatten(langDict);
+  const translations = flatten(langDict);
   const recorded = (state && typeof state === 'object' && state.keys && typeof state.keys === 'object')
     ? state.keys
     : (state && typeof state === 'object' ? state : {});
+  const expectedLang = typeof lang === 'string' ? lang : '';
+  const wrongLanguage = Boolean(
+    state
+    && state.keys
+    && (
+      !expectedLang
+      || typeof state.lang !== 'string'
+      || !state.lang
+      || state.lang !== expectedLang
+    ),
+  );
 
   const byKey = {};
   const counts = {
@@ -85,16 +123,22 @@ function auditLanguage({ enDict, ruDict, langDict, state } = {}) {
 
   for (const [key, sourceHash] of Object.entries(sources)) {
     let status;
-    if (typeof lang[key] !== 'string' || lang[key] === '') status = STATUS.MISSING;
-    else if (!recorded[key]) status = STATUS.UNVERIFIED;
-    else if (recorded[key] === sourceHash) status = STATUS.FRESH;
-    else status = STATUS.STALE;
+    const value = translations[key];
+    const record = decodeRecord(recorded[key]);
+    if (typeof value !== 'string' || value === '') status = STATUS.MISSING;
+    else if (wrongLanguage || !record) status = STATUS.UNVERIFIED;
+    else if (record.sourceHash !== sourceHash) status = STATUS.STALE;
+    // Legacy v1 records only contain the source hash. They remain useful for
+    // detecting a stale source, but cannot honestly prove the target text fresh.
+    else if (record.legacy) status = STATUS.UNVERIFIED;
+    else if (record.translationHash !== translationFingerprint(expectedLang, value)) status = STATUS.UNVERIFIED;
+    else status = STATUS.FRESH;
     byKey[key] = status;
     counts[status]++;
   }
 
   // Keys the language still carries after the reference dropped them.
-  for (const key of Object.keys(lang)) {
+  for (const key of Object.keys(translations)) {
     if (key in sources) continue;
     byKey[key] = STATUS.ORPHAN;
     counts[STATUS.ORPHAN]++;
@@ -122,9 +166,12 @@ function buildState({ enDict, ruDict, langDict, lang, at } = {}) {
   const translated = flatten(langDict);
   const keys = {};
   for (const [key, hash] of Object.entries(sources)) {
-    if (typeof translated[key] === 'string' && translated[key] !== '') keys[key] = hash;
+    if (typeof translated[key] === 'string' && translated[key] !== '') {
+      keys[key] = encodeRecord(hash, translationFingerprint(lang, translated[key]));
+    }
   }
   return {
+    version: 2,
     lang: lang || '',
     verifiedAt: at || new Date().toISOString(),
     keys,
@@ -139,12 +186,31 @@ function keysNeedingWork(audit) {
     .map(([key]) => key);
 }
 
+// Leaf-accurate coverage for the legacy linter summary. A wholly absent or
+// wrong-type subtree must count every missing string, not one parent property.
+function countMissingLeaves(reference, target) {
+  const expected = flatten(reference);
+  const actual = flatten(target);
+  let missing = 0;
+  for (const [key, value] of Object.entries(expected)) {
+    if (
+      typeof actual[key] !== typeof value
+      || (typeof value === 'string' && actual[key] === '')
+    ) missing++;
+  }
+  return missing;
+}
+
 module.exports = {
   STATUS,
   flatten,
   fingerprint,
+  translationFingerprint,
+  encodeRecord,
+  decodeRecord,
   sourceFingerprints,
   auditLanguage,
   buildState,
   keysNeedingWork,
+  countMissingLeaves,
 };
