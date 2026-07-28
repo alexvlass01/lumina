@@ -150,7 +150,7 @@
     "assigned": "Kullanımda",
     "tags": "Etiketler",
     "moreTags": "+{n} tane daha",
-    "editTags": "Etiketleri Düzenle",
+    "editTags": "Etiketleri Düzenle…",
     "details": "Ayrıntılar…",
     "addTagPh": "Etiket ekle…",
     "remove": "Kütüphaneden Kaldır",
@@ -209,7 +209,7 @@
     "windowed": "Pencere Modu"
   },
   "online": {
-    "rail": "🌐 Çevrimiçi",
+    "rail": "Çevrimiçi",
     "source": "Kaynak",
     "searchPh": "Tags : nature, space…",
     "sortLatest": "En Yeni",

@@ -150,7 +150,7 @@
     "assigned": "使用中",
     "tags": "标签",
     "moreTags": "+{n} 个",
-    "editTags": "编辑标签",
+    "editTags": "编辑标签…",
     "details": "详细信息…",
     "addTagPh": "添加标签…",
     "remove": "从媒体库移除",
@@ -209,7 +209,7 @@
     "windowed": "窗口模式"
   },
   "online": {
-    "rail": "🌐 在线壁纸",
+    "rail": "在线壁纸",
     "source": "壁纸来源",
     "searchPh": "Tags : nature, space…",
     "sortLatest": "最新发布",

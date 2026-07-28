@@ -1,7 +1,7 @@
 {
   "version": 2,
   "lang": "pl",
-  "verifiedAt": "2026-07-27T21:21:44.269Z",
+  "verifiedAt": "2026-07-28T07:06:39.194Z",
   "keys": {
     "nav.home": "80de4a754def:5ac01c3ada10",
     "nav.library": "c1d3d27ce171:96a190c74f22",
@@ -141,7 +141,7 @@
     "library.assigned": "400cd4aef3a8:8aac633e6fe4",
     "library.tags": "5c5b686950d3:a702e058441f",
     "library.moreTags": "e5e3154c3f0c:10b3109d739b",
-    "library.editTags": "9130a3aa91a5:385d08ce856a",
+    "library.editTags": "9130a3aa91a5:d5b764a57936",
     "library.details": "553a690b02c6:49cdfdf27670",
     "library.addTagPh": "b497d33663a7:b15276742ee1",
     "library.remove": "a3d4d2745d5e:f372f3738535",
@@ -194,7 +194,7 @@
     "viewer.next": "df98a5469cfa:5df40fce73ad",
     "viewer.fullscreen": "0659ec69b2dc:256ade0b61ae",
     "viewer.windowed": "79686491733a:f05b53d57d75",
-    "online.rail": "888be6420663:82299390424d",
+    "online.rail": "888be6420663:bf21c8f77230",
     "online.source": "888be6420663:b15427e751d6",
     "online.searchPh": "cd3c98e235ef:35249a6d316c",
     "online.sortLatest": "cfd52e302aed:6e9149544044",

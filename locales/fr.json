@@ -150,7 +150,7 @@
     "assigned": "Utilisé",
     "tags": "Tags",
     "moreTags": "+{n} autres",
-    "editTags": "Modifier les tags",
+    "editTags": "Modifier les tags…",
     "details": "Détails…",
     "addTagPh": "Ajouter un tag…",
     "remove": "Retirer de la bibliothèque",
@@ -209,7 +209,7 @@
     "windowed": "Mode fenêtré"
   },
   "online": {
-    "rail": "🌐 En ligne",
+    "rail": "En ligne",
     "source": "Source",
     "searchPh": "Tags : nature, space…",
     "sortLatest": "Récents",

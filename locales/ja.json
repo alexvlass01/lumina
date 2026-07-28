@@ -150,7 +150,7 @@
     "assigned": "使用中",
     "tags": "タグ",
     "moreTags": "+{n} 件",
-    "editTags": "タグを編集",
+    "editTags": "タグを編集…",
     "details": "詳細…",
     "addTagPh": "タグを追加…",
     "remove": "ライブラリから削除",
@@ -209,7 +209,7 @@
     "windowed": "ウィンドウ表示"
   },
   "online": {
-    "rail": "🌐 オンライン",
+    "rail": "オンライン",
     "source": "ソース",
     "searchPh": "Tags : nature, space…",
     "sortLatest": "最新",
