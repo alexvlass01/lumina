@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "bg",
   "verification": "mechanical",
-  "verifiedAt": "2026-07-28T07:12:34.876Z",
+  "verifiedAt": "2026-07-28T14:18:09.998Z",
   "keys": {
     "nav.home": "80de4a754def:32c21e230f2e",
     "nav.library": "c1d3d27ce171:60e76c21c712",
@@ -197,7 +197,7 @@
     "viewer.windowed": "79686491733a:434214d31c6c",
     "online.rail": "888be6420663:bca4c6c5335b",
     "online.source": "888be6420663:bca4c6c5335b",
-    "online.searchPh": "cd3c98e235ef:0038057d90f1",
+    "online.searchPh": "cd3c98e235ef:b6fe270efbac",
     "online.sortLatest": "cfd52e302aed:67d99bd9b69c",
     "online.sortTop": "b65186d11154:740669a66421",
     "online.sortRandom": "6f4ac29e40ee:32d0be5052c9",

@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "sk",
   "verification": "mechanical",
-  "verifiedAt": "2026-07-28T07:12:34.900Z",
+  "verifiedAt": "2026-07-28T14:18:10.034Z",
   "keys": {
     "nav.home": "80de4a754def:0120e82bc744",
     "nav.library": "c1d3d27ce171:6b864d3446bd",
@@ -197,7 +197,7 @@
     "viewer.windowed": "79686491733a:249929a0bf8b",
     "online.rail": "888be6420663:21701c717452",
     "online.source": "888be6420663:21701c717452",
-    "online.searchPh": "cd3c98e235ef:fc785fe890c7",
+    "online.searchPh": "cd3c98e235ef:3ee70de6301f",
     "online.sortLatest": "cfd52e302aed:02030856aac7",
     "online.sortTop": "b65186d11154:fbe65f3ee52e",
     "online.sortRandom": "6f4ac29e40ee:497a68817856",
