@@ -231,6 +231,35 @@ function sameAsEnglish(enDict, langDict, { allow = [], minLength = 4 } = {}) {
   return out;
 }
 
+// The same leak wearing a disguise: a value copied from a DIFFERENT English key.
+//
+// sameAsEnglish cannot see this one, because the string does not match the English of
+// its own key. The release gate found five catalogues whose local Library search box
+// held the Online booru prompt — `library.searchPh` carrying English `online.searchPh`.
+// Key counts, placeholders and fingerprints were all satisfied; the user just saw the
+// wrong prompt, in the wrong language, on the wrong screen.
+//
+// Coincidences exist (Indonesian "Folder", Romanian "Favorite" are simply those words),
+// so this reports rather than judges.
+function borrowedFromEnglishKey(enDict, langDict, { minLength = 4 } = {}) {
+  const en = flatten(enDict);
+  const target = flatten(langDict);
+  const owners = new Map();
+  for (const [key, value] of Object.entries(en)) {
+    if (typeof value !== 'string' || value.length < minLength) continue;
+    const k = value.toLowerCase();
+    if (!owners.has(k)) owners.set(k, []);
+    owners.get(k).push(key);
+  }
+  const out = [];
+  for (const [key, value] of Object.entries(target)) {
+    if (typeof value !== 'string' || value.length < minLength) continue;
+    const from = owners.get(value.toLowerCase());
+    if (from && !from.includes(key)) out.push({ key, value, englishKeys: from.slice() });
+  }
+  return out;
+}
+
 // Keys an update pass must send to the translator, in reference order.
 function keysNeedingWork(audit) {
   if (!audit || !audit.byKey) return [];
@@ -265,6 +294,7 @@ module.exports = {
   decodeRecord,
   sourceFingerprints,
   sameAsEnglish,
+  borrowedFromEnglishKey,
   auditLanguage,
   buildState,
   keysNeedingWork,

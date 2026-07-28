@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "ar",
   "verification": "mechanical",
-  "verifiedAt": "2026-07-28T14:41:28.209Z",
+  "verifiedAt": "2026-07-28T15:05:44.443Z",
   "keys": {
     "nav.home": "80de4a754def:220febfb821c",
     "nav.library": "c1d3d27ce171:fe7a9dd6df13",
@@ -116,7 +116,7 @@
     "library.all": "554060c4d290:834bad12f707",
     "library.favorites": "75b54995c4a0:3c286582357d",
     "library.folders": "82967d50f13f:699199edb424",
-    "library.searchPh": "fb012b111eb8:31ee27724418",
+    "library.searchPh": "fb012b111eb8:00c6d6b6c784",
     "library.refresh": "0949406d0a8b:2615172ffe90",
     "library.sortAdded": "4693e7e65a1d:f30648dc2d18",
     "library.sortName": "78eb775d146c:574d02dc50b5",

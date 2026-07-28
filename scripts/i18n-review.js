@@ -191,6 +191,15 @@ function reportEnglish(targets, { en }) {
     console.log(`  ${lang}: ${hits.length}`);
     for (const h of hits) console.log(`     ${h.key.padEnd(26)} ${JSON.stringify(h.value)}`);
   }
+  // Тот же дефект в маскировке: значение взято из английского ДРУГОГО ключа.
+  // Своего ключа оно не повторяет, поэтому sameAsEnglish его не видит.
+  for (const lang of targets) {
+    const borrowed = state.borrowedFromEnglishKey(en, langDict(lang));
+    if (!borrowed.length) continue;
+    console.log(`  ${lang}: значение из английского другого ключа — ${borrowed.length}`);
+    for (const b of borrowed) console.log(`     ${b.key.padEnd(26)} ${JSON.stringify(b.value)}  ← en: ${b.englishKeys.join('/')}`);
+    total += borrowed.length;
+  }
   if (total) {
     console.log('\n  Часть совпадений законна (одинаковое слово в языке) — решает человек.');
     console.log('  Если ключ законен ВЕЗДЕ, добавь его в ENGLISH_OK в этом файле.');

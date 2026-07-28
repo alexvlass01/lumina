@@ -235,4 +235,23 @@ ok('state чужого языка не приносит ни свежести, �
   })());
 }
 
+// borrowedFromEnglishKey — тот же дефект, но значение взято из английского ДРУГОГО ключа,
+// поэтому sameAsEnglish его не видит. Так пять каталогов получили в поле поиска ПО СВОЕЙ
+// библиотеке английскую подсказку booru из online.searchPh.
+{
+  const src = { library: { searchPh: 'Search' }, online: { searchPh: 'Tags: nature, space…' } };
+  ok('значение из английского другого ключа найдено', (() => {
+    const hit = S.borrowedFromEnglishKey(src, { library: { searchPh: 'Tags: nature, space…' }, online: { searchPh: 'Штітки: nature…' } });
+    return hit.length === 1 && hit[0].key === 'library.searchPh' && hit[0].englishKeys[0] === 'online.searchPh';
+  })());
+  ok('правильный перевод своего ключа не срабатывает', (() => {
+    const hit = S.borrowedFromEnglishKey(src, { library: { searchPh: 'Hledat' }, online: { searchPh: 'Štítky: nature…' } });
+    return hit.length === 0;
+  })());
+  ok('английский на СВОЁМ ключе тут не считается — это дело sameAsEnglish', (() => {
+    const hit = S.borrowedFromEnglishKey(src, { library: { searchPh: 'Search' }, online: { searchPh: 'Štítky' } });
+    return hit.length === 0;
+  })());
+}
+
 console.log('\nAll ' + passed + ' i18n-state tests passed.');

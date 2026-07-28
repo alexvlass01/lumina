@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "cs",
   "verification": "mechanical",
-  "verifiedAt": "2026-07-28T14:41:28.217Z",
+  "verifiedAt": "2026-07-28T15:05:44.448Z",
   "keys": {
     "nav.home": "80de4a754def:dc1876c01bfd",
     "nav.library": "c1d3d27ce171:098db207065e",
@@ -116,7 +116,7 @@
     "library.all": "554060c4d290:874f08e5bbdc",
     "library.favorites": "75b54995c4a0:cbfee6aa3dc1",
     "library.folders": "82967d50f13f:5312fe73461f",
-    "library.searchPh": "fb012b111eb8:daa18b75e494",
+    "library.searchPh": "fb012b111eb8:a996672bcfd3",
     "library.refresh": "0949406d0a8b:5918bea71e1a",
     "library.sortAdded": "4693e7e65a1d:34b9be95b5b0",
     "library.sortName": "78eb775d146c:3eebef732093",
