@@ -1,7 +1,8 @@
 {
   "version": 2,
   "lang": "uk",
-  "verifiedAt": "2026-07-27T20:05:21.962Z",
+  "verification": "reviewed",
+  "verifiedAt": "2026-07-28T07:12:34.750Z",
   "keys": {
     "nav.home": "80de4a754def:5d310707e897",
     "nav.library": "c1d3d27ce171:7f4f79778437",

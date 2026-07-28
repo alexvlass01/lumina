@@ -31,6 +31,7 @@ const TIERS = {
   0: ['en', 'ru'],
   1: ['uk', 'de', 'fr', 'es', 'pt', 'pl', 'zh', 'ja', 'it', 'tr'],
 };
+const LEVEL = { reference: 'эталон', reviewed: 'сверено', mechanical: 'механика' };
 const tierOf = (lang) => (TIERS[0].includes(lang) ? 0 : TIERS[1].includes(lang) ? 1 : 2);
 
 function readJson(file) {
@@ -116,15 +117,15 @@ function cmdReport(langs) {
   const total = rows.length ? rows[0].total : 0;
   console.log(`\nСостояние переводов — ${total} ключей, ${rows.length} языков`);
   console.log('Эталон: en (технический базис) + ru (смысл и тон)\n');
-  console.log(`  ${pad('язык', 6)}${pad('ур.', 5)}${padL('свежих', 8)}${padL('устар.', 8)}${padL('не свер.', 10)}${padL('нет', 6)}${padL('лишних', 8)}   ${padL('к работе', 9)}`);
-  console.log(`  ${'-'.repeat(60)}`);
+  console.log(`  ${pad('язык', 6)}${pad('ур.', 5)}${padL('свежих', 8)}${padL('устар.', 8)}${padL('не свер.', 10)}${padL('нет', 6)}${padL('к работе', 10)}   основание`);
+  console.log(`  ${'-'.repeat(68)}`);
 
   let lastTier = -1;
   for (const r of rows) {
     if (r.tier !== lastTier) { lastTier = r.tier; }
     const c = r.counts;
     console.log(
-      `  ${pad(r.lang, 6)}${pad(r.tier, 5)}${padL(c.fresh, 8)}${padL(c.stale, 8)}${padL(c.unverified, 10)}${padL(c.missing, 6)}${padL(c.orphan, 8)}   ${padL(r.needsWork, 9)}`,
+      `  ${pad(r.lang, 6)}${pad(r.tier, 5)}${padL(c.fresh, 8)}${padL(c.stale, 8)}${padL(c.unverified, 10)}${padL(c.missing, 6)}${padL(r.needsWork, 10)}   ${LEVEL[r.verification] || '—'}`,
     );
   }
 
@@ -158,13 +159,14 @@ function cmdKeys(langs) {
   console.log('');
 }
 
-function cmdBaseline(langs, { reviewed = false } = {}) {
+function cmdBaseline(langs, { reviewed = false, mechanical = false } = {}) {
   validateLangs(langs);
   const nonReference = langs.filter((lang) => lang !== 'en' && lang !== 'ru');
-  if (nonReference.length && !reviewed) {
+  if (nonReference.length && !reviewed && !mechanical) {
     console.error(
-      `Нельзя объявить ${nonReference.join(', ')} свежим без явного подтверждения реальной ревизии.\n`
-      + 'После проверки перевода повтори команду с --reviewed.',
+      `Нельзя объявить ${nonReference.join(', ')} свежим без указания основания.\n`
+      + '  --reviewed    перевод сверил тот, кто читает этот язык\n'
+      + '  --mechanical  прошли только автопроверки (подстановки, термины, многоточия)',
     );
     process.exit(1);
   }
@@ -173,28 +175,32 @@ function cmdBaseline(langs, { reviewed = false } = {}) {
   fs.mkdirSync(STATE_DIR, { recursive: true });
   for (const lang of langs) {
     const langDict = dictionaries.get(lang);
-    const next = state.buildState({ ...sources, langDict, lang });
+    const verification = reviewed ? state.VERIFICATION.REVIEWED : state.VERIFICATION.MECHANICAL;
+    const next = state.buildState({ ...sources, langDict, lang, verification });
     fs.writeFileSync(statePath(lang), `${JSON.stringify(next, null, 2)}\n`, 'utf8');
-    console.log(`✓ ${lang}: зафиксировано ${Object.keys(next.keys).length} ключей (${next.verifiedAt})`);
+    console.log(`✓ ${lang}: ${Object.keys(next.keys).length} ключей, основание: ${LEVEL[next.verification]}`);
   }
 }
 
 const [command, ...rawArgs] = process.argv.slice(2);
-const unknownFlags = rawArgs.filter((arg) => arg.startsWith('--') && arg !== '--reviewed');
+const KNOWN_FLAGS = new Set(['--reviewed', '--mechanical']);
+const unknownFlags = rawArgs.filter((arg) => arg.startsWith('--') && !KNOWN_FLAGS.has(arg));
 if (unknownFlags.length) {
   console.error(`Неизвестный параметр: ${unknownFlags.join(', ')}`);
   process.exit(1);
 }
 const reviewed = rawArgs.includes('--reviewed');
+const mechanical = rawArgs.includes('--mechanical');
+if (reviewed && mechanical) { console.error('Укажи одно основание: --reviewed или --mechanical.'); process.exit(1); }
 const args = rawArgs.filter((arg) => !arg.startsWith('--'));
-if (reviewed && command !== 'baseline') {
-  console.error('Параметр --reviewed допустим только для команды baseline.');
+if ((reviewed || mechanical) && command !== 'baseline') {
+  console.error('Основание (--reviewed/--mechanical) допустимо только для команды baseline.');
   process.exit(1);
 }
 switch (command) {
   case 'report': case undefined: cmdReport(args); break;
   case 'keys': cmdKeys(args); break;
-  case 'baseline': cmdBaseline(args, { reviewed }); break;
+  case 'baseline': cmdBaseline(args, { reviewed, mechanical }); break;
   default:
     console.error(`Неизвестная команда: ${command}\n  report [langs…] | keys <lang> | baseline <lang> [--reviewed]`);
     process.exit(1);

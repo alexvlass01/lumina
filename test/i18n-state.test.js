@@ -170,4 +170,38 @@ ok('countMissingLeaves: an empty string is missing but a translated sibling is n
     { group: { one: 'translated', two: '' } },
   ) === 1);
 
+// --- на каком основании перевод считается свежим ---------------------------
+// Свежесть и доверие — разные вопросы. Отпечаток доказывает, что перевод сделан с
+// текущего текста, но ничего не говорит о том, читал ли его кто-то знающий язык.
+// Пакетный прогон, прошедший линтер, однажды получил ту же отметку, что и вычитанный
+// язык, и сквозь неё проехали два настоящих дефекта.
+ok('основание записывается в state', (() => {
+  const st = S.buildState({ enDict: en, ruDict: ru, langDict: en, lang: 'de', verification: S.VERIFICATION.REVIEWED });
+  return st.verification === 'reviewed';
+})());
+ok('без явного основания перевод считается проверенным только машиной', (() => {
+  const st = S.buildState({ enDict: en, ruDict: ru, langDict: en, lang: 'de' });
+  return st.verification === 'mechanical';
+})());
+ok('эталонные языки помечаются как источник, а не как сверенный перевод', (() => {
+  const a = S.buildState({ enDict: en, ruDict: ru, langDict: en, lang: 'en', verification: S.VERIFICATION.REVIEWED });
+  const b = S.buildState({ enDict: en, ruDict: ru, langDict: ru, lang: 'ru', verification: S.VERIFICATION.MECHANICAL });
+  return a.verification === 'reference' && b.verification === 'reference';
+})());
+ok('audit возвращает основание вместе со свежестью', (() => {
+  const de = { nav: { home: 'Startseite' }, library: { remove: 'Entfernen', assign: 'Zuweisen' } };
+  const st = S.buildState({ enDict: en, ruDict: ru, langDict: de, lang: 'de', verification: S.VERIFICATION.MECHANICAL });
+  const a = S.auditLanguage({ enDict: en, ruDict: ru, langDict: de, lang: 'de', state: st });
+  return a.counts.fresh === 3 && a.verification === 'mechanical';
+})());
+ok('без state основания нет — за язык никто не ручался', (() => {
+  const a = S.auditLanguage({ enDict: en, ruDict: ru, langDict: en, lang: 'de', state: null });
+  return a.verification === null;
+})());
+ok('state чужого языка не приносит ни свежести, ни основания', (() => {
+  const st = S.buildState({ enDict: en, ruDict: ru, langDict: en, lang: 'fr', verification: S.VERIFICATION.REVIEWED });
+  const a = S.auditLanguage({ enDict: en, ruDict: ru, langDict: en, lang: 'de', state: st });
+  return a.verification === null && a.counts.fresh === 0;
+})());
+
 console.log('\nAll ' + passed + ' i18n-state tests passed.');

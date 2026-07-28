@@ -151,6 +151,10 @@ function auditLanguage({ enDict, ruDict, langDict, state, lang } = {}) {
     byKey,
     counts,
     total,
+    // On what basis the fresh keys are fresh — see VERIFICATION. Absent state means
+    // nobody has vouched for this language at all.
+    verification: state && state.keys && !wrongLanguage
+      ? normalizeVerification(state.verification, expectedLang) : null,
     translatedPct: pct(translated),
     freshPct: pct(counts[STATUS.FRESH]),
     // What an update pass actually has to touch.
@@ -161,7 +165,24 @@ function auditLanguage({ enDict, ruDict, langDict, state, lang } = {}) {
 // Record the language's current translations as verified against today's sources.
 // Only keys that are actually translated are recorded — baselining a missing key
 // would claim work that was never done.
-function buildState({ enDict, ruDict, langDict, lang, at } = {}) {
+// Freshness and confidence are different questions. The fingerprint proves a
+// translation was made from today's source; it says nothing about whether anyone who
+// reads the language ever looked at it. Recording only "verified" let a batch that
+// merely passed the linter claim the same standing as a language someone actually
+// reviewed — and two real defects (a stray emoji, a dropped ellipsis) survived exactly
+// that claim. So the basis is stored alongside the keys and reported separately.
+const VERIFICATION = {
+  REFERENCE: 'reference',   // en/ru: hand-maintained sources, not translations
+  REVIEWED: 'reviewed',     // someone who reads the language checked it
+  MECHANICAL: 'mechanical', // automated checks only: placeholders, terms, ellipses
+};
+
+function normalizeVerification(value, lang) {
+  if (lang === 'en' || lang === 'ru') return VERIFICATION.REFERENCE;
+  return value === VERIFICATION.REVIEWED ? VERIFICATION.REVIEWED : VERIFICATION.MECHANICAL;
+}
+
+function buildState({ enDict, ruDict, langDict, lang, at, verification } = {}) {
   const sources = sourceFingerprints(enDict, ruDict);
   const translated = flatten(langDict);
   const keys = {};
@@ -173,6 +194,7 @@ function buildState({ enDict, ruDict, langDict, lang, at } = {}) {
   return {
     version: 2,
     lang: lang || '',
+    verification: normalizeVerification(verification, lang),
     verifiedAt: at || new Date().toISOString(),
     keys,
   };
@@ -203,6 +225,8 @@ function countMissingLeaves(reference, target) {
 
 module.exports = {
   STATUS,
+  VERIFICATION,
+  normalizeVerification,
   flatten,
   fingerprint,
   translationFingerprint,

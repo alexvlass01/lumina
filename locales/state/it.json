@@ -1,7 +1,8 @@
 {
   "version": 2,
   "lang": "it",
-  "verifiedAt": "2026-07-28T07:06:39.189Z",
+  "verification": "mechanical",
+  "verifiedAt": "2026-07-28T07:12:34.861Z",
   "keys": {
     "nav.home": "80de4a754def:fd615e1916ff",
     "nav.library": "c1d3d27ce171:1fffae58e7be",
