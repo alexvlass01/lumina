@@ -200,6 +200,37 @@ function buildState({ enDict, ruDict, langDict, lang, at, verification } = {}) {
   };
 }
 
+// Strings a language left in English.
+//
+// This is the one defect class every other check is blind to. A missing key falls back
+// visibly and the linter reports it; English *committed as the translation* looks
+// complete to every completeness check, matches its own fingerprint, and still shows
+// Latin text to a Greek or Arabic reader. The release gate caught it twice: an English
+// Online-search placeholder in 19 catalogues, and "remove from library" — the costliest
+// string in the app — sitting untranslated in six.
+//
+// Comparison is case-insensitive on purpose: the six broken values were lowercase, so
+// they did not even match English exactly.
+//
+// Plenty of matches are legitimate — brand names, loanwords, and words a language
+// genuinely shares with English ("Monitor", "Internet", "Position" in German). Those
+// belong in `allow`, keyed by string, so the report stays worth reading. Short values
+// are skipped because single letters and units collide by nature.
+function sameAsEnglish(enDict, langDict, { allow = [], minLength = 4 } = {}) {
+  const en = flatten(enDict);
+  const target = flatten(langDict);
+  const allowed = new Set(allow);
+  const out = [];
+  for (const [key, value] of Object.entries(en)) {
+    if (typeof value !== 'string' || value.length < minLength) continue;
+    if (allowed.has(key)) continue;
+    const got = target[key];
+    if (typeof got !== 'string') continue;
+    if (got.toLowerCase() === value.toLowerCase()) out.push({ key, en: value, value: got });
+  }
+  return out;
+}
+
 // Keys an update pass must send to the translator, in reference order.
 function keysNeedingWork(audit) {
   if (!audit || !audit.byKey) return [];
@@ -233,6 +264,7 @@ module.exports = {
   encodeRecord,
   decodeRecord,
   sourceFingerprints,
+  sameAsEnglish,
   auditLanguage,
   buildState,
   keysNeedingWork,

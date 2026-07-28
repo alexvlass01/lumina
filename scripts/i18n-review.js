@@ -167,6 +167,36 @@ function reportStyle(langs, { en, entries }) {
   }
 }
 
+// Ключи, где совпадение с английским ЗАКОННО и не требует внимания: имена собственные,
+// заимствования и слова, которые язык честно делит с английским. Список намеренно узкий —
+// всё остальное должен увидеть человек.
+const ENGLISH_OK = [
+  'online.sourceLumina',   // бренд
+  'online.sourceInternet', // «Internet» — то же слово в большинстве языков
+  'online.rail', 'online.source', // «Online» — заимствование
+  'monitor.label', 'home.monitorSingle', 'home.monitorRange', // «Monitor {n}»
+  'viewerBg.aurora',       // название режима
+  'details.unitKb', 'details.unitMb', 'details.unitGb', // единицы
+];
+
+function reportEnglish(targets, { en }) {
+  console.log('\n=== оставленное по-английски ===');
+  console.log('Совпадение без учёта регистра. Заведомо законные ключи исключены.\n');
+  let total = 0;
+  for (const lang of targets) {
+    // en здесь уже плоский; sameAsEnglish терпит и плоскую форму.
+    const hits = state.sameAsEnglish(en, langDict(lang), { allow: ENGLISH_OK });
+    total += hits.length;
+    if (!hits.length) { console.log(`  ${lang}: чисто`); continue; }
+    console.log(`  ${lang}: ${hits.length}`);
+    for (const h of hits) console.log(`     ${h.key.padEnd(26)} ${JSON.stringify(h.value)}`);
+  }
+  if (total) {
+    console.log('\n  Часть совпадений законна (одинаковое слово в языке) — решает человек.');
+    console.log('  Если ключ законен ВЕЗДЕ, добавь его в ENGLISH_OK в этом файле.');
+  }
+}
+
 const [command, ...args] = process.argv.slice(2);
 const langs = args.filter((a) => !a.startsWith('--'));
 const data = load();
@@ -174,6 +204,7 @@ const targets = langs.length ? langs : DEFAULT_LANGS;
 
 if (command === 'terms') reportTerms(targets, data);
 else if (command === 'style') reportStyle(targets, data);
-else if (!command) { reportTerms(targets, data); reportStyle(targets, data); }
-else { console.error(`Неизвестная команда: ${command}\n  terms [lang…] | style [lang…]`); process.exit(1); }
+else if (command === 'english') reportEnglish(targets, data);
+else if (!command) { reportTerms(targets, data); reportStyle(targets, data); reportEnglish(targets, data); }
+else { console.error(`Неизвестная команда: ${command}\n  terms [lang…] | style [lang…] | english [lang…]`); process.exit(1); }
 console.log('');

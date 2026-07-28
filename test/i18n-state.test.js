@@ -204,4 +204,35 @@ ok('state чужого языка не приносит ни свежести, �
   return a.verification === null && a.counts.fresh === 0;
 })());
 
+// sameAsEnglish — единственная проверка, ловящая английский, закоммиченный КАК перевод.
+// Такой ключ проходит все проверки полноты и совпадает со своим отпечатком.
+{
+  const src = { library: { remove: 'Remove from library', all: 'All' }, nav: { home: 'Home' } };
+  ok('английский, оставленный переводом, найден', (() => {
+    const hit = S.sameAsEnglish(src, { library: { remove: 'Remove from library', all: 'Vše' }, nav: { home: 'Domů' } });
+    return hit.length === 1 && hit[0].key === 'library.remove';
+  })());
+  ok('регистр не спасает: сломанные значения были со строчной', (() => {
+    const hit = S.sameAsEnglish(src, { library: { remove: 'remove from library', all: 'Vše' }, nav: { home: 'Domů' } });
+    return hit.length === 1 && hit[0].value === 'remove from library';
+  })());
+  ok('короткие значения пропускаются — единицы и буквы совпадают по природе', (() => {
+    const hit = S.sameAsEnglish({ d: { unitKb: 'KB' } }, { d: { unitKb: 'KB' } });
+    return hit.length === 0;
+  })());
+  ok('allow гасит законные совпадения вроде бренда', (() => {
+    const hit = S.sameAsEnglish({ online: { sourceLumina: 'Lumina' } }, { online: { sourceLumina: 'Lumina' } },
+      { allow: ['online.sourceLumina'] });
+    return hit.length === 0;
+  })());
+  ok('отсутствующий ключ не считается английским', (() => {
+    const hit = S.sameAsEnglish(src, { library: { all: 'Vše' } });
+    return hit.every((h) => h.key !== 'library.remove' && h.key !== 'nav.home');
+  })());
+  ok('настоящий перевод не срабатывает', (() => {
+    const hit = S.sameAsEnglish(src, { library: { remove: 'Odebrat z knihovny', all: 'Vše' }, nav: { home: 'Domů' } });
+    return hit.length === 0;
+  })());
+}
+
 console.log('\nAll ' + passed + ' i18n-state tests passed.');
