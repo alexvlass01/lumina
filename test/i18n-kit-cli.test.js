@@ -70,6 +70,32 @@ if (!pendingLang) {
   ));
 }
 
+// Review mode. The default kit hides everything already fresh, which is right for
+// translating and wrong for checking: a fingerprint proves a translation was made from
+// today's source, not that it is any good. So --all has to hand over the whole catalogue
+// with the current text attached, or a review pass has nothing to read.
+{
+  const res = run(['fr', '--all']);
+  let kit = null;
+  try { kit = JSON.parse(res.stdout); } catch { kit = null; }
+  ok('--all returns every key the reference defines', Boolean(
+    kit && kit.items.length === kit.totals.keysInApp && kit.items.length > 300,
+  ));
+  ok('--all keeps fresh keys, which the default kit drops', Boolean(
+    kit && kit.items.some((i) => i.status === 'fresh'),
+  ));
+  ok('--all carries the existing translation to be judged', Boolean(
+    kit && kit.items.filter((i) => typeof i.currentTranslation === 'string').length > 300,
+  ));
+  ok('--all asks for a review and not for a fresh translation', Boolean(
+    kit && /СВЕРКА/.test(kit.task) && /ИСПРАВИТЬ/.test(kit.task),
+  ));
+  ok('--all still respects --limit for a pass in parts', Boolean(
+    (() => { const r = run(['fr', '--all', '--limit', '7']);
+      try { return JSON.parse(r.stdout).items.length === 7; } catch { return false; } })(),
+  ));
+}
+
 {
   const res = run(['ru']);
   ok('reference languages are refused: they are edited by hand, not translated',

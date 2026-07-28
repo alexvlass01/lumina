@@ -7,9 +7,15 @@
  *   node scripts/i18n-kit.js de              что нужно перевести/пересмотреть в de
  *   node scripts/i18n-kit.js de --out kit.json   сохранить набор в файл
  *   node scripts/i18n-kit.js de --limit 50   первые N ключей (проход по частям)
+ *   node scripts/i18n-kit.js de --all        ВЕСЬ каталог — для сверки, а не перевода
+ *
+ * `--all` нужен для второй половины цикла. Перевод смотрит только на «к работе»,
+ * но сверка обязана видеть и свежие строки: отпечаток доказывает, что перевод сделан
+ * с текущего текста, и ничего не говорит о том, хорош ли он. Именно так через
+ * `--reviewed` однажды проехали лишний эмодзи и потерянное многоточие.
  *
  * Собирает ровно то, что нужно ИИ-переводчику, и ничего лишнего:
- *   — ТОЛЬКО устаревшие и непереведённые ключи (свежие не трогаем);
+ *   — по умолчанию ТОЛЬКО устаревшие и непереведённые ключи (свежие не трогаем);
  *   — английский (базис) и русский (эталон смысла и тона) как образцы;
  *   — выведенный из кода контекст: что это за элемент, где он живёт, чем управляет;
  *   — глоссарий терминов и правила речи;
@@ -42,6 +48,7 @@ const positional = [];
 for (let i = 0; i < args.length; i++) {
   const arg = args[i];
   if (arg === '--out' || arg === '--limit') { flags[arg.slice(2)] = args[++i]; continue; }
+  if (arg === '--all') { flags.all = true; continue; }
   if (arg.startsWith('--')) fail(`Неизвестный параметр: ${arg}`);
   positional.push(arg);
 }
@@ -65,7 +72,11 @@ if (!glossary) fail('Нет locales/context/glossary.json');
 const audit = state.auditLanguage({
   enDict, ruDict, langDict, lang, state: readJson(path.join(LOCALES, 'state', `${lang}.json`)),
 });
-let keys = state.keysNeedingWork(audit);
+// Сверка идёт по ВСЕМУ каталогу в порядке эталона: соседние ключи — обычно соседние
+// элементы одного экрана, и разнобой между ними виден только рядом.
+let keys = flags.all
+  ? Object.keys(state.flatten(enDict))
+  : state.keysNeedingWork(audit);
 const limit = flags.limit ? Number(flags.limit) : 0;
 if (limit > 0) keys = keys.slice(0, limit);
 
@@ -110,7 +121,9 @@ const items = keys.map((key) => ({
 const kit = {
   language: lang,
   generatedAt: new Date().toISOString(),
-  task: 'Переведи строки интерфейса Lumina на указанный язык. Английский — технический базис, русский — эталон смысла и тона. Переводи СМЫСЛ так, как это сказал бы носитель языка в родном интерфейсе, а не слово в слово. Соблюдай правила из style и глоссарий из terms. Строки со статусом stale уже переведены, но исходный текст с тех пор изменился — перепиши их под новый смысл. Верни JSON вида {"ключ": "перевод"} без пояснений.',
+  task: flags.all
+    ? 'СВЕРКА, не перевод. Прочитай каждую строку так, как её увидит носитель языка в живом интерфейсе, и найди то, что автопроверки не ловят: кальку с английского вместо родной формулировки, неверный смысл, чужой регистр и тон, потерянную или лишнюю типографику (многоточие «…» значит «откроется диалог»), лишние эмодзи, термин не по глоссарию, форму слова не по роли элемента (кнопка — действие, заголовок — существительное). Верни JSON только с теми ключами, которые надо ИСПРАВИТЬ, вида {"ключ": "новый перевод"}. Строку, которая хороша, не трогай.'
+    : 'Переведи строки интерфейса Lumina на указанный язык. Английский — технический базис, русский — эталон смысла и тона. Переводи СМЫСЛ так, как это сказал бы носитель языка в родном интерфейсе, а не слово в слово. Соблюдай правила из style и глоссарий из terms. Строки со статусом stale уже переведены, но исходный текст с тех пор изменился — перепиши их под новый смысл. Верни JSON вида {"ключ": "перевод"} без пояснений.',
   references: glossary.references,
   style: glossary.style,
   terms: glossary.terms,
@@ -131,8 +144,13 @@ if (flags.out) {
   const out = path.resolve(ROOT, flags.out);
   fs.writeFileSync(out, `${JSON.stringify(kit, null, 2)}\n`, 'utf8');
   console.log(`Набор для ${lang}: ${items.length} ключ(а/ей) → ${path.relative(ROOT, out)}`);
-  console.log(`  нет перевода ${kit.totals.byStatus.missing}, устарело ${kit.totals.byStatus.stale}, не сверено ${kit.totals.byStatus.unverified}`);
-  console.log('  После проверки готового перевода: node scripts/i18n-state.js baseline ' + lang + ' --reviewed');
+  if (flags.all) {
+    console.log('  Режим сверки: весь каталог, включая свежие строки.');
+    console.log(`  После настоящей сверки: node scripts/i18n-state.js baseline ${lang} --reviewed`);
+  } else {
+    console.log(`  нет перевода ${kit.totals.byStatus.missing}, устарело ${kit.totals.byStatus.stale}, не сверено ${kit.totals.byStatus.unverified}`);
+    console.log(`  Перевод без сверки закрепляется как: node scripts/i18n-state.js baseline ${lang} --mechanical`);
+  }
 } else {
   process.stdout.write(`${JSON.stringify(kit, null, 2)}\n`);
 }
