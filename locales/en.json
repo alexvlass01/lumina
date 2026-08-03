@@ -125,6 +125,8 @@
     "favorites": "Favorites",
     "folders": "Folders",
     "searchPh": "Search",
+    "tagSearchPh": "Search tags",
+    "noTagsFound": "No matching tags",
     "refresh": "Refresh library",
     "sortAdded": "Newest first",
     "sortName": "By name",

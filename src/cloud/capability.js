@@ -7,7 +7,7 @@
 // only receives { environment, available, authAvailable, reason }. main.js keeps
 // the resolved apiBase privately (used from C3 onward to build the real client).
 //
-// Environments (see plans/cloud_client_integration.md):
+// Environments:
 //   unavailable — safe fallback when neither staging nor production is configured.
 //   staging     — local dev + manual testing ONLY: requires (a) an unpackaged build
 //                 AND (b) an explicit opt-in (env LUMINA_CLOUD=staging). It can never

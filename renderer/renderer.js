@@ -616,7 +616,7 @@ function renderStrip(theme) {
     const el = document.createElement('div');
     el.className = 'thumb' + (it.type === 'folder' ? ' folder' : '');
     if (it.type === 'folder') {
-      el.innerHTML = '<span class="thumb-ic">📁</span>';
+      el.innerHTML = '<span class="thumb-ic">' + FOLDER_ICON_SVG + '</span>';
       el.title = it.path;
     } else {
       el.title = baseName(it.path);
@@ -694,6 +694,19 @@ const THEME_ICON_SVG = {
   light: '<svg class="theme-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="3.2"/><path d="M8 1.5V3.2M8 12.8v1.7M1.5 8h1.7M12.8 8h1.7M3.4 3.4 4.6 4.6M11.4 11.4l1.2 1.2M12.6 3.4 11.4 4.6M4.6 11.4 3.4 12.6"/></svg>',
   dark: '<svg class="theme-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round" aria-hidden="true"><path d="M14 8.53A6 6 0 1 1 7.47 2 4.67 4.67 0 0 0 14 8.53z"/></svg>',
 };
+// Оставшиеся эмодзи интерфейса, добитые тем же способом, что ☀️/🌙: ОС рисовала их
+// цветными глифами шрифта Segoe UI Emoji, которые не совпадали по весу с линейным набором
+// и ездили вместе со шрифтом. Разметка статическая (без подстановок), поэтому innerHTML безопасен.
+const PANEL_ICON_SVG = {
+  // Совет дня — лампочка.
+  tip: '<svg class="panel-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.6a4.4 4.4 0 0 0-2.6 7.95c.4.3.63.76.63 1.25h3.94c0-.49.23-.95.63-1.25A4.4 4.4 0 0 0 8 1.6z"/><path d="M6.4 12.6h3.2M6.9 14.4h2.2"/></svg>',
+  // Обновление скачано и ждёт перезапуска — стрелка «установить», а не ракета: она
+  // говорит, что версия уже лежит на диске, а не что что-то взлетает.
+  update: '<svg class="panel-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v7.4M4.9 6.5 8 9.6l3.1-3.1"/><path d="M2.8 12.6h10.4"/></svg>',
+};
+// Заглушка папки в полосе миниатюр «Оформления».
+const FOLDER_ICON_SVG = '<svg class="thumb-ic-svg" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.25" stroke-linejoin="round" aria-hidden="true"><path d="M1.9 4.2c0-.5.4-.9.9-.9h3l1.4 1.6h6c.5 0 .9.4.9.9v6.1c0 .5-.4.9-.9.9H2.8a.9.9 0 0 1-.9-.9V4.2z"/></svg>';
+
 // Pin badge for a manual override, drawn as a thumbtack (head + stem) instead of the 📌 emoji.
 const THEME_PIN_SVG = '<span class="theme-pin" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><circle cx="8" cy="5.6" r="4" fill="currentColor" stroke="none"/><path d="M8 9.8v3.4"/></svg></span>';
 
@@ -857,7 +870,7 @@ async function renderConfig() {
 // Library (content pool) — browse/organize all wallpapers, assign from a card.
 // ---------------------------------------------------------------------------
 const LIB = {
-  filter: 'all', sort: 'added', q: '', folderPath: null, crumbs: [], shuffleRank: {},
+  filter: 'all', sort: 'added', q: '', tagQuery: '', folderPath: null, crumbs: [], shuffleRank: {},
   selection: window.CardInteraction.createSelectionModel(), aspectCache: new Map(), sizeCache: new Map(),
   poolBySelectionKey: new Map(),
 };
@@ -1062,6 +1075,12 @@ function libAllTags() {
   return Array.from(set).sort((a, b) => a.localeCompare(b));
 }
 
+function filterLibRailTags(tags, query) {
+  const needle = String(query || '').trim().toLocaleLowerCase();
+  if (!needle) return tags.slice();
+  return tags.filter((tag) => String(tag).toLocaleLowerCase().includes(needle));
+}
+
 // Tag → number of pool items carrying it (popularity). Used by the assign-menu autocomplete.
 function libTagCounts() {
   const counts = {};
@@ -1167,29 +1186,37 @@ function libList() {
 
 function renderLibRailTags() {
   const box = $('#libTags');
-  if (!box) return;
+  const section = $('#libTagSection');
+  const empty = $('#libTagEmpty');
+  const search = $('#libTagSearch');
+  if (!box || !section || !empty) return;
   const tags = libAllTags();
-  box.innerHTML = '';
-  if (tags.length) {
-    const hdr = document.createElement('div');
-    hdr.className = 'lib-rail-hdr';
-    hdr.textContent = t('library.tags');
-    box.appendChild(hdr);
-    tags.forEach((tg) => {
-      const b = document.createElement('button');
-      b.className = 'lib-railbtn';
-      b.dataset.filter = `tag:${tg}`;
-      const ic = document.createElement('span');
-      ic.className = 'lib-rail-ic lib-rail-hash';
-      ic.textContent = '#';
-      const lbl = document.createElement('span');
-      lbl.textContent = tg;
-      b.append(ic, lbl);
-      box.appendChild(b);
-    });
-  }
-  // if the active tag filter no longer exists, fall back to "all"
+
+  // Search only narrows the navigation list. The selected card filter is validated
+  // against ALL tags so a zero-result query never silently switches the grid to All.
   if (LIB.filter.startsWith('tag:') && !tags.includes(LIB.filter.slice(4))) LIB.filter = 'all';
+  section.hidden = tags.length === 0;
+  if (!tags.length) {
+    LIB.tagQuery = '';
+    if (search) search.value = '';
+  }
+
+  const matches = filterLibRailTags(tags, LIB.tagQuery);
+  box.innerHTML = '';
+  matches.forEach((tg) => {
+    const b = document.createElement('button');
+    b.className = 'lib-railbtn';
+    b.dataset.filter = `tag:${tg}`;
+    const ic = document.createElement('span');
+    ic.className = 'lib-rail-ic lib-rail-hash';
+    ic.textContent = '#';
+    const lbl = document.createElement('span');
+    lbl.textContent = tg;
+    b.append(ic, lbl);
+    box.appendChild(b);
+  });
+  box.hidden = matches.length === 0;
+  empty.hidden = matches.length !== 0;
   document.querySelectorAll('#viewLibrary .lib-railbtn').forEach((b) => {
     b.classList.toggle('active', b.dataset.filter === LIB.filter);
   });
@@ -3454,7 +3481,7 @@ function showSmartTip() {
   const panel = $('#smartPanel');
   if (!panel) return;
   panel.className = 'smart-panel';
-  $('#spIcon').textContent = '💡';
+  $('#spIcon').innerHTML = PANEL_ICON_SVG.tip;
   $('#spTitle').hidden = true; // No title for tips, looks cleaner
   $('#spText').textContent = tips[currentSmartTipIndex % tips.length];
   $('#btnSpAction').hidden = true;
@@ -3474,7 +3501,7 @@ async function renderSmartPanel() {
   const up = await window.api.getUpdateState();
   if (up && up.state === 'ready') {
     panel.className = 'smart-panel update';
-    $('#spIcon').textContent = '🚀';
+    $('#spIcon').innerHTML = PANEL_ICON_SVG.update;
     $('#spTitle').hidden = false;
     $('#spTitle').textContent = t('smart.updateTitle');
     $('#spText').textContent = t('smart.updateText');
@@ -3613,6 +3640,13 @@ function initLibrary() {
   }
   const searchEl = $('#libSearch');
   if (searchEl) searchEl.addEventListener('input', () => { LIB.q = searchEl.value; renderLibrary(); });
+  const tagSearchEl = $('#libTagSearch');
+  if (tagSearchEl) tagSearchEl.addEventListener('input', () => {
+    LIB.tagQuery = tagSearchEl.value;
+    renderLibRailTags();
+    const tagList = $('#libTags');
+    if (tagList) tagList.scrollTop = 0;
+  });
   const refreshBtn = $('#libRefresh');
   if (refreshBtn) refreshBtn.addEventListener('click', async () => {
     if (refreshBtn.classList.contains('spinning')) return;

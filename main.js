@@ -236,8 +236,10 @@ function openDiagnosticsControlWindow() {
     },
   });
   diagnosticsControlWindow.setMenuBarVisibility(false);
-  diagnosticsControlWindow.webContents.on('console-message', (e, level, message, line, sourceId) => {
-    console.log(`[Diag Control] ${message} (${sourceId}:${line})`);
+  // Electron 35+ passes one details object instead of positional args (and `level`
+  // became a string). We only ever logged the text and origin, so nothing else moves.
+  diagnosticsControlWindow.webContents.on('console-message', ({ message, sourceId, lineNumber }) => {
+    console.log(`[Diag Control] ${message} (${sourceId}:${lineNumber})`);
   });
   diagnosticsControlWindow.webContents.on('preload-error', (e, p, err) => {
     console.error('[Diag Control] preload-error:', p, err);
@@ -1392,8 +1394,8 @@ function createWindow() {
 
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 
-  mainWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[Renderer Console] ${message} (${sourceId}:${line})`);
+  mainWindow.webContents.on('console-message', ({ message, sourceId, lineNumber }) => {
+    console.log(`[Renderer Console] ${message} (${sourceId}:${lineNumber})`);
   });
 
   mainWindow.once('ready-to-show', () => {
@@ -1474,8 +1476,8 @@ function createGalleryWindow() {
 
   galleryWindow.loadFile(path.join(__dirname, 'renderer', 'viewer.html'));
 
-  galleryWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-    console.log(`[Viewer Console] ${message} (${sourceId}:${line})`);
+  galleryWindow.webContents.on('console-message', ({ message, sourceId, lineNumber }) => {
+    console.log(`[Viewer Console] ${message} (${sourceId}:${lineNumber})`);
   });
 
   galleryWindow.once('ready-to-show', () => {
@@ -2487,10 +2489,13 @@ ipcMain.handle('item-open-source', async (e, id) => {
   } catch { return false; }
 });
 
-ipcMain.handle('item-copy-path', (e, p) => {
+ipcMain.handle('item-copy-path', async (e, p) => {
   if (!isTrustedMainWindowSender(e) || !isAuthorizedItemPath(p)) return false;
   try {
-    clipboard.writeText(p);
+    // Electron 43 made clipboard.writeText() return a Promise. Without awaiting it a
+    // failure would escape this catch as an unhandled rejection, and we would report
+    // success to the renderer before the write had actually happened.
+    await clipboard.writeText(p);
     return true;
   } catch { return false; }
 });

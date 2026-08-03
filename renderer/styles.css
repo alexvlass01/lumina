@@ -480,6 +480,10 @@ body.first-run .tb-right { display: none; }
    so the same markup works on the hero panel and inside library popup buttons. */
 .theme-ic { width: 15px; height: 15px; flex: 0 0 auto; }
 .home-info-icon .theme-ic { width: 17px; height: 17px; }
+/* Круговая стрелка «сменить/автосмена». Заменила эмодзи ↻, которое рисовалось шрифтом
+   и не совпадало по весу с остальным линейным набором. Наследует цвет окружения. */
+.rot-ic { width: 15px; height: 15px; flex: 0 0 auto; }
+.home-info-icon .rot-ic { width: 17px; height: 17px; }
 
 /* Manual-override badge: sits in the corner of the 30px icon tile, with its own
    backdrop so the thumbtack stays readable over the blurred wallpaper. */
@@ -551,7 +555,8 @@ body.first-run .tb-right { display: none; }
   width: 100%;
   margin-top: auto;
 }
-.home-next-wall .hnw-ic { font-size: 13px; line-height: 1; }
+.home-next-wall .hnw-ic { display: inline-flex; align-items: center; line-height: 1; }
+.home-next-wall .hnw-ic .rot-ic { width: 14px; height: 14px; }
 
 @media (max-width: 850px) {
   .home-scene {
@@ -854,10 +859,14 @@ html.dark .smart-panel.update .smart-panel-icon-wrap {
   background: rgba(51, 209, 122, 0.3);
 }
 
+/* Содержимое теперь SVG с явными размерами, поэтому font-size здесь больше ни на что
+   не влияет и убран, чтобы не выглядел работающим правилом. */
 .smart-panel-icon {
-  font-size: 20px;
   line-height: 1;
+  display: flex;
+  align-items: center;
 }
+.panel-ic { width: 22px; height: 22px; }
 
 .smart-panel-content {
   flex: 1 1 auto;
@@ -1050,7 +1059,8 @@ body.single-theme .wallpaper-schedule-row { display: none !important; }
   flex: 0 0 auto;
 }
 .thumb.folder { background: var(--card); }
-.thumb-ic { font-size: 22px; line-height: 1; }
+.thumb-ic { display: flex; align-items: center; justify-content: center; line-height: 1; }
+.thumb-ic-svg { width: 24px; height: 24px; opacity: 0.75; }
 .thumb-remove {
   position: absolute; top: -6px; right: -6px;
   width: 18px; height: 18px; padding: 0;
@@ -1770,16 +1780,67 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-context-item.danger:focus-visible { background: rgba(224, 27, 36, 0.12); }
 
 /* tags */
-/* Only the tag list scrolls (fixed filter buttons above it stay pinned to the top of
-   the rail). Thin, subtle scrollbar so it doesn't look tacked-on. */
-.lib-railtags { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+/* The search stays pinned inside the rail; only the chip list scrolls. There is no
+   separate "TAGS" heading: the field's own placeholder names the section, and with a
+   few hundred tags the rail's scarce vertical space belongs to the tags themselves. */
+.lib-tags-section {
+  display: flex; flex: 1 1 auto; flex-direction: column;
+  min-height: 0; overflow: hidden;
+}
+.lib-tags-section[hidden] { display: none; }
+/* Filled and borderless. The rail is a flat list of transparent rows, so an outlined
+   input was the only framed control in it and read as a widget bolted onto the sidebar. */
+.lib-tag-searchbox {
+  display: flex; flex: 0 0 auto; align-items: center; gap: 8px;
+  width: calc(100% - 8px); min-width: 0; height: 32px;
+  margin: 12px 4px 8px; padding: 0 10px; box-sizing: border-box;
+  color: var(--text-dim); background: var(--row-hover);
+  border: none; border-radius: 8px;
+  transition: background .12s ease, box-shadow .12s ease, color .12s ease;
+}
+.lib-tag-searchbox:hover { background: var(--accent-soft); }
+.lib-tag-searchbox:focus-within {
+  color: var(--accent); background: var(--accent-soft);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
+}
+.lib-tag-searchbox svg { width: 14px; height: 14px; flex: 0 0 auto; }
+.lib-tag-searchbox input {
+  width: 100%; min-width: 0; padding: 0; outline: none;
+  border: none; background: transparent; color: var(--text);
+  font-family: inherit; font-size: 13px; font-weight: 500;
+}
+/* The placeholder doubles as the section label, so it carries a little more weight. */
+.lib-tag-searchbox input::placeholder { color: var(--text-dim); font-weight: 600; }
+/* Tags wrap as chips instead of taking a full-width row each: the same rail height
+   shows roughly three times as many. overflow-x is pinned off — wrapping content must
+   never be able to put a horizontal scrollbar under the list. */
+.lib-railtags {
+  display: flex; flex-flow: row wrap; align-content: flex-start; gap: 4px;
+  padding: 0 4px 4px; flex: 1 1 auto;
+  min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain;
+}
 .lib-railtags::-webkit-scrollbar { width: 6px; }
 .lib-railtags::-webkit-scrollbar-thumb { background: var(--switch-off); border-radius: 4px; }
 .lib-railtags::-webkit-scrollbar-track { background: transparent; }
-.lib-rail-hdr {
-  font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
-  color: var(--text-dim); padding: 10px 10px 4px;
+.lib-railtags .lib-railbtn {
+  min-height: 0; height: 24px; max-width: 100%; gap: 0;
+  padding: 0 8px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  background: var(--row-hover); color: var(--text);
 }
+.lib-railtags .lib-railbtn:hover { background: var(--accent-soft); }
+.lib-railtags .lib-railbtn.active {
+  background: var(--accent-soft-hover); color: var(--accent);
+  box-shadow: none; font-weight: 650;
+}
+/* The "#" glyph cost a 16px slot on every row and says nothing once the tags are
+   visibly chip-shaped. */
+.lib-railtags .lib-rail-hash { display: none; }
+.lib-tag-empty {
+  flex: 0 0 auto; padding: 7px 10px 10px;
+  color: var(--text-dim); font-size: 11.5px; line-height: 1.35;
+}
+.lib-tag-empty[hidden] { display: none; }
 .lib-popup-tags { padding: 2px 4px; }
 .lib-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 6px; }
 .lib-chips:empty { display: none; }
@@ -1965,10 +2026,12 @@ html.dark .lib-folder-front { fill: #d99a34; }
   font-size: 10.5px; font-weight: 650; padding: 2px 7px; border-radius: 999px; pointer-events: none;
 }
 
-/* Hovered-item name: a compact floating pill in the bottom-left, not a full-width strip. */
+/* Hovered-item name: a compact floating pill at the bottom, not a full-width strip.
+   It is offset past the rail (rail width + .lib gap) because it describes the hovered
+   CARD: sitting at the page's left edge it covered the last rows of the tag list. */
 .lib-statusbar {
   position: sticky; bottom: 10px;
-  width: fit-content; max-width: 100%;
+  width: fit-content; margin-left: 196px; max-width: calc(100% - 196px);
   margin-top: 12px; padding: 5px 12px;
   font-size: 11.5px; color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -2196,6 +2259,8 @@ html.dark .lib-folder-front { fill: #d99a34; }
   .page.library-page { padding: 18px 18px 26px; }
   .lib { gap: 14px; }
   .lib-rail { flex-basis: 156px; }
+  /* Narrower rail and gap, so the status pill's offset shrinks with them. */
+  .lib-statusbar { margin-left: 170px; max-width: calc(100% - 170px); }
   .lib-toolbar { gap: 6px; }
   .lib-add-btn { padding: 0 10px; }
 }
@@ -2213,11 +2278,22 @@ html.dark .lib-folder-front { fill: #d99a34; }
     scrollbar-width: none;
   }
   .lib-rail::-webkit-scrollbar { display: none; }
-  .lib-rail-hdr { display: none; }
   .lib-railbtn { flex: 0 0 auto; min-height: 34px; padding: 6px 10px; }
   .lib-railbtn.active { box-shadow: inset 0 -3px var(--accent); }
   .lib-rail-separator { width: 1px; height: 22px; margin: 0 4px; flex: 0 0 auto; }
-  .lib-railtags { flex: 0 0 auto; flex-direction: row; gap: 2px; overflow: visible; min-height: 0; }
+  .lib-tags-section { flex: 0 0 auto; flex-direction: row; align-items: center; min-width: 0; overflow: visible; }
+  .lib-tag-searchbox { flex: 0 0 132px; width: 132px; margin: 0 4px; }
+  /* Collapsed to a single horizontal strip: chips must not wrap into a second row
+     here, and this is the one place the tag list is allowed to scroll sideways. */
+  .lib-railtags {
+    flex: 0 1 auto; flex-flow: row nowrap; gap: 4px; padding: 0;
+    max-width: 42vw; overflow-x: auto; overflow-y: hidden; min-height: 0;
+  }
+  .lib-railtags .lib-railbtn { flex: 0 0 auto; min-height: 0; height: 26px; }
+  .lib-railtags::-webkit-scrollbar { display: none; }
+  .lib-tag-empty { padding: 0 8px; white-space: nowrap; }
+  /* The rail is a horizontal strip on top here, so nothing sits left of the grid. */
+  .lib-statusbar { margin-left: 0; max-width: 100%; }
   .lib-toolbar { margin-bottom: 12px; }
   .lib-search-wrap,
   .lib-searchbox { flex-basis: calc(100% - 44px); }

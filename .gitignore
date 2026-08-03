@@ -1,45 +1,32 @@
-# Dependencies
+# Dependencies and build output
 node_modules/
-
-# Build output
 dist/
 .build/
 
-# Local scratch/temp dir (Hermes QA artifacts, generated assets, etc.) — never tracked
+# Temporary and machine-local state
 .tmp/
-
-# Logs
-*.log
-
-# OS / editor junk
-Thumbs.db
-desktop.ini
-.DS_Store
-
-# Claude Code working files (kept local, not published)
+scratch/
 .claude/
+.agents/
+.codex/
+*.log
+.env
+.env.*
 
-# Internal context notes for AI assistants (kept local, not published)
-CLAUDE.md
+# Private canonical documentation must never enter the public mirror
 AGENTS.md
-
-# Local dev launcher (kept local, not published)
+CLAUDE.md
+ROADMAP.md
+STATUS.md
+plans/
 Lumina-DEV.bat
 Lumina-DIAG.bat
 
-# Local roadmap snapshot (kept local, not published)
-ROADMAP.md
-
-# Local handoff log between sessions/agents (kept local, not published)
-STATUS.md
-
-# Local task/plan docs handed to the dev agent (kept local, not published)
-plans/
-
-# Bundled Wallhaven API key (official builds only) — NEVER publish.
-# Create wallhaven-key.json with {"apikey":"..."} for NSFW in official builds.
+# Provider credentials are injected only into isolated official builds
 wallhaven-key.json
-
-# Bundled Gelbooru credentials (official builds only) — NEVER publish.
-# Create gelbooru-key.json with {"userId":"...","apiKey":"..."}.
 gelbooru-key.json
+
+# OS/editor state
+Thumbs.db
+desktop.ini
+.DS_Store

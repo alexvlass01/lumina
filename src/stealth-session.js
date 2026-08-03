@@ -8,7 +8,7 @@
 // the coverage check and the actual apply are all injected (real ones in main.js, fakes in
 // the tests).
 //
-// Design rules (see plans/stealth_triggers.md):
+// Design rules:
 //   * At most ONE active session. A new request RETARGETS the existing session instead of
 //     starting a parallel one, so two automatic events (e.g. wake + a theme flip) can never
 //     double-advance the playlist.

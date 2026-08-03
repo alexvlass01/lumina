@@ -138,7 +138,7 @@
               </button>
 
               <div class="home-automation-row">
-                <span class="home-info-icon">↻</span>
+                <span class="home-info-icon"><svg class="rot-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8A5 5 0 1 1 8 3"/><path d="M7.4 1.1 11.2 3.1 7.4 5.1Z" fill="currentColor" stroke="none"/></svg></span>
                 <span class="home-info-copy">
                   <small id="homeAutoTitle">Автоматическая смена</small>
                   <strong id="homeAutoDetail">По настройкам приложения</strong>
@@ -146,7 +146,7 @@
               </div>
 
               <button class="pill suggested home-next-wall" id="btnNextWall" type="button" data-i18n-title="home.nextWallpaperHint">
-                <span class="hnw-ic">↻</span><span id="homeNextLabel" data-i18n="home.switchAll">Сменить на всех экранах</span>
+                <span class="hnw-ic"><svg class="rot-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 8A5 5 0 1 1 8 3"/><path d="M7.4 1.1 11.2 3.1 7.4 5.1Z" fill="currentColor" stroke="none"/></svg></span><span id="homeNextLabel" data-i18n="home.switchAll">Сменить на всех экранах</span>
               </button>
             </aside>
 
@@ -183,7 +183,11 @@
         <!-- Smart Panel -->
         <section class="smart-panel" id="smartPanel" hidden>
           <div class="smart-panel-icon-wrap">
-            <div class="smart-panel-icon" id="spIcon">💡</div>
+            <!-- Иконку ставит renderSmartPanel() до того, как снимет hidden с панели, поэтому
+                 разметка пустая: копия SVG здесь никогда бы не показалась и только разъезжалась
+                 бы с константой в renderer.js. У индикатора темы копия в разметке ОСТАВЛЕНА
+                 намеренно — там панель видна сразу, до первого applyThemeToUI(). -->
+            <div class="smart-panel-icon" id="spIcon"></div>
           </div>
           <div class="smart-panel-content">
             <div class="smart-panel-title" id="spTitle">Совет дня</div>
@@ -492,7 +496,14 @@
             <svg class="lib-rail-ic" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="8" cy="8" r="6.2"/><path d="M1.8 8h12.4M8 1.8c1.7 1.8 2.6 3.9 2.6 6.2S9.7 12.4 8 14.2C6.3 12.4 5.4 10.3 5.4 8S6.3 3.6 8 1.8z"/></svg>
             <span data-i18n="online.rail">Онлайн</span>
           </button>
-          <div class="lib-railtags" id="libTags"></div>
+          <div class="lib-tags-section" id="libTagSection" hidden>
+            <label class="lib-tag-searchbox">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="6.8" cy="6.8" r="4.4"/><path d="m10.2 10.2 3.2 3.2"/></svg>
+              <input type="search" id="libTagSearch" placeholder="Поиск тегов" data-i18n-ph="library.tagSearchPh" data-i18n-title="library.tagSearchPh" aria-label="Поиск тегов" aria-controls="libTags" autocomplete="off" spellcheck="false" />
+            </label>
+            <div class="lib-railtags" id="libTags"></div>
+            <div class="lib-tag-empty" id="libTagEmpty" data-i18n="library.noTagsFound" aria-live="polite" hidden>Подходящие теги не найдены</div>
+          </div>
         </aside>
         <div class="lib-main">
           <div class="lib-local" id="libLocal">

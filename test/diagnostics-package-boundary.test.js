@@ -26,7 +26,11 @@ ok('package command keeps production-safe diagnostics gate',
   !ignorePatterns.some((pattern) => pattern.test('/src/diagnostics-gate.js')));
 // Privacy boundary: internal agent handoff docs and scratch dirs must never ship
 // inside the public installer (they used to leak into app.asar until v1.4.6).
-for (const leak of ['/plans/knowledge_index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/.agents', '/.codex', '/test/config.test.js', '/Lumina-DEV.bat', '/Lumina-DIAG.bat']) {
+// `/scratch/x` joined the list on 2026-07-29: the folder sat in the repo root unignored by
+// both git and the packager, so anything dropped there would have ridden into app.asar. It
+// was empty at the time, which is exactly why nobody noticed — the v1.4.6 leak started the
+// same way.
+for (const leak of ['/plans/index.md', '/STATUS.md', '/ROADMAP.md', '/CLAUDE.md', '/AGENTS.md', '/.tmp/x', '/scratch/x', '/.agents', '/.codex', '/test/config.test.js', '/Lumina-DEV.bat', '/Lumina-DIAG.bat']) {
   ok(`package command excludes ${leak}`,
     ignorePatterns.some((pattern) => pattern.test(leak)));
 }

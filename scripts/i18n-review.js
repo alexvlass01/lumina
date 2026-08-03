@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * I18N-SEM step 3 helper — objective consistency review.  План: plans/i18n_semantic_system.md
+ * Objective translation consistency review helper.
  *
  *   node scripts/i18n-review.js terms [lang…]   один английский термин → разные переводы
  *   node scripts/i18n-review.js style [lang…]   отклонения от соглашений по типу элемента

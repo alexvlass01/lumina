@@ -125,6 +125,8 @@
     "favorites": "Избранное",
     "folders": "Папки",
     "searchPh": "Поиск",
+    "tagSearchPh": "Поиск тегов",
+    "noTagsFound": "Подходящие теги не найдены",
     "refresh": "Обновить библиотеку",
     "sortAdded": "Сначала новые",
     "sortName": "По имени",

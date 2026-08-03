@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "en",
   "verification": "reference",
-  "verifiedAt": "2026-07-28T07:12:34.668Z",
+  "verifiedAt": "2026-08-03T12:52:04.010Z",
   "keys": {
     "nav.home": "80de4a754def:3b13e25257b1",
     "nav.library": "c1d3d27ce171:3b72dc853d23",
@@ -117,6 +117,8 @@
     "library.favorites": "75b54995c4a0:b783122c2188",
     "library.folders": "82967d50f13f:8edc841e7bb1",
     "library.searchPh": "fb012b111eb8:e26c38984ec1",
+    "library.tagSearchPh": "6033eb443adb:c75e5eca67d1",
+    "library.noTagsFound": "e1171b7298fd:096b6ad0f127",
     "library.refresh": "0949406d0a8b:d0cfc556e425",
     "library.sortAdded": "4693e7e65a1d:30fd150dff25",
     "library.sortName": "78eb775d146c:19e9d478217a",

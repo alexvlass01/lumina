@@ -2,7 +2,7 @@
   "version": 2,
   "lang": "ru",
   "verification": "reference",
-  "verifiedAt": "2026-07-28T07:12:34.673Z",
+  "verifiedAt": "2026-08-03T12:53:52.902Z",
   "keys": {
     "nav.home": "80de4a754def:54b433354748",
     "nav.library": "c1d3d27ce171:183f844e5c44",
@@ -117,6 +117,8 @@
     "library.favorites": "75b54995c4a0:cc5c96c41a62",
     "library.folders": "82967d50f13f:810b4ce69615",
     "library.searchPh": "fb012b111eb8:e09953bedc99",
+    "library.tagSearchPh": "6033eb443adb:d2ed9347f4b7",
+    "library.noTagsFound": "e1171b7298fd:9b9d4ebefeaf",
     "library.refresh": "0949406d0a8b:8e153c8b0500",
     "library.sortAdded": "4693e7e65a1d:680cb1770383",
     "library.sortName": "78eb775d146c:aa08d879dded",

@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * I18N-SEM step 4 — translation kit.  План: plans/i18n_semantic_system.md
+ * Translation kit generator.
  *
  *   node scripts/i18n-kit.js de              что нужно перевести/пересмотреть в de
  *   node scripts/i18n-kit.js de --out kit.json   сохранить набор в файл

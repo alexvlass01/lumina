@@ -6,7 +6,7 @@
 // 1. The sunrise math and boundary logic were the largest untested pure code in the app.
 // 2. The schedule is PARAMETERIZED here (passed in, not read from the global config), so a
 //    second independent schedule (e.g. wallpapers by time/sun, decoupled from the Windows
-//    theme — see plans/wallpaper_schedule) can reuse this module instead of copying it.
+//    theme) can reuse this module instead of copying it.
 //
 // A schedule object looks like config.themeSchedule / config.wallpaperSchedule:
 //   { mode: 'off'|'system'|'time'|'sun', lightStart: 'HH:MM', darkStart: 'HH:MM', lat: '', lng: '' }

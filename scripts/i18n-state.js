@@ -2,7 +2,7 @@
 'use strict';
 
 /**
- * I18N-SEM step 1 — translation freshness.  План: plans/i18n_semantic_system.md
+ * Translation freshness state and reporting CLI.
  *
  *   node scripts/i18n-state.js report            состояние всех языков
  *   node scripts/i18n-state.js report de fr      только указанные
@@ -25,7 +25,7 @@ const ROOT = path.join(__dirname, '..');
 const LOCALES_DIR = path.join(ROOT, 'locales');
 const STATE_DIR = path.join(LOCALES_DIR, 'state');
 
-// Уровни языков (plans/i18n_semantic_system.md). Уровень 0 — эталон, правится руками;
+// Уровень 0 — эталон, правится руками;
 // 1 — популярные, обновляются каждый релиз; 2 — остальные, реже.
 const TIERS = {
   0: ['en', 'ru'],

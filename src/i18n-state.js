@@ -1,6 +1,6 @@
 'use strict';
 
-// Translation freshness accounting (I18N-SEM step 1; plan: plans/i18n_semantic_system.md).
+// Translation freshness accounting shared by the maintenance CLI and tests.
 //
 // The i18n linter only knows whether a key EXISTS. It cannot see that a translation
 // went stale: rewording an English string leaves every other language holding a
