@@ -161,7 +161,6 @@
     "selected": "Kiválasztva: {n}",
     "massAssign": "Hozzárendelés…",
     "massDelete": "Eltávolítás a könyvtárból",
-    "massDeleteUnavailable": "Csak a könyvtárban már meglévő elemek távolíthatók el",
     "massDeleteFailed": "Nem sikerült eltávolítani a kiválasztott elemeket",
     "selectionActions": "Kiválasztott háttérkép műveletek",
     "clearSelection": "Kiválasztás törlése",

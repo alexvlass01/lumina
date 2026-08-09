@@ -249,6 +249,55 @@ function artistLabel(names, max = 3) {
   return list.slice(0, cap).join(', ');
 }
 
+// Artist tags in their ORIGINAL underscore form, for storing alongside the post's
+// other tags. artistNamesFromTypes returns display names ("tenchi mayo"); the local
+// library keeps booru tags as they come ("tenchi_mayo"), so both shapes are needed.
+function artistTagsFromTypes(tags, typeMap) {
+  const list = Array.isArray(tags) ? tags : String(tags || '').split(/\s+/);
+  const map = typeMap instanceof Map ? typeMap : new Map(Object.entries(typeMap || {}));
+  const out = [];
+  const seen = new Set();
+  for (const raw of list) {
+    const key = String(raw || '').trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    if (map.get(key) === TAG_TYPE_ARTIST) out.push(key);
+  }
+  return out;
+}
+
+// Every tag of a post, deduplicated and untruncated — unlike compactTags, which caps
+// the list for the search payload.
+function allTags(post) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of String(post && post.tags || '').split(/\s+/)) {
+    const tag = raw.trim().toLowerCase();
+    if (!tag || seen.has(tag)) continue;
+    seen.add(tag);
+    out.push(tag);
+  }
+  return out;
+}
+
+// Single post by id. Needed because the search response is trimmed to `compactTags`
+// (24) and Gelbooru orders tags alphabetically, so an artist whose name sorts late is
+// already gone by the time the user downloads. Accepts "gelbooru:123" or "123".
+function buildPostUrl(id, { apiKey, userId } = {}) {
+  const postId = String(id == null ? '' : id).replace(/^gelbooru:/, '').trim();
+  if (!/^\d+$/.test(postId)) return '';
+  const p = new URLSearchParams({
+    page: 'dapi',
+    s: 'post',
+    q: 'index',
+    json: '1',
+    id: postId,
+  });
+  if (apiKey) p.set('api_key', String(apiKey));
+  if (userId) p.set('user_id', String(userId));
+  return `${API_BASE}?${p.toString()}`;
+}
+
 module.exports = {
   API_BASE,
   POST_BASE,
@@ -269,5 +318,8 @@ module.exports = {
   tagsFromResponse,
   parseTagTypes,
   artistNamesFromTypes,
+  artistTagsFromTypes,
   artistLabel,
+  allTags,
+  buildPostUrl,
 };

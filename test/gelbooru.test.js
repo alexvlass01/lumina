@@ -90,4 +90,22 @@ ok('artistNamesFromTypes: no artist tags yields empty', G.artistNamesFromTypes('
 ok('artistNamesFromTypes: accepts a plain object typeMap', G.artistNamesFromTypes(['a', 'b'], { a: 1, b: 0 }).join(',') === 'a');
 ok('artistLabel: comma-joins and caps at max', G.artistLabel(['a', 'b', 'c', 'd'], 3) === 'a, b, c' && G.artistLabel(['only'], 3) === 'only' && G.artistLabel([]) === '');
 
+// BUG-002: the artist tag is often outside the search response's 24-tag cap, so the
+// download path re-reads the post and needs both the display label and the raw tag.
+ok('artistTagsFromTypes: keeps the original underscore form', G.artistTagsFromTypes(postTags, typeMap).join(',') === 'artist_name,other_artist');
+ok('artistTagsFromTypes: no artists yields empty', G.artistTagsFromTypes('1girl sky', typeMap).length === 0);
+ok('artistTagsFromTypes: deduplicates repeated names', G.artistTagsFromTypes('artist_name artist_name', typeMap).length === 1);
+
+const bigPost = { tags: Array.from({ length: 51 }, (_, i) => `tag_${String(i).padStart(2, '0')}`).join(' ') };
+ok('compactTags still caps the search payload at 24', G.compactTags(bigPost).length === 24);
+ok('allTags returns every tag, untruncated', G.allTags(bigPost).length === 51);
+ok('allTags deduplicates and lowercases', G.allTags({ tags: 'A_b  a_b   c' }).join(',') === 'a_b,c');
+ok('allTags tolerates a missing post', G.allTags(null).length === 0 && G.allTags({}).length === 0);
+
+const postUrl = G.buildPostUrl('gelbooru:14619442', { apiKey: 'k', userId: '7' });
+ok('buildPostUrl: accepts the prefixed item id and asks for one post', postUrl.includes('s=post') && postUrl.includes('id=14619442') && !postUrl.includes('gelbooru%3A'));
+ok('buildPostUrl: carries credentials when present', postUrl.includes('api_key=k') && postUrl.includes('user_id=7'));
+ok('buildPostUrl: works without credentials', G.buildPostUrl('123').includes('id=123'));
+ok('buildPostUrl: rejects a non-numeric id', G.buildPostUrl('gelbooru:abc') === '' && G.buildPostUrl('') === '' && G.buildPostUrl(null) === '');
+
 console.log('\nAll ' + passed + ' gelbooru tests passed.');

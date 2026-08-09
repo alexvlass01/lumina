@@ -161,7 +161,6 @@
     "selected": "{n} sélectionné(s)",
     "massAssign": "Associer…",
     "massDelete": "Retirer de la bibliothèque",
-    "massDeleteUnavailable": "Seuls les éléments déjà présents dans la bibliothèque peuvent être retirés",
     "massDeleteFailed": "Impossible de retirer certains éléments",
     "selectionActions": "Actions des fonds d'écran sélectionnés",
     "clearSelection": "Effacer la sélection",

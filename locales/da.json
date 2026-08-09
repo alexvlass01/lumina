@@ -161,7 +161,6 @@
     "selected": "Valgt: {n}",
     "massAssign": "Tildel…",
     "massDelete": "Fjern fra biblioteket",
-    "massDeleteUnavailable": "Kun elementer, der allerede er i biblioteket, kan fjernes",
     "massDeleteFailed": "Kunne ikke fjerne de valgte elementer",
     "selectionActions": "Handlinger for valgte tapeter",
     "clearSelection": "Ryd valg",

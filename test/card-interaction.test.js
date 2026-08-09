@@ -84,11 +84,15 @@ ok('folder and image keys stay in separate namespaces',
   const transient = CardInteraction.actionsFor(imageA);
   const persistent = CardInteraction.actionsFor(imageB);
   const transientFolder = CardInteraction.actionsFor(folder);
-  ok('transient images can assign/favorite/tag but cannot be removed',
-    transient.assign && transient.favorite && transient.tags && !transient.remove);
+  // LIB-004: where a photo is stored no longer decides what the user may do with it.
+  // Removal means "stop showing this in Lumina" and is offered for every card alike.
+  ok('a photo shown straight from a watched folder can be removed too',
+    transient.assign && transient.favorite && transient.tags && transient.remove);
   ok('persistent pool items expose remove', persistent.remove);
-  ok('folder actions expose navigation without requiring a pool id',
-    transientFolder.open && transientFolder.assign && !transientFolder.remove);
+  // LIB-008: a subfolder the user navigated into is removable too. Removing it is
+  // recorded against its path, so photos added to it later stay removed as well.
+  ok('folder actions expose navigation and removal without requiring a pool id',
+    transientFolder.open && transientFolder.assign && transientFolder.remove);
   ok('details are offered for transient, pool and folder records alike',
     transient.details && persistent.details && transientFolder.details);
   ok('details are withheld from an invalid record',

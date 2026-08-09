@@ -161,7 +161,6 @@
     "selected": "Vybrané: {n}",
     "massAssign": "Priradiť…",
     "massDelete": "Odstrániť z knižnice",
-    "massDeleteUnavailable": "Z knižnice je možné odstrániť len existujúce položky",
     "massDeleteFailed": "Vybrané položky sa nepodarilo odstrániť",
     "selectionActions": "Akcie vybraných tapiet",
     "clearSelection": "Zrušiť výber",

@@ -62,6 +62,38 @@ function mapItem(w) {
   };
 }
 
+// --- Tags (ONL-008) -------------------------------------------------------
+// The search endpoint never returns tags, so a downloaded wallpaper used to land in
+// the library with none at all. The single-wallpaper endpoint does carry them, so the
+// download path reads it once — the same shape as the Gelbooru artist lookup.
+const WALLPAPER_BASE = 'https://wallhaven.cc/api/v1/w/';
+
+function buildWallpaperUrl(id, { apikey } = {}) {
+  const wallpaperId = String(id == null ? '' : id).replace(/^wallhaven:/, '').trim();
+  if (!/^[A-Za-z0-9]{1,20}$/.test(wallpaperId)) return '';
+  const suffix = apikey ? `?apikey=${encodeURIComponent(String(apikey))}` : '';
+  return `${WALLPAPER_BASE}${wallpaperId}${suffix}`;
+}
+
+// Tag names from a single-wallpaper response, lowercased and deduplicated. Wallhaven
+// tag names contain spaces ("anime girls"); they are kept verbatim rather than
+// forced into booru underscore style, because that is what the site actually calls them.
+function tagsFromWallpaper(json, max = 24) {
+  const data = (json && json.data) || json || {};
+  const list = Array.isArray(data.tags) ? data.tags : [];
+  const cap = Number(max) > 0 ? Math.floor(Number(max)) : list.length;
+  const out = [];
+  const seen = new Set();
+  for (const tag of list) {
+    const name = String((tag && tag.name) || '').trim().toLowerCase();
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    out.push(name);
+    if (out.length >= cap) break;
+  }
+  return out;
+}
+
 // Parse a search response body → { items:[…], meta:{…} }. Tolerant of junk.
 function parseSearch(json) {
   const data = json && Array.isArray(json.data) ? json.data : [];
@@ -76,4 +108,15 @@ function parseSearch(json) {
   return { items, meta };
 }
 
-module.exports = { API_BASE, mask, purityMask, categoryMask, buildSearchUrl, mapItem, parseSearch };
+module.exports = {
+  API_BASE,
+  WALLPAPER_BASE,
+  mask,
+  purityMask,
+  categoryMask,
+  buildSearchUrl,
+  buildWallpaperUrl,
+  tagsFromWallpaper,
+  mapItem,
+  parseSearch,
+};

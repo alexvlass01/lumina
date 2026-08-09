@@ -161,7 +161,6 @@
     "selected": "נבחרו: {n}",
     "massAssign": "הקצה…",
     "massDelete": "הסר מהספרייה",
-    "massDeleteUnavailable": "ניתן להסיר רק פריטים שכבר קיימים בספרייה",
     "massDeleteFailed": "לא ניתן היה להסיר את הפריטים שנבחרו",
     "selectionActions": "פעולות לרקעים שנבחרו",
     "clearSelection": "נקה בחירה",

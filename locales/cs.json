@@ -161,7 +161,6 @@
     "selected": "Vybráno: {n}",
     "massAssign": "Přiřadit…",
     "massDelete": "Odebrat z knihovny",
-    "massDeleteUnavailable": "Odebrat lze pouze položky, které již jsou v knihovně",
     "massDeleteFailed": "Nepodařilo se odebrat vybrané položky",
     "selectionActions": "Akce vybraných tapet",
     "clearSelection": "Zrušit výběr",

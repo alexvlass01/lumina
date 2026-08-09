@@ -4,10 +4,17 @@
 // path is passed in — so the (regression-prone) migration logic is unit-testable
 // directly (see test/config.test.js). main.js keeps the live `config` object and
 // just calls load()/save() through thin wrappers.
+//
+// The photo pool (`config.library`) is still part of the in-memory config object,
+// but it is PERSISTED to its own sibling file — see ./library-store.js.
+// Keeping the in-memory shape unchanged is
+// deliberate: ~90 call sites across main and renderer read `config.library`, and
+// none of them should care where the bytes live.
 
 const fs = require('fs');
 const path = require('path');
 const library = require('./library');
+const libraryStore = require('./library-store');
 
 const DEFAULT_CONFIG = {
   lightWallpaper: '',     // legacy global fallback (unless a slot was explicitly emptied)
@@ -193,6 +200,8 @@ function normalize(cfg) {
 
   if (!['ambient', 'charcoal', 'aurora', 'color'].includes(cfg.viewerBackground)) cfg.viewerBackground = 'ambient';
 
+  if (!Array.isArray(cfg.libraryTrash)) cfg.libraryTrash = [];
+
   // Anonymous install id: keep only a well-formed value; anything else resets to ''
   // so main re-generates a fresh one.
   if (typeof cfg.anonId !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(cfg.anonId)) cfg.anonId = '';
@@ -202,14 +211,25 @@ function normalize(cfg) {
 
 // Read + parse + migrate + apply defaults. Never throws: a missing file yields
 // defaults; a CORRUPT file is backed up (.corrupt-<ts>.bak) then replaced by defaults.
+//
+// The pool is read from its own file and merged in BEFORE normalize(), so
+// library.migrateConfig() sees the real items and stays idempotent. A config that
+// predates the split still carries its pool inline; that copy is picked up here and
+// moves to the store on the next save.
 function load(configPath) {
   let raw = null;
   try { raw = fs.readFileSync(configPath, 'utf8'); } catch { raw = null; }
   let cfg;
+  let inlineLibrary = null;
+  let inlineTrash = null;
   if (raw != null) {
     try {
       const parsed = JSON.parse(raw.replace(/^﻿/, '')); // strip BOM if present
       cfg = { ...freshDefaults(), ...parsed };
+      inlineLibrary = parsed.library && typeof parsed.library === 'object' ? parsed.library : null;
+      // The recovery path writes the trash inline next to the pool; reading only the
+      // pool back meant those entries vanished on the very next start.
+      inlineTrash = Array.isArray(parsed.libraryTrash) ? parsed.libraryTrash : null;
       // The defaults are merged before normalize(). Preserve whether the new field
       // existed so legacy autoSwitch:false can migrate to mode='off'.
       if (!Object.prototype.hasOwnProperty.call(parsed, 'wallpaperSchedule')) cfg.wallpaperSchedule = null;
@@ -221,19 +241,65 @@ function load(configPath) {
   } else {
     cfg = freshDefaults();
   }
-  return normalize(cfg);
+  const stored = libraryStore.load(configPath);
+  cfg.library = libraryStore.mergeLibraries(stored.library, inlineLibrary);
+  // Photos the user removed, kept so they can be put back (LIB-006). Lives with the
+  // pool rather than in config.json for the same reason the pool does.
+  cfg.libraryTrash = libraryStore.mergeTrash(stored.trash, inlineTrash);
+  // Callers need to know how the pool got here: an unreadable store must not be
+  // overwritten, and a merge that pulled ids out of the inline copy has to be
+  // persisted rather than living only in memory. Non-enumerable so it never reaches
+  // config.json or the renderer through a plain copy.
+  const beforeNormalize = Object.keys(cfg.library).length + cfg.libraryTrash.length;
+  const normalized = normalize(cfg);
+  // normalize() calls migrateConfig(), which can CREATE pool entries out of legacy
+  // slots or the old global fallback. Measured after it runs, or the entity would live
+  // only in memory while its id was already written into a slot — a dangling reference
+  // after the next restart.
+  const afterNormalize = Object.keys(normalized.library).length + normalized.libraryTrash.length;
+  Object.defineProperty(normalized, '_poolSource', {
+    value: {
+      storeExisted: !!stored.existed,
+      unreadable: !!stored.unreadable,
+      broken: !!stored.broken,
+      mergedInline: (!!inlineLibrary && Object.keys(inlineLibrary).length > 0)
+        || (!!inlineTrash && inlineTrash.length > 0),
+      normalizeAdded: afterNormalize !== beforeNormalize,
+    },
+    enumerable: false, writable: true, configurable: true,
+  });
+  return normalized;
 }
 
 // Atomic write (tmp + rename) so a crash mid-write can't truncate config.json.
-function save(config, configPath) {
+//
+// The pool goes to its own file and is written FIRST, and config.json only stops
+// carrying the inline copy once that write is CONFIRMED. Dropping it regardless —
+// which is what this did — meant a full disk, a permission error or an antivirus
+// holding the file could leave the pool in neither place. Pass `skipLibrary` when a
+// batched writer owns the pool, and `keepInline` when the store is known-unusable
+// (an unreadable file) so the config stays self-sufficient until it is fixed.
+function save(config, configPath, { skipLibrary = false, keepInline = false } = {}) {
+  let poolSafe = true;
+  if (!skipLibrary) {
+    poolSafe = libraryStore.save(config && config.library, configPath, config && config.libraryTrash);
+  }
+  const inlineNeeded = keepInline || !poolSafe;
   try {
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    const onDisk = { ...config };
+    if (!inlineNeeded) {
+      delete onDisk.library;
+      delete onDisk.libraryTrash;
+    }
     const tmp = `${configPath}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(config, null, 2), 'utf8');
+    fs.writeFileSync(tmp, JSON.stringify(onDisk, null, 2), 'utf8');
     fs.renameSync(tmp, configPath);
   } catch (err) {
     console.error('Не удалось сохранить конфиг:', err);
+    return false;
   }
+  return poolSafe;
 }
 
 module.exports = { DEFAULT_CONFIG, freshDefaults, normalize, load, save };

@@ -161,7 +161,6 @@
     "selected": "已选择 {n} 项",
     "massAssign": "批量分配…",
     "massDelete": "从媒体库批量移除",
-    "massDeleteUnavailable": "只能移除已加入媒体库的项目",
     "massDeleteFailed": "部分项目未能成功移除",
     "selectionActions": "所选壁纸操作",
     "clearSelection": "清除选择",

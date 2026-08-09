@@ -38,8 +38,22 @@ assert.ok(block.includes('queueLiveFolderAspect(p, data.width / data.height)'),
   'successful thumbnails enqueue persistent live-folder aspect metadata');
 assert.ok(main.includes('library.setAspect(config.library, id, update.path, update.aspect)'),
   'materialized live-folder images receive the same persistent aspect metadata');
-assert.ok(main.includes('if (configChanged) configMod.save(config, CONFIG_PATH);'),
+assert.ok(main.includes('if (configChanged) saveLibrarySoon();'),
   'aspect-only pool backfill is saved without a renderer config broadcast');
+// Scoped to the function body rather than "up to the first }": saveLibrarySoon now has
+// a branch in it (the degraded mode where the store file cannot be written and the pool
+// has to go inline into config.json instead), and a `[^}]*` regex silently stopped
+// matching at that branch's brace.
+const saveLibrarySoonBody = (() => {
+  const start = main.indexOf('function saveLibrarySoon() {');
+  return start < 0 ? '' : main.slice(start, main.indexOf('\n}', start));
+})();
+assert.ok(saveLibrarySoonBody.includes('libraryWriter.markDirty'),
+  'the pool backfill path writes only the pool, and does so through the batched writer');
+assert.ok(!saveLibrarySoonBody.includes('broadcastConfig'),
+  'the pool backfill path still never broadcasts config');
+assert.ok(saveLibrarySoonBody.includes('keepInline: true'),
+  'an unusable store must not silently drop a pool edit: it goes inline into config.json');
 assert.ok(block.includes('const key = `${p}|${W}`;'), 'dedup key matches the helper scalar size');
 assert.ok(!main.includes('createThumbnailFromPath'), 'main no longer runs Windows thumbnail extraction');
 assert.ok(main.includes('void thumbnailHost.dispose();'), 'app shutdown disposes the helper');

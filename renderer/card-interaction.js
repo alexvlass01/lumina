@@ -77,7 +77,11 @@
       // Details are read-only, so they stay available for transient cards too: the
       // view reads metadata from disk by path and never materializes the item.
       details: validRecord(record),
-      remove: !!(record && record.id),
+      // LIB-004/LIB-008: removable regardless of how it got here — a photo, and a
+      // subfolder the user merely navigated into as well. Removing a subfolder is
+      // recorded against its path, so photos added to it later stay removed too.
+      // Removal never deletes files.
+      remove: validRecord(record),
     };
   }
 

@@ -161,7 +161,6 @@
     "selected": "Valgt: {n}",
     "massAssign": "Tilordne…",
     "massDelete": "Fjern fra bibliotek",
-    "massDeleteUnavailable": "Kun elementer som allerede er i biblioteket kan fjernes",
     "massDeleteFailed": "Kunne ikke fjerne de valgte elementene",
     "selectionActions": "Handlinger for valgte bakgrunner",
     "clearSelection": "Fjern valg",

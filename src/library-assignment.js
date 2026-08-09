@@ -3,8 +3,33 @@
 // One synchronous transaction for the pool + slot mutation. Filesystem validation
 // stays in main.js and must set allowCreate only after the path/type is confirmed.
 // Therefore every failure returned here leaves both config.library and slots intact.
+//
+// Creating a pool entry goes through `options.addToPool` when main supplies it, so
+// this shares main's single entry point instead of being a second door: a photo added
+// here has to shed its removed state exactly like one added anywhere else, or it ends
+// up active in a slot while still marked removed (BUG-011).
 
 const library = require('./library');
+
+// Use main's funnel when it is provided; fall back to the plain add for tests that
+// exercise this module on its own.
+function addPooled(config, type, p, options) {
+  if (typeof options.addToPool === 'function') return options.addToPool(type, p, options.extra);
+  return library.addPath(config.library, type, p, options.extra);
+}
+
+// Assigning an item that ALREADY has a pool record used to skip the funnel entirely,
+// because nothing was being created. But "already in the pool" and "not removed" are
+// different facts: a profile left in the active+removed state by an older build (or
+// by the folder cascade that used to miss its descendants) stayed broken no matter how
+// many times the user assigned the photo. Going through the funnel here repairs it —
+// the funnel dedups, so for an existing record this costs a lookup and nothing else.
+function activatePooled(config, item, options) {
+  if (!item || typeof options.addToPool !== 'function') return;
+  const type = item.type === 'folder' ? 'folder' : 'image';
+  try { options.addToPool(type, item.path, options.extra); }
+  catch { /* assignment must not fail because a tombstone could not be cleared */ }
+}
 
 function assignmentError(config, error) {
   return { config, ok: false, error, id: null, created: false };
@@ -28,10 +53,12 @@ function assignRecord(config, record, monitorId, which, options = {}) {
       return assignmentError(config, 'missing_item');
     }
     const type = record.type === 'folder' ? 'folder' : 'image';
-    const id = library.addPath(config.library, type, record.path, options.extra);
+    const id = addPooled(config, type, record.path, options);
     item = library.getItem(config.library, id);
     if (!item) return assignmentError(config, 'missing_item');
     created = true;
+  } else {
+    activatePooled(config, item, options);
   }
 
   const theme = which === 'dark' ? 'dark' : 'light';
@@ -68,9 +95,11 @@ function assignRecords(config, preparedRecords, monitorId, which) {
     }
     if (!item && options.allowCreate && typeof record.path === 'string' && record.path) {
       const type = record.type === 'folder' ? 'folder' : 'image';
-      const id = library.addPath(config.library, type, record.path, options.extra);
+      const id = addPooled(config, type, record.path, options);
       item = library.getItem(config.library, id);
       if (item) createdIds.push(item.id);
+    } else if (item) {
+      activatePooled(config, item, options);
     }
     if (!item) { failed += 1; continue; }
     ids.push(item.id);

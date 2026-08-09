@@ -161,7 +161,6 @@
     "selected": "Selezionati: {n}",
     "massAssign": "Assegna in blocco…",
     "massDelete": "Rimuovi dalla libreria",
-    "massDeleteUnavailable": "Si possono rimuovere solo gli elementi già presenti nella libreria",
     "massDeleteFailed": "Impossibile rimuovere alcuni elementi",
     "selectionActions": "Azioni sugli sfondi selezionati",
     "clearSelection": "Azzera selezione",

@@ -598,6 +598,7 @@
         <span id="libSelCount" class="lib-sel-count" role="status" aria-live="polite"></span>
         <button type="button" id="libSelAssign" class="pill suggested"></button>
         <button type="button" id="libSelDelete" class="pill destructive"></button>
+        <button type="button" id="libSelPurge" class="pill destructive" hidden></button>
         <button type="button" id="libSelClear" class="pill">✕</button>
       </div>
       <div class="lib-statusbar" id="libStatus"></div>
@@ -716,6 +717,16 @@
             <button class="clear-btn" id="btnClearShortcut" hidden title="Очистить">&times;</button>
           </div>
           <button class="gtkswitch" id="swShortcutEnabled" role="switch" aria-checked="false"><span class="knob"></span></button>
+        </div>
+      </div>
+
+      <h2 class="group-title" data-i18n="library.removedTitle">Корзина библиотеки</h2>
+      <div class="boxed-list">
+        <div class="row">
+          <div class="row-text">
+            <div class="row-sub" data-i18n="library.removedSub">Убранное из библиотеки. Файлы на диске не удаляются, вернуть можно что угодно.</div>
+          </div>
+          <button class="pill" id="btnOpenRemoved" data-i18n="library.removedOpen">Открыть</button>
         </div>
       </div>
 

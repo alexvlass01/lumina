@@ -7,6 +7,9 @@
 
 const fs = require('fs');
 const path = require('path');
+// Shared with library.js so "the same file" means the same thing in the playlist as
+// it does in the pool, the trash and the removed-markers (src/path-key.js).
+const { pathKey } = require('./path-key');
 
 const IMG_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
 
@@ -90,9 +93,17 @@ function scanFolderImagesDeep(dir, opts = {}) {
 // New model: slot = { itemIds:[…] } + a `library` pool → items are resolved by id.
 // Backward compatible: called as resolveSlot(slot) on a legacy { items:[…] } slot
 // (no library) it behaves exactly as before. (Library model lands fully in Этап B.)
+// `opts.exclude` is a Set of PATH KEYS (src/path-key.js) the user removed from the
+// library (LIB-004). A folder is expanded by reading the disk, so without this the
+// playlist would keep serving a photo that no longer exists as far as the user is
+// concerned — the grid would hide it while the desktop kept showing it. The set is
+// passed in rather than read here so this module stays free of app state. It must be
+// keyed exactly like the caller builds it: a plain lowercase set and a `\`-spelled
+// scan result never matched, so the exclusion silently did nothing.
 function resolveSlot(slot, library, opts = {}) {
   const out = [];
   const seen = new Set();
+  const exclude = opts.exclude instanceof Set ? opts.exclude : null;
   let items;
   if (library && slot && Array.isArray(slot.itemIds)) {
     items = slot.itemIds.map((id) => library[id]).filter(Boolean);
@@ -103,7 +114,8 @@ function resolveSlot(slot, library, opts = {}) {
     if (!it || !it.path) continue;
     const paths = it.type === 'folder' ? scanFolder(it.path, { force: !!opts.forceFolderScan }) : [it.path];
     for (const p of paths) {
-      const k = p.toLowerCase();
+      const k = pathKey(p);
+      if (exclude && exclude.has(k)) continue;
       if (!seen.has(k) && fs.existsSync(p)) { seen.add(k); out.push(p); }
     }
   }
@@ -117,8 +129,8 @@ function resolveSlot(slot, library, opts = {}) {
 function resolvedIndexOf(slot, library, p, opts = {}) {
   if (!p) return -1;
   const list = resolveSlot(slot, library, opts);
-  const key = String(p).toLowerCase();
-  return list.findIndex((x) => String(x).toLowerCase() === key);
+  const key = pathKey(p);
+  return list.findIndex((x) => pathKey(x) === key);
 }
 
 // Element of `list` at `idx`, wrapped into range. '' for an empty list.
@@ -154,9 +166,11 @@ function reconcilePosition(list, currentPath, oldIndex, options = {}) {
   const shuffle = !!options.shuffle;
   const rnd = typeof options.rnd === 'function' ? options.rnd : Math.random;
   const savedPath = typeof currentPath === 'string' ? currentPath : '';
-  const found = savedPath
-    ? list.findIndex((p) => String(p).toLowerCase() === savedPath.toLowerCase())
-    : -1;
+  // The saved path comes from config, the list from a fresh disk scan — the two can
+  // legitimately spell the same file differently, and a raw compare then "lost" the
+  // current frame and restarted the slideshow from the saved index.
+  const savedKey = pathKey(savedPath);
+  const found = savedPath ? list.findIndex((p) => pathKey(p) === savedKey) : -1;
   let index;
 
   if (found >= 0) {

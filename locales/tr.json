@@ -161,7 +161,6 @@
     "selected": "Seçilen: {n}",
     "massAssign": "Toplu Ata…",
     "massDelete": "Kütüphaneden Kaldır",
-    "massDeleteUnavailable": "Yalnızca kütüphanede zaten bulunan ögeler kaldırılabilir",
     "massDeleteFailed": "Bazı ögeler kaldırılamadı",
     "selectionActions": "Seçili duvar kağıdı işlemleri",
     "clearSelection": "Seçimi Temizle",

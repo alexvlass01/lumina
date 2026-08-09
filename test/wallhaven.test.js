@@ -57,4 +57,25 @@ ok('parseSearch: junk -> empty', (() => {
   return r.items.length === 0 && r.meta.currentPage === 1;
 })());
 
+// ONL-008: the search endpoint carries no tags, so the download path reads the
+// single-wallpaper endpoint instead.
+const wUrl = W.buildWallpaperUrl('6lyd57', { apikey: 'secret' });
+ok('buildWallpaperUrl: points at the single-wallpaper endpoint', wUrl.startsWith(W.WALLPAPER_BASE + '6lyd57'));
+ok('buildWallpaperUrl: carries the key when present', wUrl.includes('apikey=secret'));
+ok('buildWallpaperUrl: works keyless', W.buildWallpaperUrl('6lyd57') === W.WALLPAPER_BASE + '6lyd57');
+ok('buildWallpaperUrl: strips a provider-prefixed id', W.buildWallpaperUrl('wallhaven:6lyd57').endsWith('/6lyd57'));
+ok('buildWallpaperUrl: rejects junk ids', W.buildWallpaperUrl('') === '' && W.buildWallpaperUrl(null) === '' && W.buildWallpaperUrl('../etc') === '' && W.buildWallpaperUrl('a b') === '');
+
+const wallpaperJson = { data: { id: '6lyd57', tags: [
+  { id: 1, name: 'Anime Girls' },
+  { id: 2, name: 'landscape' },
+  { id: 3, name: 'anime girls' },
+  { id: 4, name: '   ' },
+] } };
+ok('tagsFromWallpaper: lowercases and deduplicates', W.tagsFromWallpaper(wallpaperJson).join(',') === 'anime girls,landscape');
+ok('tagsFromWallpaper: keeps Wallhaven spacing rather than forcing underscores', W.tagsFromWallpaper(wallpaperJson)[0] === 'anime girls');
+ok('tagsFromWallpaper: honours the cap', W.tagsFromWallpaper(wallpaperJson, 1).length === 1);
+ok('tagsFromWallpaper: tolerates junk and a missing tag list', W.tagsFromWallpaper(null).length === 0 && W.tagsFromWallpaper({}).length === 0 && W.tagsFromWallpaper({ data: {} }).length === 0);
+ok('tagsFromWallpaper: accepts an already-unwrapped body', W.tagsFromWallpaper({ tags: [{ name: 'nature' }] }).join(',') === 'nature');
+
 console.log('\nAll ' + passed + ' wallhaven tests passed.');

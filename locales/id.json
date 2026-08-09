@@ -161,7 +161,6 @@
     "selected": "Dipilih: {n}",
     "massAssign": "Tetapkan…",
     "massDelete": "Hapus dari pustaka",
-    "massDeleteUnavailable": "Hanya item yang sudah ada di pustaka yang dapat dihapus",
     "massDeleteFailed": "Tidak dapat menghapus item yang dipilih",
     "selectionActions": "Tindakan wallpaper yang dipilih",
     "clearSelection": "Hapus pilihan",

@@ -161,7 +161,6 @@
     "selected": "{n} seleccionado(s)",
     "massAssign": "Asignar…",
     "massDelete": "Quitar de la biblioteca",
-    "massDeleteUnavailable": "Solo se pueden quitar elementos que ya estén en la biblioteca",
     "massDeleteFailed": "No se pudieron quitar algunos elementos",
     "selectionActions": "Acciones de los fondos seleccionados",
     "clearSelection": "Borrar selección",

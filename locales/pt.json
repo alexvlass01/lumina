@@ -161,7 +161,6 @@
     "selected": "{n} selecionado(s)",
     "massAssign": "Atribuir…",
     "massDelete": "Remover da biblioteca",
-    "massDeleteUnavailable": "Só é possível remover elementos que já estejam na biblioteca",
     "massDeleteFailed": "Não foi possível remover alguns elementos",
     "selectionActions": "Ações dos papéis de parede selecionados",
     "clearSelection": "Limpar seleção",

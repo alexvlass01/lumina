@@ -161,7 +161,6 @@
     "selected": "चयनित: {n}",
     "massAssign": "असाइन करें…",
     "massDelete": "लाइब्रेरी से हटाएं",
-    "massDeleteUnavailable": "केवल वही आइटम हटाए जा सकते हैं जो पहले से लाइब्रेरी में हैं",
     "massDeleteFailed": "चयनित आइटम को नहीं हटाया जा सका",
     "selectionActions": "चयनित वॉलपेपर क्रियाएं",
     "clearSelection": "चयन साफ़ करें",

@@ -1288,6 +1288,22 @@ select option {
   z-index: 300;
 }
 .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+/* A toast carrying an action has to be clickable, unlike the plain informational
+   one which stays pointer-transparent so it never blocks the grid underneath. */
+.toast:has(.toast-action) { pointer-events: auto; display: flex; align-items: center; gap: 14px; }
+.toast-action {
+  background: none;
+  border: none;
+  color: #9dc0ff;
+  font: inherit;
+  font-weight: 700;
+  padding: 2px 2px;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.toast-action:hover { color: #c3d9ff; }
+.toast-action:focus-visible { outline: 2px solid #9dc0ff; outline-offset: 2px; }
+.toast-action:disabled { opacity: .5; cursor: default; }
 
 @media (max-width: 720px) {
   .cards { grid-template-columns: 1fr; }
@@ -1540,6 +1556,11 @@ html.dark .lib-folder-front { fill: #d99a34; }
 .lib-card:focus-within .lib-fav, .lib-card:focus-within .lib-menu-btn { opacity: 1; }
 .lib-fav.on { opacity: 1; color: #ffd35a; }
 .lib-fav:hover, .lib-menu-btn:hover { background: rgba(20, 20, 20, 0.9); }
+/* A photo in the trash has been removed from the library: the only things offered are
+   putting it back and deleting its file. The star is not drawn on cards built here, but
+   the grid reuses cards across views, so a card built in "All" could arrive with one
+   already attached — this makes the rule hold whatever the card's history is. */
+#libGrid.removed-view .lib-fav { display: none; }
 
 /* Local-card selection is a paint-only overlay: it never participates in the
    justified row geometry, so hover/selection cannot move or relayout the grid. */

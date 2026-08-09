@@ -163,7 +163,6 @@
     "selected": "Вибрано: {n}",
     "massAssign": "Призначити…",
     "massDelete": "Прибрати з бібліотеки",
-    "massDeleteUnavailable": "Видалити можна лише елементи, уже додані до бібліотеки",
     "massDeleteFailed": "Не вдалося видалити вибрані елементи",
     "selectionActions": "Дії з вибраними шпалерами",
     "clearSelection": "Зняти виділення",

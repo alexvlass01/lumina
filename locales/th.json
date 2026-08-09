@@ -161,7 +161,6 @@
     "selected": "เลือก: {n}",
     "massAssign": "กำหนด…",
     "massDelete": "ลบออกจากคลัง",
-    "massDeleteUnavailable": "ลบได้เฉพาะรายการที่มีอยู่ในคลังแล้วเท่านั้น",
     "massDeleteFailed": "ไม่สามารถลบรายการที่เลือกได้",
     "selectionActions": "การดำเนินการกับภาพที่เลือก",
     "clearSelection": "ล้างการเลือก",

@@ -161,7 +161,6 @@
     "selected": "Selectate: {n}",
     "massAssign": "Atribuie…",
     "massDelete": "Elimină din bibliotecă",
-    "massDeleteUnavailable": "Doar elementele deja în bibliotecă pot fi eliminate",
     "massDeleteFailed": "Nu s-au putut elimina elementele selectate",
     "selectionActions": "Acțiuni pentru imaginile selectate",
     "clearSelection": "Șterge selecția",

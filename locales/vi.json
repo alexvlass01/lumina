@@ -161,7 +161,6 @@
     "selected": "Đã chọn: {n}",
     "massAssign": "Chỉ định…",
     "massDelete": "Xóa khỏi thư viện",
-    "massDeleteUnavailable": "Chỉ có thể xóa các mục đã có trong thư viện",
     "massDeleteFailed": "Không thể xóa các mục đã chọn",
     "selectionActions": "Hành động cho hình nền đã chọn",
     "clearSelection": "Xóa lựa chọn",

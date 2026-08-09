@@ -161,7 +161,6 @@
     "selected": "Geselecteerd: {n}",
     "massAssign": "Toewijzen…",
     "massDelete": "Uit bibliotheek verwijderen",
-    "massDeleteUnavailable": "Alleen items die al in de bibliotheek staan, kunnen worden verwijderd",
     "massDeleteFailed": "Kon de geselecteerde items niet verwijderen",
     "selectionActions": "Geselecteerde achtergrondacties",
     "clearSelection": "Selectie wissen",

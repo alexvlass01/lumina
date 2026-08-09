@@ -161,7 +161,6 @@
     "selected": "Zaznaczono: {n}",
     "massAssign": "Przypisz…",
     "massDelete": "Usuń z biblioteki",
-    "massDeleteUnavailable": "Usunąć można tylko elementy już dodane do biblioteki",
     "massDeleteFailed": "Nie udało się usunąć niektórych elementów",
     "selectionActions": "Akcje zaznaczonych tapet",
     "clearSelection": "Wyczyść zaznaczenie",

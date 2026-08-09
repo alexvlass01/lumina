@@ -161,7 +161,6 @@
     "selected": "{n} 件選択中",
     "massAssign": "一括割当…",
     "massDelete": "ライブラリから外す",
-    "massDeleteUnavailable": "ライブラリに追加済みの項目だけ外せます",
     "massDeleteFailed": "一部の項目を削除できませんでした",
     "selectionActions": "選択した壁紙の操作",
     "clearSelection": "選択を解除",

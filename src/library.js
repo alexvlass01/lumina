@@ -18,12 +18,14 @@
 const crypto = require('crypto');
 const path = require('path');
 const playlist = require('./playlist');
+// One canonical key for the whole app — see src/path-key.js for why it is its own
+// module and why it folds `.`/`..` itself.
+const { pathKey, isUnderPath } = require('./path-key');
 
 // Stable id from a normalized absolute path (cheap; no file read). Import already
 // content-hashes stored filenames, so identical images mostly collapse to one path.
 function idFor(p) {
-  const norm = String(p || '').trim().replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase();
-  return crypto.createHash('sha1').update(norm).digest('hex').slice(0, 16);
+  return crypto.createHash('sha1').update(pathKey(p)).digest('hex').slice(0, 16);
 }
 
 function baseName(p) {
@@ -251,6 +253,13 @@ function referencedFiles(cfg) {
   for (const it of Object.values((cfg && cfg.library) || {})) {
     if (it && it.type === 'image' && it.path) add(it.path);
   }
+  // A photo the user removed is still held by the library trash until they empty it
+  // (LIB-006). Keeping the file where it is — rather than letting GC sweep it into
+  // wallpapers/.trash — is what lets the "Removed" section show a real thumbnail and
+  // makes putting it back a matter of restoring the record alone.
+  for (const entry of (Array.isArray(cfg && cfg.libraryTrash) ? cfg.libraryTrash : [])) {
+    if (entry && entry.item && entry.item.type === 'image' && entry.item.path) add(entry.item.path);
+  }
   if (cfg) { add(cfg.lightWallpaper); add(cfg.darkWallpaper); }
   return set;
 }
@@ -378,7 +387,7 @@ function migrateConfig(cfg) {
 }
 
 module.exports = {
-  idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
+  pathKey, isUnderPath, idFor, baseName, makeItem, aspectOf, setAspect, addItem, addPath, getItem, removeItem,
   toggleFavorite, normTag, addTag, removeTag, allTags,
   resolveIds, flattenImages, ephemeralFolderImages, recentImages,
   isPathInsideRoot, findConfirmedMissingLiveFolderImageIds,

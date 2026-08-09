@@ -161,7 +161,6 @@
     "selected": "Valittu: {n}",
     "massAssign": "Määritä…",
     "massDelete": "Poista kirjastosta",
-    "massDeleteUnavailable": "Vain kirjastossa jo olevia kohteita voidaan poistaa",
     "massDeleteFailed": "Valittuja kohteita ei voitu poistaa",
     "selectionActions": "Valittujen taustakuvien toiminnot",
     "clearSelection": "Tyhjennä valinta",

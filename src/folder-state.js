@@ -7,7 +7,22 @@
 const fs = require('fs');
 const path = require('path');
 
-const VERSION = 3;
+// `hiddenDirs` was added to v4 rather than becoming v5 ON PURPOSE. validateStoredState
+// accepts only versions it knows, so a build that predates a bump treats the newer
+// file as corrupt: it renames the whole index to `.broken-<ts>` and starts empty,
+// losing every aspect, discovery date and removal for thousands of files. Staying on
+// v4 means such a build simply ignores the key it does not recognise — removed
+// subfolders reappear there, and nothing else is lost. The milder failure wins.
+//
+// v4 adds `hidden` per file and `hiddenDirs` per folder: the user removed that photo
+// — or that whole subfolder — from the library even though it still sits inside a
+// watched folder. A removed SUBFOLDER hides by path prefix, so files added to it
+// later are hidden too; hiding each file at the time would have let the folder leak
+// back in one new photo at a time (LIB-008). Where a photo came from is storage
+// plumbing and must never decide what the user is allowed to do with it, so removal
+// means "stop showing this in Lumina" for every card alike (LIB-004). The file on disk
+// is never touched.
+const VERSION = 4;
 const VALID_SCAN_STATUSES = new Set(['complete', 'partial', 'unavailable']);
 const DEFAULT_IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.bmp', '.webp', '.gif']);
 
@@ -74,16 +89,47 @@ function normalizeState(raw) {
       };
       const aspect = finiteAspect(file.aspect);
       if (aspect) files[key].aspect = aspect;
+      // Only stored when true, so the common case costs nothing on disk.
+      if (file.hidden === true) files[key].hidden = true;
+    }
+    const hiddenDirs = {};
+    const rawDirs = folder.hiddenDirs && typeof folder.hiddenDirs === 'object' && !Array.isArray(folder.hiddenDirs)
+      ? folder.hiddenDirs
+      : {};
+    for (const [rawKey, value] of Object.entries(rawDirs)) {
+      const relativePath = normalizeRelativePath(typeof value === 'string' ? value : rawKey);
+      if (!isSafeRelativePath(relativePath)) continue;
+      hiddenDirs[relativePath.toLowerCase()] = relativePath;
     }
     out.folders[folderId] = {
       rootPath: folder.rootPath,
       files,
+      hiddenDirs,
       // Version 1 did not persist whether the 10k-limited scan was complete.
       // Continue it as a baseline so an old unseen tail is not labelled "new".
       baselineComplete: raw.version === 1 ? false : folder.baselineComplete !== false,
     };
   }
   return out;
+}
+
+// A file is hidden either because the user removed it, or because it sits under a
+// subfolder they removed. Everything that reads the index goes through this, so a
+// photo cannot be invisible in one view and served as wallpaper in another.
+function isUnderHiddenDir(folder, relativePath) {
+  const dirs = folder && folder.hiddenDirs;
+  if (!dirs) return false;
+  const key = String(relativePath || '').toLowerCase();
+  for (const dirKey of Object.keys(dirs)) {
+    if (key.startsWith(`${dirKey}/`)) return true;
+  }
+  return false;
+}
+
+function fileHidden(folder, file) {
+  if (!file) return false;
+  if (file.hidden === true) return true;
+  return isUnderHiddenDir(folder, file.relativePath);
 }
 
 function sameRoot(a, b) {
@@ -110,7 +156,7 @@ function reconcileFolder(rawState, options = {}) {
   let contentChanged = false;
   const isBaseline = !folder || !sameRoot(folder.rootPath, rootPath);
   if (isBaseline) {
-    folder = { rootPath, files: {}, baselineComplete: false };
+    folder = { rootPath, files: {}, hiddenDirs: {}, baselineComplete: false };
     state.folders[folderId] = folder;
     changed = true;
   }
@@ -144,6 +190,12 @@ function reconcileFolder(rawState, options = {}) {
       changed = true;
       contentChanged = true;
     }
+
+    // A rescan re-confirms the file exists; it does not un-remove it. The user's
+    // removal outlives every later scan until they restore it themselves — and a file
+    // that appears inside a removed subfolder is born hidden, which is the whole point
+    // of hiding by prefix rather than per file.
+    if (fileHidden(folder, metadata)) continue;
 
     images.push({
       path: path.resolve(rootPath, rel.relativePath),
@@ -209,13 +261,23 @@ function setAspects(rawState, updates) {
   return { state, changed, updated };
 }
 
-function listImages(rawState, folderIds = null) {
+// Removed photos are absent by default — every caller that paints the library gets
+// the user's view without having to remember to filter. `only: 'hidden'` powers the
+// "removed" section where they can be restored, and `only: 'all'` returns both in ONE
+// pass: normalizeState rebuilds the whole index, so asking twice to split visible from
+// removed doubled the cost of a hot path over thousands of files. Each entry carries
+// `hidden`, so callers split it themselves.
+function listImages(rawState, folderIds = null, { only = 'visible' } = {}) {
   const state = normalizeState(rawState);
   const requested = Array.isArray(folderIds) ? new Set(folderIds) : null;
   const images = [];
   for (const [folderId, folder] of Object.entries(state.folders)) {
     if (requested && !requested.has(folderId)) continue;
     for (const file of Object.values(folder.files)) {
+      const byDir = isUnderHiddenDir(folder, file.relativePath);
+      const hidden = file.hidden === true || byDir;
+      if (only === 'visible' && hidden) continue;
+      if (only === 'hidden' && !hidden) continue;
       images.push({
         folderId,
         path: path.resolve(folder.rootPath, file.relativePath),
@@ -223,10 +285,100 @@ function listImages(rawState, folderIds = null) {
         addedAt: file.firstSeenAt,
         modifiedAt: file.modifiedAt,
         aspect: finiteAspect(file.aspect),
+        hidden,
+        // The "removed" section shows the folder as ONE card rather than each photo
+        // inside it, so it needs to tell the two reasons apart.
+        hiddenByDir: byDir,
       });
     }
   }
   return images;
+}
+
+// Mark photos removed (or restore them) by absolute path. Mirrors setAspects: one
+// path can sit under overlapping roots, so every matching record is updated and the
+// photo does not reappear through the other folder. Files are never touched.
+function setHidden(rawState, paths, hidden = true) {
+  const state = rawState && rawState.version === VERSION && rawState.folders
+    ? rawState
+    : normalizeState(rawState);
+  const want = hidden === true;
+  let changed = false;
+  let updated = 0;
+  const matched = new Set();
+
+  for (const raw of (Array.isArray(paths) ? paths : [])) {
+    const filePath = typeof raw === 'string' ? raw : (raw && raw.path);
+    if (!filePath) continue;
+    for (const folder of Object.values(state.folders)) {
+      const rel = relativeEntry(folder.rootPath, filePath);
+      if (!rel) continue;
+      const file = folder.files[rel.key];
+      if (!file) continue;
+      // Only paths this call actually CHANGED are reported. Counting an already
+      // removed photo here would put it into the undo snapshot, and undoing would
+      // then restore what a previous removal had hidden.
+      if ((file.hidden === true) === want) continue;
+      matched.add(String(filePath));
+      if (want) file.hidden = true;
+      else delete file.hidden;
+      changed = true;
+      updated++;
+    }
+  }
+  return { state, changed, updated, matched: Array.from(matched) };
+}
+
+function countHidden(rawState) {
+  const state = normalizeState(rawState);
+  let n = 0;
+  for (const folder of Object.values(state.folders)) {
+    for (const file of Object.values(folder.files)) if (fileHidden(folder, file)) n++;
+  }
+  return n;
+}
+
+// Remove (or restore) a whole subfolder by absolute path. Hiding the prefix rather
+// than the files under it is what makes a photo added to that folder tomorrow stay
+// hidden too. Files are never touched.
+function setHiddenDir(rawState, dirPaths, hidden = true) {
+  const state = rawState && rawState.version === VERSION && rawState.folders
+    ? rawState
+    : normalizeState(rawState);
+  const want = hidden === true;
+  let changed = false;
+  let updated = 0;
+  const matched = new Set();
+
+  for (const raw of (Array.isArray(dirPaths) ? dirPaths : [])) {
+    const dirPath = typeof raw === 'string' ? raw : (raw && raw.path);
+    if (!dirPath) continue;
+    for (const folder of Object.values(state.folders)) {
+      const rel = relativeEntry(folder.rootPath, dirPath);
+      if (!rel) continue;   // the watched root itself is removed by dropping the folder
+      if (!folder.hiddenDirs) folder.hiddenDirs = {};
+      const has = Object.prototype.hasOwnProperty.call(folder.hiddenDirs, rel.key);
+      if (has === want) continue;
+      if (want) folder.hiddenDirs[rel.key] = rel.relativePath;
+      else delete folder.hiddenDirs[rel.key];
+      matched.add(String(dirPath));
+      changed = true;
+      updated++;
+    }
+  }
+  return { state, changed, updated, matched: Array.from(matched) };
+}
+
+// The subfolders the user removed, as cards for the "removed" section.
+function listHiddenDirs(rawState) {
+  const state = normalizeState(rawState);
+  const out = [];
+  for (const [folderId, folder] of Object.entries(state.folders)) {
+    for (const relativePath of Object.values(folder.hiddenDirs || {})) {
+      out.push({ folderId, path: path.resolve(folder.rootPath, relativePath), relativePath });
+    }
+  }
+  return out;
 }
 
 function knownPathKeys(rawState, folderId) {
@@ -328,7 +480,7 @@ async function scanFolderTree(rootPath, options = {}) {
 
 function validateStoredState(raw) {
   return !!raw && typeof raw === 'object' && !Array.isArray(raw)
-    && (raw.version === 1 || raw.version === 2 || raw.version === VERSION)
+    && (raw.version === 1 || raw.version === 2 || raw.version === 3 || raw.version === VERSION)
     && raw.folders && typeof raw.folders === 'object' && !Array.isArray(raw.folders);
 }
 
@@ -379,6 +531,10 @@ module.exports = {
   reconcileFolder,
   removeFolder,
   setAspects,
+  setHidden,
+  setHiddenDir,
+  listHiddenDirs,
+  countHidden,
   listImages,
   knownPathKeys,
   scanFolderTree,

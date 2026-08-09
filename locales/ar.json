@@ -161,7 +161,6 @@
     "selected": "المحدد: {n}",
     "massAssign": "تعيين…",
     "massDelete": "إزالة من المكتبة",
-    "massDeleteUnavailable": "يمكن إزالة العناصر الموجودة في المكتبة فقط",
     "massDeleteFailed": "تعذر إزالة العناصر المحددة",
     "selectionActions": "إجراءات الخلفيات المحددة",
     "clearSelection": "مسح التحديد",

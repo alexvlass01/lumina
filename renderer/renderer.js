@@ -97,20 +97,21 @@ if (!window.api) {
     libraryAddImages: async () => { mockAdd('image', `C:/fake/lib${Object.keys(mock.library).length + 1}.jpg`); return { config: mock, added: 1 }; },
     libraryAddFolder: async () => { mockAdd('folder', 'C:/fake/LibFolder'); return { config: mock, added: 1 }; },
     libraryAddPaths: async (paths) => { (paths || []).forEach((p) => mockAdd('image', p)); return { config: mock, added: (paths || []).length }; },
-    libraryRemove: async (id) => {
-      delete mock.library[id];
-      for (const m of Object.values(mock.monitors)) for (const th of ['light', 'dark']) if (m[th] && m[th].itemIds) m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
-      return mock;
-    },
-    libraryRemoveMany: async (ids) => {
+    libraryRemoveMany: async (records) => {
       let removed = 0;
-      for (const id of (Array.isArray(ids) ? ids : [])) {
-        if (!mock.library[id]) continue;
-        await window.api.libraryRemove(id);
+      for (const rec of (Array.isArray(records) ? records : [])) {
+        const id = rec && (typeof rec === 'string' ? rec : rec.id);
+        if (!id || !mock.library[id]) continue;
+        delete mock.library[id];
+        for (const m of Object.values(mock.monitors)) for (const th of ['light', 'dark']) if (m[th] && m[th].itemIds) m[th].itemIds = m[th].itemIds.filter((x) => x !== id);
         removed += 1;
       }
-      return { config: mock, removed, warning: null };
+      return { config: mock, removed, hidden: 0, warning: null, undo: null };
     },
+    libraryUndoRemove: async () => ({ config: mock, restored: 0 }),
+    libraryHiddenList: async () => ({ images: [] }),
+    libraryRestore: async () => ({ config: mock, restored: 0 }),
+    libraryDeleteForever: async () => ({ config: mock, deleted: 0, failed: 0, error: null }),
     libraryRefresh: async () => ({ config: mock, removed: 0 }),
     libraryToggleFavorite: async (id) => { if (mock.library[id]) mock.library[id].favorite = !mock.library[id].favorite; return mock; },
     libraryAddTag: async (id, tag) => { const it = mock.library[id]; const t = String(tag || '').trim().toLowerCase(); if (it && t) { it.tags = it.tags || []; if (!it.tags.includes(t)) it.tags.push(t); } return mock; },
@@ -274,7 +275,18 @@ function applyI18n() {
   });
   document.querySelectorAll('[data-i18n-ph]').forEach((el) => { el.placeholder = t(el.dataset.i18nPh); });
 }
+// What this build is allowed to offer, answered by main so the button and the handler
+// behind it cannot disagree. Deleting files is off until its guard is proved (see
+// PHYSICAL_DELETE_ENABLED in main.js).
+const FEATURES = { physicalDelete: false };
+async function loadFeatureFlags() {
+  try {
+    const flags = await window.api.getFeatureFlags();
+    FEATURES.physicalDelete = !!(flags && flags.physicalDelete);
+  } catch { FEATURES.physicalDelete = false; }
+}
 async function loadI18n() {
+  await loadFeatureFlags();
   const info = await window.api.getI18n();
   I18N.dict = info.dict || {};
   I18N.fallback = info.fallback || {};
@@ -315,6 +327,52 @@ function toast(msg) {
   el.classList.add('show');
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove('show'), 2400);
+}
+
+// A toast that also offers to take the action back. Removing photos is the case that
+// needs it: nothing was deleted from disk, so undoing costs nothing, and a stray
+// click on a large selection should not be a one-way door. Stays up longer than a
+// plain toast because it asks the user to decide something.
+function toastAction(msg, actionLabel, onAction) {
+  const el = $('#toast');
+  el.textContent = '';
+  const text = document.createElement('span');
+  text.textContent = msg;
+  el.appendChild(text);
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-action';
+  btn.textContent = actionLabel;
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    clearTimeout(toastTimer);
+    el.classList.remove('show');
+    await onAction();
+  });
+  el.appendChild(btn);
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.classList.remove('show'); el.textContent = ''; }, 6000);
+}
+
+// Success message for a removal. It never claims more than happened, and it only
+// offers undo when main actually kept a snapshot to undo from.
+async function undoLastRemoval() {
+  let res;
+  try { res = await window.api.libraryUndoRemove(); }
+  catch { res = null; }
+  if (!res || res.error) { toast(t('library.undoFailed')); return; }
+  config = res.config || config;
+  renderLibrary();
+  renderPreviews();
+  renderHome();
+  toast(t('library.undoneToast'));
+}
+
+function toastRemoved(count, canUndo) {
+  const msg = t('library.removedToastN', { n: count });
+  if (canUndo) toastAction(msg, t('library.undo'), undoLastRemoval);
+  else toast(msg);
 }
 
 // Honest outcome reporting for manual wallpaper actions (plan: error_notifications T1).
@@ -874,6 +932,11 @@ const LIB = {
   selection: window.CardInteraction.createSelectionModel(), aspectCache: new Map(), sizeCache: new Map(),
   poolBySelectionKey: new Map(),
 };
+// The trash. Named rather than repeated as a string literal because a photo in there
+// is REMOVED: the only things it may offer are putting it back and deleting its file.
+// Every "is this allowed here" check asks this one question, so a new view or a new
+// card type cannot quietly grow an action the trash is not supposed to have.
+function inRemovedView() { return LIB.filter === 'removed'; }
 let libraryBatchAssignPending = false;
 let libraryBatchRemovePending = false;
 const folderInfoCache = new Map(); // path key -> shared promise for virtualized folder cards
@@ -1297,8 +1360,15 @@ function renderLibraryCore() {
   renderBreadcrumbs();
   const tok = ++allViewToken; // invalidate any in-flight async render
 
+  // Mark the grid itself, so the trash's rules hold for cards the virtual grid RECYCLES
+  // from another view as well. Deciding at build time is not enough on its own: a card
+  // built in "All" and reused here arrived with its star already attached.
+  const gridEl = $('#libGrid');
+  if (gridEl) gridEl.classList.toggle('removed-view', inRemovedView());
+
   if (LIB.folderPath) { renderFolderView(tok); return; }
   if (LIB.filter === 'all') { renderAllView(tok); return; }
+  if (inRemovedView()) { renderRemovedView(tok); return; }
 
   // "Папки" / favorite / tag → plain pool-items grid (folders are entities here)
   const sentinel = $('#libSentinel'); if (sentinel) sentinel.hidden = true;
@@ -1331,6 +1401,10 @@ function buildLibCard(it, isAssigned) {
     card.__galleryItem = galleryItemFromLibrary(it);
   }
 
+  // The star is always BUILT and hidden by CSS in the trash, never omitted. Omitting
+  // it looked tidier but broke the other direction: the grid reuses cards between views,
+  // so a card first built in the trash was reused in "All" with no star at all and no
+  // code path that would add one back.
   const fav = document.createElement('button');
   fav.className = 'lib-fav' + (it.favorite ? ' on' : '');
   fav.textContent = it.favorite ? '★' : '☆';
@@ -1449,6 +1523,28 @@ function navigateFolderBack() {
 function renderBreadcrumbs() {
   const bar = $('#libCrumbs');
   if (!bar) return;
+  // The trash is reached from the settings, not from the rail, so nothing in the rail
+  // is highlighted while you are in it. Say where you are and offer the way out.
+  if (inRemovedView()) {
+    bar.hidden = false;
+    bar.innerHTML = '';
+    const back = document.createElement('button');
+    back.className = 'lib-crumb lib-crumb-back';
+    // Not library.back — that one says "All folders", which is where folder
+    // navigation returns to. Leaving the trash returns to the library itself.
+    back.textContent = t('library.all');
+    back.addEventListener('click', () => { LIB.filter = 'all'; renderLibrary(); });
+    bar.appendChild(back);
+    const sep = document.createElement('span');
+    sep.className = 'lib-crumb-sep';
+    sep.textContent = '›';
+    bar.appendChild(sep);
+    const here = document.createElement('button');
+    here.className = 'lib-crumb current';
+    here.textContent = t('library.removedTitle');
+    bar.appendChild(here);
+    return;
+  }
   if (!LIB.folderPath || !LIB.crumbs.length) { bar.hidden = true; bar.innerHTML = ''; return; }
   bar.hidden = false;
   bar.innerHTML = '';
@@ -1851,6 +1947,7 @@ function buildEphemeralImageCard(p, aspect = 0) {
   lazyThumb(card, p, 320, 200);
   card.__galleryItem = galleryItemFromPath(p);
 
+  // Always built, hidden by CSS in the trash — see buildLibCard.
   const fav = document.createElement('button');
   fav.className = 'lib-fav';
   fav.textContent = '☆';
@@ -1909,6 +2006,78 @@ async function renderAllView(tok) {
   setLibViewHeader(entries.length);
   renderEntriesLazily(grid, entries, assignedIds(), tok);
   scheduleSizeReorder(entries, tok); // size sort: load missing sizes in bg, re-render once
+}
+
+// The "removed" view: everything the user took out of the library, whatever its origin.
+// Being able to get it back is what makes removal safe to offer on every card.
+//
+// A photo still sitting in a watched folder costs nothing to restore. One whose only
+// copy was Lumina's own — imported, or downloaded from Online — is listed here too, and
+// needs it the most: its record is kept whole, and that record is also what holds the
+// wallpaper collector off the file.
+async function renderRemovedView(tok) {
+  const grid = $('#libGrid');
+  const empty = $('#libEmpty');
+  if (!grid) return;
+  let images = [];
+  try { const res = await window.api.libraryHiddenList(); images = (res && res.images) || []; }
+  catch { images = []; }
+  if (tok !== allViewToken || LIB.filter !== 'removed') return; // stale
+  let entries = images.map((im) => ({
+    path: im.path, item: null, id: im.path,
+    addedAt: im.addedAt, modifiedAt: im.modifiedAt, aspect: im.aspect,
+    // Carry the kind through: a removed FOLDER rendered as an image gave a broken
+    // thumbnail and a "delete from disk" action that main correctly refused.
+    kind: im.type === 'folder' ? 'subfolder' : undefined,
+    folder: im.type === 'folder' ? { path: im.path, name: baseName(im.path) } : undefined,
+  }));
+  const q = LIB.q.trim().toLowerCase();
+  if (q) entries = entries.filter((en) => baseName(en.path).toLowerCase().includes(q));
+  sortItems(entries, {
+    path: (x) => x.path,
+    added: (x) => x.addedAt,
+    modified: (x) => x.modifiedAt,
+    size: entrySize,
+    id: (x) => x.id,
+  });
+  if (empty) { empty.hidden = entries.length > 0; if (!entries.length) setLibEmptyText('library.removedEmpty'); }
+  setLibViewHeader(entries.length);
+  renderEntriesLazily(grid, entries, assignedIds(), tok);
+}
+
+// The only action that touches the user's files. Main asks for confirmation in a
+// native dialog and moves them to the Windows Recycle Bin — nothing is destroyed
+// outright — so the renderer only reports what came back.
+async function deleteForever(paths) {
+  const list = (paths || []).filter(Boolean);
+  if (!list.length) return;
+  let res;
+  try { res = await window.api.libraryDeleteForever(list); }
+  catch { res = null; }
+  if (!res || res.error) { if (res && res.error !== 'bad_request') toast(t('library.deleteForeverFailed')); return; }
+  if (res.cancelled) return;
+  config = res.config || config;
+  clearSelection();
+  syncSelectionUI();
+  renderLibrary();
+  renderHome();
+  if (res.failed) toast(t('library.deleteForeverFailed'));
+  else toast(t('library.deleteForeverDone', { n: res.deleted }));
+}
+
+async function restorePaths(paths) {
+  const list = (paths || []).filter(Boolean);
+  if (!list.length) return;
+  let res;
+  try { res = await window.api.libraryRestore(list); }
+  catch { res = null; }
+  if (!res) { toast(t('library.undoFailed')); return; }
+  config = res.config || config;
+  clearSelection();
+  syncSelectionUI();
+  renderLibrary();
+  renderHome();
+  toast(t('library.restoredToast', { n: res.restored }));
 }
 
 function scheduleDeferredJustifiedLayout(grid) {
@@ -2399,23 +2568,42 @@ function syncSelectionUI() {
   bar.hidden = false;
   const n = LIB.selection.size;
   $('#libSelCount').textContent = t('library.selected', { n });
+  // In the "removed" view the only sensible bulk action is putting things back, so
+  // the destructive slot becomes the restore action instead of offering to remove
+  // what is already removed.
+  const restoring = inRemovedView();
   const assign = $('#libSelAssign');
+  // Assigning from the trash put the photo on a monitor while its card still sat in
+  // the trash — an implicit restore the user never asked for, and the exact state the
+  // removal work exists to make impossible. Restore first, then assign.
+  assign.hidden = restoring;
   assign.textContent = t('library.massAssign');
   assign.disabled = batchPending;
   const remove = $('#libSelDelete');
-  remove.textContent = t('library.massDelete');
-  // Transient folder contents are never physical-delete candidates. A mixed selection
-  // removes only records that already belong to the pool; a transient-only selection
-  // keeps the destructive action visibly unavailable.
-  const pooledByPath = LIB.poolBySelectionKey;
-  const removable = LIB.selection.values().filter((record) => !!poolItemForRecord(record, pooledByPath)).length;
-  // Never silently apply a destructive command to only part of the displayed
-  // selection. Mixed/transient selections stay selected and the button explains why.
-  remove.disabled = batchPending || removable !== n;
-  remove.title = removable !== n ? t('library.massDeleteUnavailable') : '';
-  remove.setAttribute('aria-label', removable !== n
-    ? `${t('library.massDelete')}. ${t('library.massDeleteUnavailable')}`
-    : t('library.massDelete'));
+  remove.classList.toggle('destructive', !restoring);
+  remove.classList.toggle('suggested', restoring);
+  remove.textContent = t(restoring ? 'library.massRestore' : 'library.massDelete');
+  // LIB-004: removal works for every card. It used to be blocked unless every
+  // selected photo already had its own pool record, which in a folder-backed library
+  // meant the button was greyed out for ~98% of what the user could see — and the
+  // rule behind it (an implementation detail of where the photo is stored) was
+  // invisible on screen. Removing now means "stop showing this in Lumina" for all of
+  // them; files on disk are still never deleted.
+  remove.disabled = batchPending;
+  remove.title = '';
+  remove.setAttribute('aria-label', t(restoring ? 'library.massRestore' : 'library.massDelete'));
+  // Deleting the file itself is offered only where the user has already decided to
+  // remove it, never alongside the everyday action (LIB-007).
+  const purge = $('#libSelPurge');
+  if (purge) {
+    // Folders are out of scope for deleting from disk, so a selection with no image in
+    // it would open a dialog that deletes nothing.
+    const hasImage = LIB.selection.values().some((r) => r.type !== 'folder');
+    purge.hidden = !restoring || !hasImage || !FEATURES.physicalDelete;
+    purge.textContent = t('library.deleteForever');
+    purge.disabled = batchPending;
+    purge.setAttribute('aria-label', t('library.deleteForever'));
+  }
 }
 
 // Set a card's assigned state in place — both the `.assigned` class AND the corner
@@ -2501,7 +2689,12 @@ function replaceLocalCardWithPoolItem(card, item) {
   return replacement;
 }
 
+// A star in the Removed view would quietly bring the photo back into the pool while
+// its card still sits in the trash — active and removed at once. Restoring is the
+// explicit action for that. The star is not drawn there at all (buildLibCard); this
+// stays as the last line of defence for the keyboard/context paths.
 async function toggleFavoriteForRecord(record, preferredCard = null) {
+  if (inRemovedView()) { toast(t('library.restoreFirst')); return null; }
   const item = await ensurePoolItemForRecord(record);
   if (!item) return null;
   try { config = await window.api.libraryToggleFavorite(item.id); }
@@ -2741,6 +2934,8 @@ function appendAssignRows(pop, onPick) {
 // "assign" button in the selection bar (which sits at the bottom of the window).
 function openMassAssignMenu(anchor) {
   if (librarySelectionBatchPending()) return;
+  // The button is hidden in the trash; this covers the keyboard route to it.
+  if (inRemovedView()) { toast(t('library.restoreFirst')); return; }
   closeLibPopup();
   const pop = document.createElement('div');
   pop.className = 'lib-popup';
@@ -3026,12 +3221,13 @@ function openAssignMenu(it, anchor, materializeFn, options = {}) {
     remove.addEventListener('click', async (e) => {
       e.stopPropagation();
       if (!state.item) { closeLibPopup(); return; }
-      config = await window.api.libraryRemove(state.item.id);
+      // One removal path for the whole app. This button used to call an older IPC
+      // that skipped the trash and the removed-marker entirely, so removing from
+      // here lost a downloaded photo's only copy and left a folder photo on screen
+      // under a "removed" toast (BUG-007).
+      const item = state.item;
       closeLibPopup();
-      renderLibrary();
-      renderPreviews();
-      renderHome();
-      toast(t('library.removedToast'));
+      await removeRecordFromLibrary(localSelectionRecord(item.path, item.type, item.id));
     });
     pop.appendChild(remove);
   }
@@ -3067,17 +3263,26 @@ function appendContextMenuItem(pop, label, action, opts = {}) {
   return button;
 }
 
+// One card, same meaning as the multi-select button: stop showing this in Lumina.
+// Goes through the same path so a photo without a pool record is removable too.
 async function removeRecordFromLibrary(record) {
+  if (!record) return;
   const item = poolItemForRecord(record);
-  if (!item) return;
-  try { config = await window.api.libraryRemove(item.id); }
-  catch { return; }
+  const payload = [{ path: (item && item.path) || record.path, id: (item && item.id) || '', type: record.type }];
+  if (!payload[0].path && !payload[0].id) return;
+  let res;
+  try { res = await window.api.libraryRemoveMany(payload); }
+  catch { res = null; }
+  if (!res || res.error) { toast(t('library.massDeleteFailed')); return; }
+  config = res.config || config;
+  const affected = res.affected || 0;
+  if (!affected) { toast(t('library.massDeleteFailed')); return; }
   LIB.selection.delete(record.key);
   syncSelectionUI();
   renderLibrary();
   renderPreviews();
   renderHome();
-  toast(t('library.removedToast'));
+  toastRemoved(affected, !!res.undo);
 }
 
 // --- Details view (UX1 step C) -------------------------------------------
@@ -3380,33 +3585,49 @@ function openLocalCardContextMenu(record, card, point = null) {
   pop.setAttribute('aria-label', t('library.cardActions'));
   pop.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  if (actions.open) {
+  // A removed photo is not part of the library, so offering to assign or tag it
+  // would quietly bring it back through a side door. Put it back first.
+  const removedView = inRemovedView();
+  if (removedView) {
+    appendContextMenuItem(pop, t('library.restore'), () => restorePaths([freshRecord.path]));
+    appendContextMenuItem(pop, t('library.details'), () => openCardDetails(freshRecord));
+    // The separator belongs to the delete action; drawing it on its own would leave a
+    // stray line at the bottom of the menu.
+    if (freshRecord.type !== 'folder' && FEATURES.physicalDelete) {
+      const sep = document.createElement('div');
+      sep.className = 'lib-popup-sep';
+      pop.appendChild(sep);
+      appendContextMenuItem(pop, t('library.deleteForever'), () => deleteForever([freshRecord.path]), { danger: true });
+    }
+  }
+
+  if (!removedView && actions.open) {
     appendContextMenuItem(pop, t('library.open'), () => enterFolder(freshRecord.path, baseName(freshRecord.path)));
   }
-  if (actions.assign) {
+  if (!removedView && actions.assign) {
     appendContextMenuItem(pop, t('library.assign'), () => {
       openAssignMenu(current, card, () => ensurePoolItemForRecord(freshRecord), {
         assign: true, tags: false, remove: false, assignmentRecord: freshRecord,
       });
     });
   }
-  if (actions.favorite) {
+  if (!removedView && actions.favorite) {
     const isFavorite = !!(current && current.favorite);
     appendContextMenuItem(pop, t(isFavorite ? 'library.favoriteRemove' : 'library.favoriteAdd'), () => {
       toggleFavoriteForRecord(freshRecord, card);
     });
   }
-  if (actions.tags) {
+  if (!removedView && actions.tags) {
     appendContextMenuItem(pop, t('library.editTags'), () => {
       openAssignMenu(current, card, () => ensurePoolItemForRecord(freshRecord), {
         assign: false, tags: true, remove: false, focusTags: true,
       });
     });
   }
-  if (actions.details) {
+  if (!removedView && actions.details) {
     appendContextMenuItem(pop, t('library.details'), () => openCardDetails(freshRecord));
   }
-  if (actions.remove) {
+  if (!removedView && actions.remove) {
     const sep = document.createElement('div');
     sep.className = 'lib-popup-sep';
     pop.appendChild(sep);
@@ -3588,37 +3809,55 @@ function initLibrary() {
     clearSelection();
     syncSelectionUI();
   });
+  const selPurge = $('#libSelPurge');
+  if (selPurge) selPurge.addEventListener('click', async () => {
+    if (librarySelectionBatchPending()) return;
+    // Folders are out of scope for deleting from disk — erasing a tree is a different
+    // question. The context menu already skips them; a mixed selection would
+    // otherwise leave the folder silently selected and untouched.
+    await deleteForever(LIB.selection.values().filter((r) => r.type !== 'folder').map((r) => r.path));
+  });
   const selAssign = $('#libSelAssign');
   if (selAssign) selAssign.addEventListener('click', () => openMassAssignMenu(selAssign));
   const selDelete = $('#libSelDelete');
   if (selDelete) selDelete.addEventListener('click', async () => {
     if (librarySelectionBatchPending()) return;
     const selected = LIB.selection.values();
-    const ids = new Set();
-    for (const record of selected) {
+    if (!selected.length) return;
+    if (inRemovedView()) { await restorePaths(selected.map((r) => r.path)); return; }
+    // Send what every card actually has: its path, plus a pool id when there is one.
+    // Main decides per photo whether that means dropping a record, marking it removed
+    // in the folder index, or both — the user just asked for it to go away.
+    const records = selected.map((record) => {
       const item = poolItemForRecord(record, LIB.poolBySelectionKey);
-      if (item && item.id) ids.add(item.id);
-    }
-    // Guard the programmatic path too: disabled buttons cannot normally fire, but
-    // mixed selection must never become a silent partial destructive operation.
-    if (ids.size !== selected.length) { syncSelectionUI(); return; }
+      return { path: (item && item.path) || record.path, id: (item && item.id) || '', type: record.type };
+    }).filter((r) => r.path || r.id);
+    if (!records.length) { syncSelectionUI(); return; }
     libraryBatchRemovePending = true;
     syncSelectionUI();
     try {
       let res;
-      try { res = await window.api.libraryRemoveMany(Array.from(ids)); }
+      try { res = await window.api.libraryRemoveMany(records); }
       catch { res = { config, removed: 0, error: 'remove_failed' }; }
       config = (res && res.config) || config;
-      if (!res || res.error || res.removed !== ids.size) {
+      if (!res || res.error) {
         toast(t('library.massDeleteFailed'));
         return;
       }
+      // Report what main actually did, not what we asked for. A card can be on
+      // screen before it reaches the folder index (fresh file, or a partial scan),
+      // and then nothing was removed — saying "removed" would be a lie about a
+      // destructive action, and the card stays visible after the re-render.
+      // `affected` counts CARDS: summing main's internal row counts said "2" for a
+      // single photo that was both a library record and a file in a watched folder.
+      const affected = res.affected || 0;
+      if (!affected) { toast(t('library.massDeleteFailed')); return; }
       removeSelectionSnapshot(selected);
       syncSelectionUI();
       renderLibrary();
       renderPreviews();
       renderHome();
-      toast(t('library.removedToast'));
+      toastRemoved(affected, !!res.undo);
     } finally {
       libraryBatchRemovePending = false;
       syncSelectionUI();
@@ -5292,6 +5531,20 @@ async function init() {
   if (btnClearEventLog) btnClearEventLog.addEventListener('click', async () => {
     try { await window.api.eventLogClear(); } catch {}
     renderEventLog();
+  });
+
+  // ---- settings: library trash ----
+  // The trash lives here rather than in the library rail: it is not a place you work
+  // in, and standing next to "All"/"Favourites"/"Folders" it read as one (LIB-005).
+  const btnOpenRemoved = $('#btnOpenRemoved');
+  if (btnOpenRemoved) btnOpenRemoved.addEventListener('click', () => {
+    LIB.filter = 'removed';
+    LIB.folderPath = '';
+    LIB.q = '';
+    const search = $('#libSearch');
+    if (search) search.value = '';
+    showPage('library');
+    renderLibrary();
   });
 
   // ---- settings: re-open the welcome screen ----

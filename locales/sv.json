@@ -161,7 +161,6 @@
     "selected": "Valda: {n}",
     "massAssign": "Tilldela…",
     "massDelete": "Ta bort från bibliotek",
-    "massDeleteUnavailable": "Endast objekt som redan finns i biblioteket kan tas bort",
     "massDeleteFailed": "Kunde inte ta bort de valda objekten",
     "selectionActions": "Åtgärder för valda bakgrunder",
     "clearSelection": "Rensa markering",
