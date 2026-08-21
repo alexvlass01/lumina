@@ -1,3 +1,8 @@
+> **This app is now called Znada.**
+> Development continues there: https://github.com/alexvlass01/znada
+>
+> This repository stays as it is, at version 1.6.0. It is no longer updated.
+
 # Lumina
 
 **Lumina** automatically changes your Windows desktop wallpaper when you switch between
